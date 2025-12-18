@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Download, FileImage, FileJson } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { spritesApi, type CharacterInfo } from '../../api/client';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload } from '../ui';
@@ -11,7 +12,8 @@ interface CharacterEditProps {
 }
 
 export function CharacterEdit({ isOpen, onClose, character, onSaved }: CharacterEditProps) {
-  const { updateCharacter, isEditing, error, clearError } = useCharacterStore();
+  const { updateCharacter, isEditing, isExporting, error, clearError, exportCharacterAsPNG, exportCharacterAsJSON } = useCharacterStore();
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
@@ -34,6 +36,7 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
   useEffect(() => {
     if (isOpen && character) {
       setAvatarFile(null); // Reset file selection
+      setShowExportMenu(false); // Reset export menu
       setFormData({
         name: character.name || '',
         description: character.description || character.data?.description || '',
@@ -47,6 +50,16 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
       });
     }
   }, [isOpen, character]);
+
+  const handleExportPNG = async () => {
+    setShowExportMenu(false);
+    await exportCharacterAsPNG(character);
+  };
+
+  const handleExportJSON = () => {
+    setShowExportMenu(false);
+    exportCharacterAsJSON(character);
+  };
 
   const handleChange = (field: string) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -123,6 +136,56 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
           onImageSelect={setAvatarFile}
           label="Avatar"
         />
+
+        {/* Export Options */}
+        <div className="relative">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download size={18} className="mr-2" />
+                Export Character
+              </>
+            )}
+          </Button>
+
+          {showExportMenu && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-lg z-10 overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                onClick={handleExportPNG}
+              >
+                <FileImage size={18} className="text-[var(--color-primary)]" />
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">PNG Card</p>
+                  <p className="text-xs text-[var(--color-text-secondary)]">Character card with embedded data</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors border-t border-[var(--color-border)]"
+                onClick={handleExportJSON}
+              >
+                <FileJson size={18} className="text-[var(--color-primary)]" />
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">JSON</p>
+                  <p className="text-xs text-[var(--color-text-secondary)]">Character data as JSON file</p>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Name - Required */}
         <Input

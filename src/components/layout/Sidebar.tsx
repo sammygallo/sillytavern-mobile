@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { X, Search, Plus, MessageSquare, Users, ChevronLeft, UserPlus, Check, Trash2 } from 'lucide-react';
+import { X, Search, Plus, MessageSquare, Users, ChevronLeft, UserPlus, Check, Trash2, Upload } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore, type GroupChatInfo } from '../../stores/chatStore';
 import { Avatar, Button, Input } from '../ui';
 import { CharacterCreation } from '../character/CharacterCreation';
+import { CharacterImport } from '../character/CharacterImport';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { getDefaultAvatarUrl, type Emotion } from '../../utils/emotions';
 
@@ -14,6 +15,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showCharacterList, setShowCharacterList] = useState(false);
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [isGroupSelectMode, setIsGroupSelectMode] = useState(false);
@@ -57,6 +59,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   }, [selectedCharacter]);
 
   const handleCharacterCreated = (avatarUrl: string) => {
+    selectCharacter(avatarUrl);
+    setShowCharacterList(false);
+    onClose();
+  };
+
+  const handleCharacterImported = (avatarUrl: string) => {
     selectCharacter(avatarUrl);
     setShowCharacterList(false);
     onClose();
@@ -437,14 +445,24 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   Start Group Chat ({groupChatCharacters.length}/2+)
                 </Button>
               ) : (
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  <Plus size={18} className="mr-2" />
-                  New Character
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => setShowImportModal(true)}
+                  >
+                    <Upload size={18} className="mr-2" />
+                    Import
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    <Plus size={18} className="mr-2" />
+                    New
+                  </Button>
+                </div>
               )}
             </div>
           </>
@@ -456,6 +474,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreated={handleCharacterCreated}
+      />
+
+      {/* Character Import Modal */}
+      <CharacterImport
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={handleCharacterImported}
       />
     </>
   );

@@ -1,5 +1,16 @@
 import { create } from 'zustand';
 import { api, type CharacterInfo, type CharacterCreateData, type CharacterEditData } from '../api/client';
+import {
+  extractCharacterFromPNG,
+  parseCharacterFromJSON,
+  cardToCharacterInfo,
+  embedCharacterInPNG,
+  exportCharacterAsJSON,
+  downloadFile,
+  fetchImageAsBlob,
+  type CharacterCardV2,
+  type CharacterExportData,
+} from '../utils/characterCard';
 
 interface CharacterState {
   characters: CharacterInfo[];
@@ -10,6 +21,8 @@ interface CharacterState {
   isLoading: boolean;
   isCreating: boolean;
   isEditing: boolean;
+  isImporting: boolean;
+  isExporting: boolean;
   error: string | null;
 
   // Actions
@@ -26,6 +39,10 @@ interface CharacterState {
   exitGroupChat: () => void;
   isCharacterInGroup: (avatar: string) => boolean;
   setGroupChatCharacters: (avatars: string[]) => Promise<void>;
+  // Import/Export actions
+  importCharacter: (file: File) => Promise<{ data: Partial<CharacterInfo>; avatarFile?: File } | null>;
+  exportCharacterAsPNG: (character: CharacterInfo) => Promise<void>;
+  exportCharacterAsJSON: (character: CharacterInfo) => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set, get) => ({
@@ -36,6 +53,8 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   isLoading: false,
   isCreating: false,
   isEditing: false,
+  isImporting: false,
+  isExporting: false,
   error: null,
 
   fetchCharacters: async () => {
@@ -228,5 +247,77 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       isGroupChatMode: true,
       selectedCharacter: null,
     });
+  },
+
+  // Import/Export actions
+  importCharacter: async (file: File) => {
+    set({ isImporting: true, error: null });
+    try {
+      let characterData: CharacterCardV2 | CharacterExportData | null = null;
+      let avatarFile: File | undefined;
+
+      const isPNG = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+      const isJSON = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+
+      if (isPNG) {
+        // Extract character data from PNG
+        characterData = await extractCharacterFromPNG(file);
+        if (!characterData) {
+          throw new Error('No character data found in PNG file');
+        }
+        // Use the PNG as the avatar
+        avatarFile = file;
+      } else if (isJSON) {
+        // Parse JSON file
+        characterData = await parseCharacterFromJSON(file);
+      } else {
+        throw new Error('Unsupported file format. Please use PNG or JSON files.');
+      }
+
+      const info = cardToCharacterInfo(characterData);
+      set({ isImporting: false });
+      return { data: info, avatarFile };
+    } catch (error) {
+      set({
+        isImporting: false,
+        error: error instanceof Error ? error.message : 'Failed to import character',
+      });
+      return null;
+    }
+  },
+
+  exportCharacterAsPNG: async (character: CharacterInfo) => {
+    set({ isExporting: true, error: null });
+    try {
+      // Fetch the character's avatar image
+      const avatarUrl = `/characters/${encodeURIComponent(character.avatar)}`;
+      const imageBlob = await fetchImageAsBlob(avatarUrl);
+
+      // Embed character data in the PNG
+      const pngBlob = await embedCharacterInPNG(imageBlob, character);
+
+      // Download the file
+      const filename = `${character.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+      downloadFile(pngBlob, filename);
+
+      set({ isExporting: false });
+    } catch (error) {
+      set({
+        isExporting: false,
+        error: error instanceof Error ? error.message : 'Failed to export character',
+      });
+    }
+  },
+
+  exportCharacterAsJSON: (character: CharacterInfo) => {
+    try {
+      const jsonBlob = exportCharacterAsJSON(character);
+      const filename = `${character.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+      downloadFile(jsonBlob, filename);
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to export character',
+      });
+    }
   },
 }));
