@@ -4,6 +4,7 @@ import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { ChatActionBar } from './ChatActionBar';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -13,108 +14,102 @@ import {
 
 export function ChatView() {
   const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
-  const { messages, isSending, error, sendMessage, sendGroupMessage, startNewChat, fetchChatFiles, loadChat, chatFiles, clearChat, editMessageAndRegenerate } = useChatStore();
+  const {
+    messages,
+    isSending,
+    isStreaming,
+    error,
+    sendMessage,
+    sendGroupMessage,
+    startNewChat,
+    fetchChatFiles,
+    loadChat,
+    chatFiles,
+    clearChat,
+    editMessageAndRegenerate,
+    editMessage,
+    deleteMessage,
+    swipeLeft,
+    swipeRight,
+    regenerateMessage,
+    continueMessage,
+    impersonate,
+    stopGeneration,
+  } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastCharacterRef = useRef<string | null>(null);
-  // Track failed expression images to avoid infinite retry loops
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
+  const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
+  const [prefillNonce, setPrefillNonce] = useState(0);
 
-  // Fetch actual sprite paths from API (hook extracts character name from avatar filename)
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
-  // Get the latest character message's emotion for the portrait
   const latestEmotion = useMemo(() => {
     const characterMessages = messages.filter((m) => !m.isUser && !m.isSystem);
     if (characterMessages.length === 0) return null;
     return characterMessages[characterMessages.length - 1].emotion ?? null;
   }, [messages]);
 
-  // Find the last user message ID for edit functionality
-  const lastUserMessageId = useMemo(() => {
-    const userMessages = messages.filter((m) => m.isUser);
-    return userMessages.length > 0 ? userMessages[userMessages.length - 1].id : null;
+  // Find the last AI message id for swipe control display
+  const lastAiMessageId = useMemo(() => {
+    const aiMessages = messages.filter((m) => !m.isUser && !m.isSystem);
+    return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].id : null;
   }, [messages]);
+
+  const hasAiMessage = useMemo(
+    () => messages.some((m) => !m.isUser && !m.isSystem),
+    [messages]
+  );
 
   const getAvatarUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
-      // For group chat, use default avatar URL directly
-      if (isGroupChatMode) {
-        return getDefaultAvatarUrl(avatar);
-      }
-      // Try to use actual sprite path from API first
+      if (isGroupChatMode) return getDefaultAvatarUrl(avatar);
       if (emotion) {
         const spritePath = getSpritePath(emotion);
-        if (spritePath) {
-          return spritePath;
-        }
+        if (spritePath) return spritePath;
       }
-      // Fall back to thumbnail for default/neutral
       return getExpressionThumbnailUrl(avatar, emotion ?? null);
     },
     [getSpritePath, isGroupChatMode]
   );
 
-  // Get the full image URL using actual sprite paths from API
   const getFullImageUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
       const expressionKey = `${avatar}-${emotion}`;
-
-      // Check if this expression previously failed
       if (emotion && failedExpressions.has(expressionKey)) {
-        const fallback = getDefaultAvatarUrl(avatar);
-        console.log('[Expression] Using fallback for failed expression:', { emotion, fallback });
-        return fallback;
+        return getDefaultAvatarUrl(avatar);
       }
-
-      // Try to use actual sprite path from API
       if (emotion) {
         const spritePath = getSpritePath(emotion);
-        if (spritePath) {
-          console.log('[Expression] Using API sprite path:', { emotion, path: spritePath });
-          return spritePath;
-        }
+        if (spritePath) return spritePath;
       }
-
-      // Fall back to default avatar
-      const fallback = getDefaultAvatarUrl(avatar);
-      console.log('[Expression] No sprite found, using default:', { avatar, emotion, fallback });
-      return fallback;
+      return getDefaultAvatarUrl(avatar);
     },
     [getSpritePath, failedExpressions]
   );
 
-  // Load chat when character changes
   useEffect(() => {
     if (!selectedCharacter) return;
     if (lastCharacterRef.current === selectedCharacter.avatar) return;
 
-    // Clear old chat state before loading new character
     clearChat();
     lastCharacterRef.current = selectedCharacter.avatar;
-    // Reset failed expressions for new character
     setFailedExpressions(new Set());
-
-    // Fetch chat files for new character
     fetchChatFiles(selectedCharacter.avatar);
   }, [selectedCharacter, fetchChatFiles, clearChat]);
 
-  // When chat files are loaded, load the most recent or start new
   useEffect(() => {
     if (!selectedCharacter) return;
-    // Only run this effect when we have fresh data for this character
     if (lastCharacterRef.current !== selectedCharacter.avatar) return;
 
     if (chatFiles.length > 0) {
-      // Load most recent chat
       loadChat(selectedCharacter.avatar, chatFiles[0].fileName);
     } else if (messages.length === 0) {
-      // Start new chat with first_mes only if no messages loaded
       startNewChat(selectedCharacter);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatFiles]);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -127,7 +122,37 @@ export function ChatView() {
     }
   };
 
-  // No character selected and not in group chat mode
+  const handleRegenerate = () => {
+    if (selectedCharacter && !isGroupChatMode) {
+      regenerateMessage(selectedCharacter, availableEmotions);
+    }
+  };
+
+  const handleContinue = () => {
+    if (selectedCharacter && !isGroupChatMode) {
+      continueMessage(selectedCharacter, availableEmotions);
+    }
+  };
+
+  const handleImpersonate = async () => {
+    if (!selectedCharacter || isGroupChatMode) return;
+    const text = await impersonate(selectedCharacter, availableEmotions);
+    if (text) {
+      setPrefillText(text);
+      setPrefillNonce((n) => n + 1);
+    }
+  };
+
+  const handleSwipeLeft = (messageId: string) => {
+    swipeLeft(messageId);
+  };
+
+  const handleSwipeRight = (messageId: string) => {
+    if (selectedCharacter && !isGroupChatMode) {
+      swipeRight(messageId, selectedCharacter, availableEmotions);
+    }
+  };
+
   if (!selectedCharacter && !isGroupChatMode) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -143,16 +168,14 @@ export function ChatView() {
     );
   }
 
-  // Determine the display name and placeholder for input
   const displayName = isGroupChatMode
     ? groupChatCharacters.map((c) => c.name).join(', ')
     : selectedCharacter?.name ?? '';
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Mobile Header - visible only on mobile */}
+      {/* Mobile Header */}
       {isGroupChatMode ? (
-        /* Group Chat Header */
         <div className="lg:hidden h-20 relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -175,33 +198,20 @@ export function ChatView() {
           </div>
         </div>
       ) : selectedCharacter ? (
-        /* Single Character Portrait */
         <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
           <img
             key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
             src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
             alt={selectedCharacter.name}
             className="w-full h-full object-cover object-top transition-opacity duration-300"
-            onLoad={(e) => {
-              console.log('[Expression] Image loaded successfully:', e.currentTarget.src);
-            }}
-            onError={(e) => {
-              // Log detailed error info for debugging
-              console.log('[Expression] Image load FAILED:', {
-                attempted: e.currentTarget.src,
-                emotion: latestEmotion,
-                character: selectedCharacter.avatar,
-              });
-              // Mark this expression as failed so we use fallback next time
+            onError={() => {
               if (latestEmotion) {
                 const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
                 setFailedExpressions((prev) => new Set(prev).add(expressionKey));
               }
             }}
           />
-          {/* Gradient overlay for text readability */}
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
-          {/* Character name and emotion overlay */}
           <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
               {selectedCharacter.name}
@@ -238,7 +248,6 @@ export function ChatView() {
         ) : (
           <div className="py-4">
             {messages.map((message) => {
-              // Get the avatar URL for this message
               const messageAvatar = message.isUser
                 ? undefined
                 : isGroupChatMode && message.characterAvatar
@@ -246,6 +255,10 @@ export function ChatView() {
                   : selectedCharacter
                     ? getAvatarUrl(selectedCharacter.avatar, message.emotion)
                     : undefined;
+
+              const isLastAiMessage = message.id === lastAiMessageId;
+              const showSwipeControl =
+                !isGroupChatMode && isLastAiMessage && !message.isUser && !message.isSystem;
 
               return (
                 <ChatMessage
@@ -256,26 +269,40 @@ export function ChatView() {
                   isSystem={message.isSystem}
                   avatar={messageAvatar}
                   timestamp={message.timestamp}
-                  isEditable={!isGroupChatMode && message.id === lastUserMessageId}
-                  onEdit={(newContent) => {
-                    if (selectedCharacter) {
-                      editMessageAndRegenerate(message.id, newContent, selectedCharacter, availableEmotions);
-                    }
-                  }}
                   disabled={isSending}
+                  swipes={message.swipes}
+                  swipeId={message.swipeId}
+                  showSwipeControl={showSwipeControl}
+                  onSwipeLeft={() => handleSwipeLeft(message.id)}
+                  onSwipeRight={() => handleSwipeRight(message.id)}
+                  onEdit={(newContent) => editMessage(message.id, newContent)}
+                  onEditAndRegenerate={
+                    message.isUser && selectedCharacter && !isGroupChatMode
+                      ? (newContent) =>
+                          editMessageAndRegenerate(
+                            message.id,
+                            newContent,
+                            selectedCharacter,
+                            availableEmotions
+                          )
+                      : undefined
+                  }
+                  onDelete={() => deleteMessage(message.id)}
+                  onRegenerate={
+                    isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
+                  }
                 />
               );
             })}
 
-            {/* Error display */}
             {error && (
               <div className="mx-4 my-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <p className="text-sm text-red-400">{error}</p>
               </div>
             )}
 
-            {/* Typing indicator */}
-            {isSending && (
+            {/* Typing indicator (only before first token) */}
+            {isSending && !isStreaming && (
               <div className="flex gap-3 px-4 py-3">
                 <div className="w-10 h-10 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center">
                   <div className="flex gap-1">
@@ -298,11 +325,26 @@ export function ChatView() {
         )}
       </div>
 
+      {/* Action Bar (regenerate/continue/impersonate/stop) */}
+      {!isGroupChatMode && (
+        <ChatActionBar
+          onRegenerate={handleRegenerate}
+          onContinue={handleContinue}
+          onImpersonate={handleImpersonate}
+          onStop={stopGeneration}
+          isSending={isSending}
+          hasAiMessage={hasAiMessage}
+          disabled={isSending}
+        />
+      )}
+
       {/* Input Area */}
       <ChatInput
         onSend={handleSend}
         disabled={isSending}
         placeholder={isGroupChatMode ? `Message the group...` : `Message ${displayName}...`}
+        prefillText={prefillText}
+        prefillNonce={prefillNonce}
       />
     </div>
   );

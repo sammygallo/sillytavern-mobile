@@ -6,15 +6,28 @@ interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  prefillText?: string;
+  prefillNonce?: number;
 }
 
 export function ChatInput({
   onSend,
   disabled = false,
   placeholder = 'Type a message...',
+  prefillText,
+  prefillNonce,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Handle prefill text (e.g. from impersonate) - nonce lets parent trigger re-prefill
+  useEffect(() => {
+    if (prefillText !== undefined && prefillNonce !== undefined) {
+      setMessage(prefillText);
+      textareaRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillNonce]);
 
   // Auto-resize textarea
   useEffect(() => {
