@@ -24,11 +24,14 @@ export interface ChatMessage {
   is_system: boolean;
   mes: string;
   send_date: number;
+  swipes?: string[];
+  swipe_id?: number;
   extra?: {
     gen_id?: string;
     api?: string;
     model?: string;
   };
+  character_avatar?: string;
 }
 
 export interface Chat {

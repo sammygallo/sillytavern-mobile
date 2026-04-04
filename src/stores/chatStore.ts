@@ -3,7 +3,7 @@ import { api, type CharacterInfo } from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { parseEmotion, stripEmotionTag, type Emotion } from '../utils/emotions';
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   name: string;
   isUser: boolean;
@@ -11,8 +11,9 @@ interface ChatMessage {
   content: string;
   timestamp: number;
   emotion?: Emotion | null;
-  // For group chat - track which character's avatar to use
   characterAvatar?: string;
+  swipes: string[];
+  swipeId: number;
 }
 
 interface ChatFile {
@@ -29,10 +30,8 @@ export interface GroupChatInfo {
   createdAt: number;
 }
 
-// Local storage key for group chat metadata
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
 
-// Load group chats from localStorage
 function loadGroupChatsFromStorage(): GroupChatInfo[] {
   try {
     const stored = localStorage.getItem(GROUP_CHATS_KEY);
@@ -42,7 +41,6 @@ function loadGroupChatsFromStorage(): GroupChatInfo[] {
   }
 }
 
-// Save group chats to localStorage
 function saveGroupChatsToStorage(groupChats: GroupChatInfo[]) {
   localStorage.setItem(GROUP_CHATS_KEY, JSON.stringify(groupChats));
 }
@@ -54,21 +52,34 @@ interface ChatState {
   currentChatFile: string | null;
   isLoading: boolean;
   isSending: boolean;
+  isStreaming: boolean;
   error: string | null;
+  abortController: AbortController | null;
 
-  // Actions
+  // Existing actions
   fetchChatFiles: (avatarUrl: string) => Promise<void>;
   loadChat: (avatarUrl: string, fileName: string) => Promise<void>;
   loadGroupChat: (groupChat: GroupChatInfo) => Promise<void>;
   startNewChat: (character: CharacterInfo) => Promise<void>;
   startNewGroupChat: (characters: CharacterInfo[]) => Promise<void>;
-  addMessage: (message: Omit<ChatMessage, 'id'>) => void;
+  addMessage: (message: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>) => void;
   sendMessage: (content: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   sendGroupMessage: (content: string, characters: CharacterInfo[]) => Promise<void>;
   editMessageAndRegenerate: (messageId: string, newContent: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   clearChat: () => void;
   refreshGroupChats: () => void;
   deleteGroupChat: (fileName: string) => void;
+
+  // New Phase 1 actions
+  stopGeneration: () => void;
+  editMessage: (messageId: string, newContent: string) => void;
+  deleteMessage: (messageId: string) => void;
+  swipeLeft: (messageId: string) => void;
+  swipeRight: (messageId: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
+  regenerateMessage: (character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
+  continueMessage: (character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
+  impersonate: (character: CharacterInfo, availableEmotions?: string[]) => Promise<string>;
+  deleteChat: (avatarUrl: string, fileName: string) => Promise<void>;
 }
 
 let messageIdCounter = 0;
@@ -90,9 +101,8 @@ async function* parseSSEStream(
       const chunk = decoder.decode(value, { stream: true });
       buffer += chunk;
 
-      // Process complete lines (SSE uses \n\n as delimiter, but we split by \n)
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -100,49 +110,28 @@ async function* parseSSEStream(
 
         if (trimmed.startsWith('data: ')) {
           const data = trimmed.slice(6);
-
-          // Skip empty data
           if (!data || data === '[DONE]') continue;
 
           try {
             const json = JSON.parse(data);
-
-            // Handle different response formats from various providers
             const content =
-              // OpenAI streaming format
               json.choices?.[0]?.delta?.content ||
-              // Text completion format
               json.choices?.[0]?.text ||
-              // Claude/Anthropic streaming format
               json.delta?.text ||
-              // Claude content block delta
               (json.type === 'content_block_delta' ? json.delta?.text : null) ||
-              // Simple content field
               json.content ||
-              // Message content array (Claude)
               json.message?.content?.[0]?.text ||
               '';
-
-            if (content) {
-              yield content;
-            }
+            if (content) yield content;
           } catch {
-            // Non-JSON data line, might be raw text - yield it directly
-            if (data.length > 0 && data !== 'undefined') {
-              yield data;
-            }
+            if (data.length > 0 && data !== 'undefined') yield data;
           }
         } else if (!trimmed.startsWith(':') && !trimmed.startsWith('event:')) {
-          // Not a comment or event line - might be raw text response
-          // Some backends return plain text without SSE formatting
-          if (trimmed.length > 0) {
-            yield trimmed;
-          }
+          if (trimmed.length > 0) yield trimmed;
         }
       }
     }
 
-    // Process any remaining buffer content
     if (buffer.trim()) {
       const trimmed = buffer.trim();
       if (trimmed.startsWith('data: ')) {
@@ -174,7 +163,6 @@ function buildConversationContext(
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
-  // Add character system prompt
   const systemPrompt = [
     character.description && `Description: ${character.description}`,
     character.personality && `Personality: ${character.personality}`,
@@ -183,7 +171,6 @@ function buildConversationContext(
     .filter(Boolean)
     .join('\n\n');
 
-  // Emotion tag instruction - use available emotions if provided, otherwise give guidance
   const emotionList = availableEmotions && availableEmotions.length > 0
     ? availableEmotions.join(', ')
     : 'neutral (or any emotion that fits the moment)';
@@ -209,7 +196,6 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     });
   }
 
-  // Add conversation history (last 20 messages to avoid token limits)
   const recentMessages = messages.slice(-20);
   for (const msg of recentMessages) {
     if (msg.isSystem) continue;
@@ -230,7 +216,6 @@ function buildGroupConversationContext(
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
-  // Build character descriptions for all participants
   const characterDescriptions = characters.map((char) => {
     const details = [
       char.description && `Description: ${char.description}`,
@@ -239,7 +224,6 @@ function buildGroupConversationContext(
     return `- ${char.name}: ${details || 'A character in the conversation'}`;
   }).join('\n');
 
-  // System prompt for group chat
   const systemPrompt = `This is a group chat with multiple characters. You are playing ${currentCharacter.name}.
 
 Characters in this conversation:
@@ -255,16 +239,12 @@ IMPORTANT:
 
   context.push({ role: 'system', content: systemPrompt });
 
-  // Add conversation history with character names for context
-  const recentMessages = messages.slice(-30); // More context for group chats
+  const recentMessages = messages.slice(-30);
   for (const msg of recentMessages) {
     if (msg.isSystem) continue;
-
-    // For group chats, include the speaker's name in the content
     const contentWithName = msg.isUser
       ? msg.content
       : `[${msg.name}]: ${msg.content}`;
-
     context.push({
       role: msg.isUser ? 'user' : 'assistant',
       content: contentWithName,
@@ -274,6 +254,105 @@ IMPORTANT:
   return context;
 }
 
+// Helper: get provider/model with auto-switch
+function getProviderAndModel(): { provider: string; model: string } {
+  const { activeProvider, activeModel, secrets } = useSettingsStore.getState();
+
+  let provider = activeProvider;
+  let model = activeModel;
+
+  if (!provider || provider === 'openai') {
+    const hasOpenAI = Array.isArray(secrets['api_key_openai']) && secrets['api_key_openai'].length > 0;
+    const hasClaude = Array.isArray(secrets['api_key_claude']) && secrets['api_key_claude'].length > 0;
+    if (!hasOpenAI && hasClaude) {
+      provider = 'claude';
+      model = 'claude-sonnet-4-20250514';
+      useSettingsStore.setState({ activeProvider: provider, activeModel: model });
+    }
+  }
+
+  return { provider, model };
+}
+
+// Helper: save chat to backend
+async function saveChatToBackend(
+  messages: ChatMessage[],
+  character: CharacterInfo,
+  currentChatFile: string | null,
+  isGroupChat?: boolean,
+  groupCharacters?: CharacterInfo[]
+) {
+  if (!currentChatFile) return;
+
+  const chatData = [
+    {
+      user_name: 'You',
+      character_name: isGroupChat && groupCharacters
+        ? groupCharacters.map(c => c.name).join(', ')
+        : character.name,
+      create_date: new Date().toISOString(),
+      ...(isGroupChat ? { is_group_chat: true } : {}),
+    },
+    ...messages.map((msg) => ({
+      name: msg.name,
+      is_user: msg.isUser,
+      is_system: msg.isSystem,
+      mes: msg.content,
+      send_date: msg.timestamp,
+      swipes: msg.swipes,
+      swipe_id: msg.swipeId,
+      ...(msg.characterAvatar ? { character_avatar: msg.characterAvatar } : {}),
+    })),
+  ];
+
+  const avatarUrl = isGroupChat && groupCharacters
+    ? groupCharacters[0].avatar
+    : character.avatar;
+
+  try {
+    await api.saveChat(avatarUrl, currentChatFile, chatData);
+  } catch (err) {
+    console.error('[Chat] Failed to save:', err);
+  }
+}
+
+// Helper: create a message with swipe defaults
+function createMessage(data: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>): ChatMessage {
+  return {
+    ...data,
+    id: generateId(),
+    swipes: [data.content],
+    swipeId: 0,
+  };
+}
+
+// Helper: normalize loaded messages to always have swipes
+function normalizeMessage(msg: {
+  name: string;
+  is_user: boolean;
+  is_system: boolean;
+  mes: string;
+  send_date: number;
+  swipes?: string[];
+  swipe_id?: number;
+  character_avatar?: string;
+}): ChatMessage {
+  const content = msg.swipes && msg.swipe_id !== undefined
+    ? msg.swipes[msg.swipe_id] ?? msg.mes
+    : msg.mes;
+  return {
+    id: generateId(),
+    name: msg.name,
+    isUser: msg.is_user,
+    isSystem: msg.is_system,
+    content,
+    timestamp: msg.send_date,
+    swipes: msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.mes],
+    swipeId: msg.swipe_id ?? 0,
+    characterAvatar: msg.character_avatar,
+  };
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   chatFiles: [],
@@ -281,7 +360,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentChatFile: null,
   isLoading: false,
   isSending: false,
+  isStreaming: false,
   error: null,
+  abortController: null,
 
   refreshGroupChats: () => {
     set({ groupChats: loadGroupChatsFromStorage() });
@@ -298,14 +379,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const chats = await api.getChats(avatarUrl);
-      console.log('[Chat] Fetched chat files for', avatarUrl, ':', chats);
       const chatFiles: ChatFile[] = chats.map((chat) => ({
-        // Strip .jsonl extension - backend adds it when loading/saving
         fileName: chat.file_name?.replace(/\.jsonl$/, '') || chat.file_name,
         fileSize: chat.file_size,
         lastMessage: chat.last_mes,
       }));
-      console.log('[Chat] Processed chat files:', chatFiles);
       set({ chatFiles, isLoading: false });
     } catch (error) {
       set({
@@ -316,19 +394,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   loadChat: async (avatarUrl: string, fileName: string) => {
-    console.log('[Chat] Loading chat:', avatarUrl, fileName);
     set({ isLoading: true, error: null, currentChatFile: fileName });
     try {
       const rawMessages = await api.getChatMessages(avatarUrl, fileName);
-      console.log('[Chat] Loaded messages:', rawMessages?.length || 0);
-      const messages: ChatMessage[] = rawMessages.map((msg) => ({
-        id: generateId(),
-        name: msg.name,
-        isUser: msg.is_user,
-        isSystem: msg.is_system,
-        content: msg.mes,
-        timestamp: msg.send_date,
-      }));
+      const messages = rawMessages.map(normalizeMessage);
       set({ messages, isLoading: false });
     } catch (error) {
       set({
@@ -341,87 +410,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
   startNewChat: async (character: CharacterInfo) => {
     const messages: ChatMessage[] = [];
 
-    // Add character's first message if available
     if (character.first_mes) {
-      messages.push({
-        id: generateId(),
+      messages.push(createMessage({
         name: character.name,
         isUser: false,
         isSystem: false,
         content: character.first_mes,
         timestamp: Date.now(),
         characterAvatar: character.avatar,
-      });
+      }));
     }
 
     const fileName = await api.createChat(character.name);
-    console.log('[Chat] Starting new chat, fileName:', fileName);
-    set({
-      messages,
-      currentChatFile: fileName,
-      error: null,
-    });
-  },
-
-  loadGroupChat: async (groupChat: GroupChatInfo) => {
-    console.log('[GroupChat] Loading group chat:', groupChat.fileName);
-    set({ isLoading: true, error: null, currentChatFile: groupChat.fileName });
-    try {
-      // Load from first character's avatar (where it's stored)
-      const rawMessages = await api.getChatMessages(groupChat.characterAvatars[0], groupChat.fileName);
-      console.log('[GroupChat] Loaded messages:', rawMessages?.length || 0);
-      const messages: ChatMessage[] = rawMessages.map((msg) => ({
-        id: generateId(),
-        name: msg.name,
-        isUser: msg.is_user,
-        isSystem: msg.is_system,
-        content: msg.mes,
-        timestamp: msg.send_date,
-        characterAvatar: msg.character_avatar,
-      }));
-      set({ messages, isLoading: false });
-    } catch (error) {
-      set({
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to load group chat',
-      });
-    }
+    set({ messages, currentChatFile: fileName, error: null });
   },
 
   startNewGroupChat: async (characters: CharacterInfo[]) => {
     const messages: ChatMessage[] = [];
 
-    // Add a system message about the group chat
-    messages.push({
-      id: generateId(),
+    messages.push(createMessage({
       name: 'System',
       isUser: false,
       isSystem: true,
       content: `Group chat started with ${characters.map(c => c.name).join(', ')}`,
       timestamp: Date.now(),
-    });
+    }));
 
-    // Add first messages from each character that has one
     for (const character of characters) {
       if (character.first_mes) {
-        messages.push({
-          id: generateId(),
+        messages.push(createMessage({
           name: character.name,
           isUser: false,
           isSystem: false,
           content: character.first_mes,
-          timestamp: Date.now() + characters.indexOf(character), // Slight offset for ordering
+          timestamp: Date.now() + characters.indexOf(character),
           characterAvatar: character.avatar,
-        });
+        }));
       }
     }
 
-    // Create chat file with combined character names
     const groupName = `Group_${characters.map(c => c.name).join('_')}`;
     const fileName = await api.createChat(groupName);
-    console.log('[Chat] Starting new group chat, fileName:', fileName);
 
-    // Save group chat metadata to localStorage
     const { groupChats } = get();
     const newGroupChat: GroupChatInfo = {
       fileName,
@@ -442,17 +472,255 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addMessage: (message) => {
-    const newMessage: ChatMessage = {
-      ...message,
-      id: generateId(),
-    };
+    const newMessage = createMessage(message);
     set((state) => ({ messages: [...state.messages, newMessage] }));
   },
 
+  // ---- Stop Generation ----
+  stopGeneration: () => {
+    const { abortController } = get();
+    if (abortController) {
+      abortController.abort();
+    }
+    set({ isSending: false, isStreaming: false, abortController: null });
+  },
+
+  // ---- Edit Message (save only, no regeneration) ----
+  editMessage: (messageId: string, newContent: string) => {
+    set((state) => ({
+      messages: state.messages.map((msg) => {
+        if (msg.id !== messageId) return msg;
+        const newSwipes = [...msg.swipes];
+        newSwipes[msg.swipeId] = newContent;
+        return { ...msg, content: newContent, swipes: newSwipes };
+      }),
+    }));
+  },
+
+  // ---- Delete Message ----
+  deleteMessage: (messageId: string) => {
+    set((state) => ({
+      messages: state.messages.filter((msg) => msg.id !== messageId),
+    }));
+  },
+
+  // ---- Swipe Left (previous swipe) ----
+  swipeLeft: (messageId: string) => {
+    set((state) => ({
+      messages: state.messages.map((msg) => {
+        if (msg.id !== messageId || msg.swipeId <= 0) return msg;
+        const newSwipeId = msg.swipeId - 1;
+        return { ...msg, swipeId: newSwipeId, content: msg.swipes[newSwipeId] };
+      }),
+    }));
+  },
+
+  // ---- Swipe Right (next swipe, or generate new if at end) ----
+  swipeRight: async (messageId: string, character: CharacterInfo, availableEmotions?: string[]) => {
+    const { messages } = get();
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+
+    // If there's a next swipe, just navigate to it
+    if (msg.swipeId < msg.swipes.length - 1) {
+      set((state) => ({
+        messages: state.messages.map((m) => {
+          if (m.id !== messageId) return m;
+          const newSwipeId = m.swipeId + 1;
+          return { ...m, swipeId: newSwipeId, content: m.swipes[newSwipeId] };
+        }),
+      }));
+      return;
+    }
+
+    // Generate a new swipe
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
+
+    try {
+      // Build context from messages up to (but not including) this AI message
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      const contextMessages = messages.slice(0, msgIndex);
+      const context = buildConversationContext(contextMessages, character, availableEmotions);
+      const { provider, model } = getProviderAndModel();
+
+      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      if (!stream) return;
+
+      // Add new empty swipe
+      const newSwipeIndex = msg.swipes.length;
+      set((state) => ({
+        messages: state.messages.map((m) => {
+          if (m.id !== messageId) return m;
+          return { ...m, swipes: [...m.swipes, ''], swipeId: newSwipeIndex, content: '' };
+        }),
+      }));
+
+      let responseText = '';
+      for await (const token of parseSSEStream(stream)) {
+        if (!get().isSending) break; // Aborted
+        responseText += token;
+        if (!get().isStreaming) set({ isStreaming: true });
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== messageId) return m;
+            const newSwipes = [...m.swipes];
+            newSwipes[newSwipeIndex] = responseText;
+            return { ...m, content: responseText, swipes: newSwipes };
+          }),
+        }));
+      }
+
+      const emotion = parseEmotion(responseText);
+      const cleanedContent = stripEmotionTag(responseText);
+
+      set((state) => ({
+        messages: state.messages.map((m) => {
+          if (m.id !== messageId) return m;
+          const newSwipes = [...m.swipes];
+          newSwipes[newSwipeIndex] = cleanedContent;
+          return { ...m, content: cleanedContent, emotion, swipes: newSwipes };
+        }),
+      }));
+
+      // Save
+      const { currentChatFile } = get();
+      await saveChatToBackend(get().messages, character, currentChatFile);
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to generate swipe' });
+      }
+    } finally {
+      set({ isSending: false, isStreaming: false, abortController: null });
+    }
+  },
+
+  // ---- Regenerate (create new swipe on last AI message) ----
+  regenerateMessage: async (character: CharacterInfo, availableEmotions?: string[]) => {
+    const { messages } = get();
+    // Find last AI message
+    const lastAiMsg = [...messages].reverse().find((m) => !m.isUser && !m.isSystem);
+    if (!lastAiMsg) return;
+    await get().swipeRight(lastAiMsg.id, character, availableEmotions);
+  },
+
+  // ---- Continue (extend last AI message) ----
+  continueMessage: async (character: CharacterInfo, availableEmotions?: string[]) => {
+    const { messages } = get();
+    const lastAiMsg = [...messages].reverse().find((m) => !m.isUser && !m.isSystem);
+    if (!lastAiMsg) return;
+
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
+
+    try {
+      // Build context including the current AI message
+      const context = buildConversationContext(messages, character, availableEmotions);
+      // Add a system instruction to continue
+      context.push({
+        role: 'system',
+        content: 'Continue your previous response naturally. Do not repeat what you already said. Pick up exactly where you left off.',
+      });
+
+      const { provider, model } = getProviderAndModel();
+      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      if (!stream) return;
+
+      const existingContent = lastAiMsg.content;
+      let newTokens = '';
+
+      for await (const token of parseSSEStream(stream)) {
+        if (!get().isSending) break;
+        newTokens += token;
+        if (!get().isStreaming) set({ isStreaming: true });
+        const fullContent = existingContent + newTokens;
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (m.id !== lastAiMsg.id) return m;
+            const newSwipes = [...m.swipes];
+            newSwipes[m.swipeId] = fullContent;
+            return { ...m, content: fullContent, swipes: newSwipes };
+          }),
+        }));
+      }
+
+      // Strip any new emotion tags from the continuation
+      const fullText = existingContent + newTokens;
+      const cleanedContent = stripEmotionTag(fullText);
+
+      set((state) => ({
+        messages: state.messages.map((m) => {
+          if (m.id !== lastAiMsg.id) return m;
+          const newSwipes = [...m.swipes];
+          newSwipes[m.swipeId] = cleanedContent;
+          return { ...m, content: cleanedContent, swipes: newSwipes };
+        }),
+      }));
+
+      const { currentChatFile } = get();
+      await saveChatToBackend(get().messages, character, currentChatFile);
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to continue message' });
+      }
+    } finally {
+      set({ isSending: false, isStreaming: false, abortController: null });
+    }
+  },
+
+  // ---- Impersonate (generate as user, return text without sending) ----
+  impersonate: async (character: CharacterInfo, availableEmotions?: string[]): Promise<string> => {
+    const { messages } = get();
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
+
+    try {
+      const context = buildConversationContext(messages, character, availableEmotions);
+      // Replace the system prompt's last line to instruct impersonation
+      context.push({
+        role: 'system',
+        content: `Now write the next message as the user (You). Write from a first-person perspective as the user would. Do NOT include an emotion tag. Do NOT write as ${character.name}.`,
+      });
+
+      const { provider, model } = getProviderAndModel();
+      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      if (!stream) return '';
+
+      let responseText = '';
+      for await (const token of parseSSEStream(stream)) {
+        if (!get().isSending) break;
+        responseText += token;
+        if (!get().isStreaming) set({ isStreaming: true });
+      }
+
+      return stripEmotionTag(responseText);
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to impersonate' });
+      }
+      return '';
+    } finally {
+      set({ isSending: false, isStreaming: false, abortController: null });
+    }
+  },
+
+  // ---- Delete Chat File ----
+  deleteChat: async (avatarUrl: string, fileName: string) => {
+    try {
+      // Save an empty chat to effectively delete it
+      await api.saveChat(avatarUrl, fileName, []);
+      // Refresh chat list
+      const { fetchChatFiles } = get();
+      await fetchChatFiles(avatarUrl);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to delete chat' });
+    }
+  },
+
+  // ---- Send Message (updated with abort support) ----
   sendMessage: async (content: string, character: CharacterInfo, availableEmotions?: string[]) => {
     const { addMessage } = get();
 
-    // Add user message
     addMessage({
       name: 'You',
       isUser: true,
@@ -461,41 +729,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: Date.now(),
     });
 
-    set({ isSending: true, error: null });
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      // Build conversation context with available emotions
       const updatedMessages = get().messages;
       const context = buildConversationContext(updatedMessages, character, availableEmotions);
+      const { provider, model } = getProviderAndModel();
 
-      // Get AI provider settings
-      const { activeProvider, activeModel } = useSettingsStore.getState();
-
-      // Debug: log what provider we're using
-      console.log('[Chat] Using provider:', activeProvider, 'model:', activeModel);
-
-      if (!activeProvider || activeProvider === 'openai') {
-        // Check if we actually have the provider configured
-        const { secrets } = useSettingsStore.getState();
-        const hasOpenAI = Array.isArray(secrets['api_key_openai']) && secrets['api_key_openai'].length > 0;
-        const hasClaude = Array.isArray(secrets['api_key_claude']) && secrets['api_key_claude'].length > 0;
-
-        if (!hasOpenAI && hasClaude) {
-          // User has Claude but not OpenAI, auto-switch
-          console.log('[Chat] Auto-switching to Claude since OpenAI is not configured');
-          useSettingsStore.setState({ activeProvider: 'claude', activeModel: 'claude-sonnet-4-20250514' });
-        }
-      }
-
-      // Re-get the settings in case we auto-switched
-      const finalProvider = useSettingsStore.getState().activeProvider;
-      const finalModel = useSettingsStore.getState().activeModel;
-
-      // Call API
-      const stream = await api.generateMessage(context, character.name, finalProvider, finalModel);
+      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
 
       if (stream) {
-        // Add initial AI message placeholder
         const aiMessageId = generateId();
         set((state) => ({
           messages: [
@@ -507,85 +751,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
               isSystem: false,
               content: '',
               timestamp: Date.now(),
+              swipes: [''],
+              swipeId: 0,
             },
           ],
         }));
 
-        // Stream the response using SSE parser
         let responseText = '';
         for await (const token of parseSSEStream(stream)) {
+          if (!get().isSending) break;
           responseText += token;
+          if (!get().isStreaming) set({ isStreaming: true });
           set((state) => ({
             messages: state.messages.map((msg) =>
-              msg.id === aiMessageId ? { ...msg, content: responseText } : msg
+              msg.id === aiMessageId ? { ...msg, content: responseText, swipes: [responseText] } : msg
             ),
           }));
         }
 
-        // Parse emotion and strip tag from final response
         const emotion = parseEmotion(responseText);
         const cleanedContent = stripEmotionTag(responseText);
 
-        console.log('[Chat] Raw response (first 150 chars):', responseText.substring(0, 150));
-        console.log('[Chat] Parsed emotion:', emotion);
-
-        // Update message with parsed emotion and cleaned content
         set((state) => ({
           messages: state.messages.map((msg) =>
             msg.id === aiMessageId
-              ? { ...msg, content: cleanedContent, emotion }
+              ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
               : msg
           ),
         }));
 
-        // Save chat to backend
         const { currentChatFile } = get();
-        console.log('[Chat] Saving chat, currentChatFile:', currentChatFile);
-
-        if (currentChatFile) {
-          const allMessages = get().messages;
-          console.log('[Chat] Messages to save:', allMessages.length);
-
-          // Build chat data with header as first entry
-          const chatData = [
-            // Header/metadata (required first entry)
-            {
-              user_name: 'You',
-              character_name: character.name,
-              create_date: new Date().toISOString(),
-            },
-            // Messages
-            ...allMessages.map((msg) => ({
-              name: msg.name,
-              is_user: msg.isUser,
-              is_system: msg.isSystem,
-              mes: msg.content,
-              send_date: msg.timestamp,
-            })),
-          ];
-
-          console.log('[Chat] Saving to:', character.avatar, currentChatFile);
-          try {
-            await api.saveChat(character.avatar, currentChatFile, chatData);
-            console.log('[Chat] Save successful');
-          } catch (err) {
-            console.error('[Chat] Failed to save:', err);
-          }
-        } else {
-          console.warn('[Chat] No currentChatFile set, cannot save');
-        }
+        await saveChatToBackend(get().messages, character, currentChatFile);
       }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to send message' });
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to send message' });
+      }
     } finally {
-      set({ isSending: false });
+      set({ isSending: false, isStreaming: false, abortController: null });
     }
   },
 
+  // ---- Send Group Message (updated with abort support) ----
   sendGroupMessage: async (content: string, characters: CharacterInfo[]) => {
     const { addMessage } = get();
 
-    // Add user message
     addMessage({
       name: 'You',
       isUser: true,
@@ -594,40 +804,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: Date.now(),
     });
 
-    set({ isSending: true, error: null });
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      // Get AI provider settings
-      const { activeProvider, activeModel, secrets } = useSettingsStore.getState();
+      const { provider, model } = getProviderAndModel();
 
-      let finalProvider = activeProvider;
-      let finalModel = activeModel;
-
-      // Auto-switch provider if needed
-      if (!activeProvider || activeProvider === 'openai') {
-        const hasOpenAI = Array.isArray(secrets['api_key_openai']) && secrets['api_key_openai'].length > 0;
-        const hasClaude = Array.isArray(secrets['api_key_claude']) && secrets['api_key_claude'].length > 0;
-
-        if (!hasOpenAI && hasClaude) {
-          finalProvider = 'claude';
-          finalModel = 'claude-sonnet-4-20250514';
-          useSettingsStore.setState({ activeProvider: finalProvider, activeModel: finalModel });
-        }
-      }
-
-      // Generate response from each character in sequence
       for (const character of characters) {
+        if (!get().isSending) break; // Check if aborted between characters
+
         const updatedMessages = get().messages;
         const context = buildGroupConversationContext(updatedMessages, characters, character);
 
-        console.log(`[GroupChat] Generating response for ${character.name}`);
-
-        const stream = await api.generateMessage(context, character.name, finalProvider, finalModel);
+        const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
 
         if (stream) {
-          // Add AI message placeholder for this character
           const aiMessageId = generateId();
           set((state) => ({
+            isStreaming: false,
             messages: [
               ...state.messages,
               {
@@ -638,29 +832,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 content: '',
                 timestamp: Date.now(),
                 characterAvatar: character.avatar,
+                swipes: [''],
+                swipeId: 0,
               },
             ],
           }));
 
-          // Stream the response
           let responseText = '';
           for await (const token of parseSSEStream(stream)) {
+            if (!get().isSending) break;
             responseText += token;
+            if (!get().isStreaming) set({ isStreaming: true });
             set((state) => ({
               messages: state.messages.map((msg) =>
-                msg.id === aiMessageId ? { ...msg, content: responseText } : msg
+                msg.id === aiMessageId ? { ...msg, content: responseText, swipes: [responseText] } : msg
               ),
             }));
           }
 
-          // Parse emotion and strip tag
           const emotion = parseEmotion(responseText);
           const cleanedContent = stripEmotionTag(responseText);
 
           set((state) => ({
             messages: state.messages.map((msg) =>
               msg.id === aiMessageId
-                ? { ...msg, content: cleanedContent, emotion }
+                ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
                 : msg
             ),
           }));
@@ -669,80 +865,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Save group chat
       const { currentChatFile } = get();
-      if (currentChatFile) {
-        const allMessages = get().messages;
-        const chatData = [
-          {
-            user_name: 'You',
-            character_name: characters.map(c => c.name).join(', '),
-            create_date: new Date().toISOString(),
-            is_group_chat: true,
-          },
-          ...allMessages.map((msg) => ({
-            name: msg.name,
-            is_user: msg.isUser,
-            is_system: msg.isSystem,
-            mes: msg.content,
-            send_date: msg.timestamp,
-            character_avatar: msg.characterAvatar,
-          })),
-        ];
-
-        try {
-          // Use first character's avatar for saving (group chats need special handling)
-          await api.saveChat(characters[0].avatar, currentChatFile, chatData);
-        } catch (err) {
-          console.error('[GroupChat] Failed to save:', err);
-        }
+      if (currentChatFile && characters.length > 0) {
+        await saveChatToBackend(get().messages, characters[0], currentChatFile, true, characters);
       }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to send group message' });
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to send group message' });
+      }
     } finally {
-      set({ isSending: false });
+      set({ isSending: false, isStreaming: false, abortController: null });
     }
   },
 
+  // ---- Edit and Regenerate (updated) ----
   editMessageAndRegenerate: async (messageId: string, newContent: string, character: CharacterInfo, availableEmotions?: string[]) => {
     const { messages } = get();
 
-    // Find the message index
     const messageIndex = messages.findIndex((m) => m.id === messageId);
     if (messageIndex === -1) return;
 
     // Update the message and remove all messages after it
     const updatedMessages = messages.slice(0, messageIndex + 1).map((msg) =>
-      msg.id === messageId ? { ...msg, content: newContent } : msg
+      msg.id === messageId ? { ...msg, content: newContent, swipes: [newContent], swipeId: 0 } : msg
     );
 
-    set({ messages: updatedMessages, isSending: true, error: null });
+    const abortController = new AbortController();
+    set({ messages: updatedMessages, isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      // Build conversation context with the edited message and available emotions
       const context = buildConversationContext(updatedMessages, character, availableEmotions);
+      const { provider, model } = getProviderAndModel();
 
-      // Get AI provider settings
-      const { activeProvider, activeModel, secrets } = useSettingsStore.getState();
-
-      let finalProvider = activeProvider;
-      let finalModel = activeModel;
-
-      // Auto-switch provider if needed
-      if (!activeProvider || activeProvider === 'openai') {
-        const hasOpenAI = Array.isArray(secrets['api_key_openai']) && secrets['api_key_openai'].length > 0;
-        const hasClaude = Array.isArray(secrets['api_key_claude']) && secrets['api_key_claude'].length > 0;
-
-        if (!hasOpenAI && hasClaude) {
-          finalProvider = 'claude';
-          finalModel = 'claude-sonnet-4-20250514';
-          useSettingsStore.setState({ activeProvider: finalProvider, activeModel: finalModel });
-        }
-      }
-
-      // Generate new response
-      const stream = await api.generateMessage(context, character.name, finalProvider, finalModel);
+      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
 
       if (stream) {
-        // Add initial AI message placeholder
         const aiMessageId = generateId();
         set((state) => ({
           messages: [
@@ -754,58 +910,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
               isSystem: false,
               content: '',
               timestamp: Date.now(),
+              swipes: [''],
+              swipeId: 0,
             },
           ],
         }));
 
-        // Stream the response
         let responseText = '';
         for await (const token of parseSSEStream(stream)) {
+          if (!get().isSending) break;
           responseText += token;
+          if (!get().isStreaming) set({ isStreaming: true });
           set((state) => ({
             messages: state.messages.map((msg) =>
-              msg.id === aiMessageId ? { ...msg, content: responseText } : msg
+              msg.id === aiMessageId ? { ...msg, content: responseText, swipes: [responseText] } : msg
             ),
           }));
         }
 
-        // Parse emotion and strip tag
         const emotion = parseEmotion(responseText);
         const cleanedContent = stripEmotionTag(responseText);
 
         set((state) => ({
           messages: state.messages.map((msg) =>
             msg.id === aiMessageId
-              ? { ...msg, content: cleanedContent, emotion }
+              ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
               : msg
           ),
         }));
 
-        // Save chat
         const { currentChatFile } = get();
-        if (currentChatFile) {
-          const allMessages = get().messages;
-          const chatData = [
-            {
-              user_name: 'You',
-              character_name: character.name,
-              create_date: new Date().toISOString(),
-            },
-            ...allMessages.map((msg) => ({
-              name: msg.name,
-              is_user: msg.isUser,
-              is_system: msg.isSystem,
-              mes: msg.content,
-              send_date: msg.timestamp,
-            })),
-          ];
-          await api.saveChat(character.avatar, currentChatFile, chatData);
-        }
+        await saveChatToBackend(get().messages, character, currentChatFile);
       }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to regenerate response' });
+      if ((error as Error).name !== 'AbortError') {
+        set({ error: error instanceof Error ? error.message : 'Failed to regenerate response' });
+      }
     } finally {
-      set({ isSending: false });
+      set({ isSending: false, isStreaming: false, abortController: null });
     }
   },
 
