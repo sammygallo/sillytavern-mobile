@@ -309,7 +309,8 @@ export const api = {
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
     _characterName: string,
     provider?: string,
-    model?: string
+    model?: string,
+    signal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array> | null> {
     const token = await getCsrfToken();
 
@@ -320,6 +321,7 @@ export const api = {
         'X-CSRF-Token': token,
       },
       credentials: 'include',
+      signal,
       body: JSON.stringify({
         messages,
         stream: true,

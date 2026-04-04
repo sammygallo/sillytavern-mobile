@@ -5,3 +5,4 @@ export { Modal } from './Modal';
 export { TextArea } from './TextArea';
 export { ImageUpload } from './ImageUpload';
 export { ExpressionUpload } from './ExpressionUpload';
+export { ConfirmDialog } from './ConfirmDialog';
