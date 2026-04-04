@@ -6,6 +6,8 @@ import { useCharacterStore } from '../../stores/characterStore';
 import { Avatar, Button } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
 import { ChatHistoryPanel } from '../chat/ChatHistoryPanel';
+import { PersonaSelector, PersonaManager } from '../persona';
+import type { CharacterInfo } from '../../api/client';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -14,9 +16,25 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuthStore();
-  const { selectedCharacter, isGroupChatMode } = useCharacterStore();
+  const { selectedCharacter, isGroupChatMode, fetchCharacters } = useCharacterStore();
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  const [convertToPersonaData, setConvertToPersonaData] = useState<
+    { name: string; description: string } | null
+  >(null);
+
+  const handleConvertToPersona = (character: CharacterInfo) => {
+    const desc =
+      character.description ||
+      character.data?.description ||
+      '';
+    setConvertToPersonaData({ name: character.name, description: desc });
+  };
+
+  const handleDuplicated = async () => {
+    // Refresh character list to show the new duplicate
+    await fetchCharacters();
+  };
 
   const getAvatarUrl = (avatar: string) => `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
 
@@ -61,7 +79,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       </div>
 
       {/* User Menu */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {selectedCharacter && !isGroupChatMode && (
           <Button
             variant="ghost"
@@ -73,6 +91,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             <History size={20} />
           </Button>
         )}
+        <PersonaSelector />
         <Button
           variant="ghost"
           size="sm"
@@ -92,7 +111,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           <LogOut size={20} />
         </Button>
         {currentUser && (
-          <Avatar size="sm" alt={currentUser.name} />
+          <Avatar size="sm" alt={currentUser.name} className="hidden lg:flex" />
         )}
       </div>
 
@@ -102,6 +121,8 @@ export function Header({ onMenuClick }: HeaderProps) {
           isOpen={showEditModal}
           onClose={() => setShowEditModal(false)}
           character={selectedCharacter}
+          onDuplicated={handleDuplicated}
+          onConvertToPersona={handleConvertToPersona}
         />
       )}
 
@@ -110,6 +131,15 @@ export function Header({ onMenuClick }: HeaderProps) {
         isOpen={showHistoryPanel}
         onClose={() => setShowHistoryPanel(false)}
       />
+
+      {/* Persona Manager (opened from convert-to-persona) */}
+      {convertToPersonaData && (
+        <PersonaManager
+          isOpen={!!convertToPersonaData}
+          onClose={() => setConvertToPersonaData(null)}
+          initialPersona={convertToPersonaData}
+        />
+      )}
     </header>
   );
 }

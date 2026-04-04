@@ -12,6 +12,25 @@ import {
   type CharacterExportData,
 } from '../utils/characterCard';
 
+const FAVORITES_KEY = 'sillytavern_character_favorites';
+
+function loadFavorites(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return new Set();
+    const arr: string[] = JSON.parse(raw);
+    return new Set(arr);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFavorites(favorites: Set<string>) {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(favorites)));
+}
+
+export type CharacterSortMode = 'name' | 'date_added' | 'date_last_chat' | 'recent_chat';
+
 interface CharacterState {
   characters: CharacterInfo[];
   selectedCharacter: CharacterInfo | null;
@@ -23,7 +42,14 @@ interface CharacterState {
   isEditing: boolean;
   isImporting: boolean;
   isExporting: boolean;
+  isDuplicating: boolean;
   error: string | null;
+  // Organization state
+  favorites: Set<string>;
+  searchQuery: string;
+  selectedTags: Set<string>;
+  showFavoritesOnly: boolean;
+  sortMode: CharacterSortMode;
 
   // Actions
   fetchCharacters: () => Promise<void>;
@@ -31,6 +57,7 @@ interface CharacterState {
   createCharacter: (data: CharacterCreateData, avatarFile?: File) => Promise<string | null>;
   updateCharacter: (data: CharacterEditData, avatarFile?: File) => Promise<boolean>;
   deleteCharacter: (avatar: string) => Promise<boolean>;
+  duplicateCharacter: (avatar: string) => Promise<string | null>;
   clearSelection: () => void;
   clearError: () => void;
   // Group chat actions
@@ -43,6 +70,16 @@ interface CharacterState {
   importCharacter: (file: File) => Promise<{ data: Partial<CharacterInfo>; avatarFile?: File } | null>;
   exportCharacterAsPNG: (character: CharacterInfo) => Promise<void>;
   exportCharacterAsJSON: (character: CharacterInfo) => void;
+  // Organization actions
+  toggleFavorite: (avatar: string) => void;
+  isFavorite: (avatar: string) => boolean;
+  setSearchQuery: (q: string) => void;
+  toggleTagFilter: (tag: string) => void;
+  clearTagFilters: () => void;
+  setShowFavoritesOnly: (show: boolean) => void;
+  setSortMode: (mode: CharacterSortMode) => void;
+  getAllTags: () => string[];
+  getFilteredCharacters: () => CharacterInfo[];
 }
 
 export const useCharacterStore = create<CharacterState>((set, get) => ({
@@ -55,7 +92,13 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   isEditing: false,
   isImporting: false,
   isExporting: false,
+  isDuplicating: false,
   error: null,
+  favorites: loadFavorites(),
+  searchQuery: '',
+  selectedTags: new Set<string>(),
+  showFavoritesOnly: false,
+  sortMode: 'name' as CharacterSortMode,
 
   fetchCharacters: async () => {
     set({ isLoading: true, error: null });
@@ -150,9 +193,16 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     try {
       await api.deleteCharacter(avatar);
       // Clear selection if deleting the selected character
-      const { selectedCharacter } = get();
+      const { selectedCharacter, favorites } = get();
       if (selectedCharacter?.avatar === avatar) {
         set({ selectedCharacter: null });
+      }
+      // Also remove from favorites
+      if (favorites.has(avatar)) {
+        const newFavorites = new Set(favorites);
+        newFavorites.delete(avatar);
+        saveFavorites(newFavorites);
+        set({ favorites: newFavorites });
       }
       // Refresh the character list
       await get().fetchCharacters();
@@ -166,7 +216,143 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     }
   },
 
+  duplicateCharacter: async (avatar: string) => {
+    set({ isDuplicating: true, error: null });
+    try {
+      const newAvatar = await api.duplicateCharacter(avatar);
+      // Refresh list to show the new character
+      await get().fetchCharacters();
+      set({ isDuplicating: false });
+      return newAvatar;
+    } catch (error) {
+      set({
+        isDuplicating: false,
+        error: error instanceof Error ? error.message : 'Failed to duplicate character',
+      });
+      return null;
+    }
+  },
+
   clearError: () => set({ error: null }),
+
+  // ---- Organization actions ----
+  toggleFavorite: (avatar: string) => {
+    const { favorites } = get();
+    const newFavorites = new Set(favorites);
+    if (newFavorites.has(avatar)) {
+      newFavorites.delete(avatar);
+    } else {
+      newFavorites.add(avatar);
+    }
+    saveFavorites(newFavorites);
+    set({ favorites: newFavorites });
+  },
+
+  isFavorite: (avatar: string) => get().favorites.has(avatar),
+
+  setSearchQuery: (q: string) => set({ searchQuery: q }),
+
+  toggleTagFilter: (tag: string) => {
+    const { selectedTags } = get();
+    const newTags = new Set(selectedTags);
+    if (newTags.has(tag)) {
+      newTags.delete(tag);
+    } else {
+      newTags.add(tag);
+    }
+    set({ selectedTags: newTags });
+  },
+
+  clearTagFilters: () => set({ selectedTags: new Set<string>() }),
+
+  setShowFavoritesOnly: (show: boolean) => set({ showFavoritesOnly: show }),
+
+  setSortMode: (mode: CharacterSortMode) => set({ sortMode: mode }),
+
+  getAllTags: () => {
+    const { characters } = get();
+    const tagSet = new Set<string>();
+    for (const char of characters) {
+      const tags = char.tags || char.data?.tags || [];
+      for (const tag of tags) {
+        if (tag && typeof tag === 'string') {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+  },
+
+  getFilteredCharacters: () => {
+    const {
+      characters,
+      searchQuery,
+      selectedTags,
+      showFavoritesOnly,
+      favorites,
+      sortMode,
+    } = get();
+
+    const query = searchQuery.trim().toLowerCase();
+
+    const filtered = characters.filter((char) => {
+      // Favorites filter
+      if (showFavoritesOnly && !favorites.has(char.avatar)) {
+        return false;
+      }
+
+      // Tag filter (AND logic: must match all selected tags)
+      if (selectedTags.size > 0) {
+        const charTags = (char.tags || char.data?.tags || []).map((t) => t.toLowerCase());
+        for (const tag of selectedTags) {
+          if (!charTags.includes(tag.toLowerCase())) {
+            return false;
+          }
+        }
+      }
+
+      // Search filter
+      if (query) {
+        const name = (char.name || '').toLowerCase();
+        const desc = (char.description || char.data?.description || '').toLowerCase();
+        const personality = (char.personality || char.data?.personality || '').toLowerCase();
+        const creator = (char.creator || char.data?.creator || '').toLowerCase();
+        if (
+          !name.includes(query) &&
+          !desc.includes(query) &&
+          !personality.includes(query) &&
+          !creator.includes(query)
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+      // Favorites always bubble to the top
+      const aFav = favorites.has(a.avatar);
+      const bFav = favorites.has(b.avatar);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+
+      switch (sortMode) {
+        case 'name':
+          return (a.name || '').localeCompare(b.name || '');
+        case 'date_added':
+          return (b.date_added || 0) - (a.date_added || 0);
+        case 'date_last_chat':
+        case 'recent_chat':
+          return (b.date_last_chat || 0) - (a.date_last_chat || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  },
 
   // Group chat actions
   toggleGroupChatCharacter: async (avatar: string) => {
