@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, type CharacterInfo } from '../api/client';
 import { useSettingsStore } from './settingsStore';
+import { usePersonaStore } from './personaStore';
 import { parseEmotion, stripEmotionTag, type Emotion } from '../utils/emotions';
 
 export interface ChatMessage {
@@ -155,6 +156,50 @@ async function* parseSSEStream(
   }
 }
 
+// Resolve advanced character fields (checks both top-level and data.*)
+function getCharacterField(character: CharacterInfo, field: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const top = (character as any)[field];
+  if (typeof top === 'string' && top.trim()) return top;
+  const data = character.data as Record<string, unknown> | undefined;
+  const nested = data?.[field];
+  if (typeof nested === 'string' && nested.trim()) return nested;
+  return '';
+}
+
+function getAlternateGreetings(character: CharacterInfo): string[] {
+  return (
+    character.alternate_greetings || character.data?.alternate_greetings || []
+  ).filter((g) => g && g.trim());
+}
+
+function getDepthPrompt(character: CharacterInfo): {
+  prompt: string;
+  depth: number;
+  role: 'system' | 'user' | 'assistant';
+} | null {
+  const dp = character.data?.extensions?.depth_prompt;
+  if (!dp || !dp.prompt?.trim()) return null;
+  return {
+    prompt: dp.prompt,
+    depth: dp.depth ?? 4,
+    role: (dp.role as 'system' | 'user' | 'assistant') || 'system',
+  };
+}
+
+// Simple macro substitution: {{char}}, {{user}}, {{persona}}
+function substituteMacros(
+  text: string,
+  character: CharacterInfo,
+  personaName: string,
+  personaDescription: string
+): string {
+  return text
+    .replace(/\{\{char\}\}/gi, character.name || '')
+    .replace(/\{\{user\}\}/gi, personaName || 'User')
+    .replace(/\{\{persona\}\}/gi, personaDescription || '');
+}
+
 // Build conversation context for AI
 function buildConversationContext(
   messages: ChatMessage[],
@@ -163,13 +208,24 @@ function buildConversationContext(
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
-  const systemPrompt = [
-    character.description && `Description: ${character.description}`,
-    character.personality && `Personality: ${character.personality}`,
-    character.scenario && `Scenario: ${character.scenario}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  // Get active persona for this character/chat
+  const persona = usePersonaStore
+    .getState()
+    .getPersonaForContext(character.avatar);
+  const personaName = persona?.name || 'You';
+  const personaDescription = persona?.description || '';
+
+  const sub = (text: string) =>
+    substituteMacros(text, character, personaName, personaDescription);
+
+  const description = sub(getCharacterField(character, 'description'));
+  const personality = sub(getCharacterField(character, 'personality'));
+  const scenario = sub(getCharacterField(character, 'scenario'));
+  const mesExample = sub(getCharacterField(character, 'mes_example'));
+  const systemPromptOverride = sub(getCharacterField(character, 'system_prompt'));
+  const postHistoryInstructions = sub(
+    getCharacterField(character, 'post_history_instructions')
+  );
 
   const emotionList = availableEmotions && availableEmotions.length > 0
     ? availableEmotions.join(', ')
@@ -184,25 +240,123 @@ Example: [emotion:joy] I'm so glad you asked about that!
 
 Choose the emotion that best matches how ${character.name} would feel based on the conversation context.`.trim();
 
-  if (systemPrompt) {
-    context.push({
-      role: 'system',
-      content: `You are ${character.name}. Stay in character.\n\n${systemPrompt}\n\n${emotionInstruction}`,
-    });
-  } else {
-    context.push({
-      role: 'system',
-      content: `You are ${character.name}. Stay in character.\n\n${emotionInstruction}`,
+  // Build character info block
+  const charInfoParts = [
+    description && `Description: ${description}`,
+    personality && `Personality: ${personality}`,
+    scenario && `Scenario: ${scenario}`,
+    mesExample && `Example dialogue:\n${mesExample}`,
+  ].filter(Boolean);
+
+  const charInfoBlock = charInfoParts.join('\n\n');
+
+  // Main system prompt: either override or default
+  const mainPrompt =
+    systemPromptOverride ||
+    `You are ${character.name}. Stay in character.`;
+
+  // Persona description injection
+  let personaBlock = '';
+  if (persona && personaDescription.trim()) {
+    const position = persona.descriptionPosition;
+    if (position === 'in_prompt' || position === 'before_char') {
+      personaBlock = `[The user you're talking to is ${personaName}. ${personaDescription}]`;
+    } else if (position === 'after_char') {
+      // handled later
+    }
+  }
+
+  // Assemble system prompt parts in order
+  const systemParts: string[] = [mainPrompt];
+  if (persona && persona.descriptionPosition === 'before_char' && personaBlock) {
+    systemParts.push(personaBlock);
+  }
+  if (charInfoBlock) {
+    systemParts.push(charInfoBlock);
+  }
+  if (persona && persona.descriptionPosition === 'after_char' && personaDescription) {
+    systemParts.push(`[The user you're talking to is ${personaName}. ${personaDescription}]`);
+  }
+  if (persona && persona.descriptionPosition === 'in_prompt' && personaDescription) {
+    // Only add it once; if not added as before_char
+    // Already added as before_char, so only add if not already
+  }
+  systemParts.push(emotionInstruction);
+
+  context.push({
+    role: 'system',
+    content: systemParts.filter(Boolean).join('\n\n'),
+  });
+
+  const recentMessages = messages.slice(-20).filter((m) => !m.isSystem);
+
+  // Character's Note (depth prompt): inject at configurable depth from the END of the history
+  const depthPrompt = getDepthPrompt(character);
+  const depthPromptContent = depthPrompt ? sub(depthPrompt.prompt) : '';
+
+  // Persona @ depth
+  const personaAtDepth =
+    persona && persona.descriptionPosition === 'at_depth' && personaDescription
+      ? {
+          depth: persona.descriptionDepth,
+          role: persona.descriptionRole,
+          content: `[The user you're talking to is ${personaName}. ${personaDescription}]`,
+        }
+      : null;
+
+  // Build a list of history messages with depth-based insertions
+  const historyWithInsertions: {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+  }[] = [];
+
+  for (let i = 0; i < recentMessages.length; i++) {
+    const msg = recentMessages[i];
+    const depthFromEnd = recentMessages.length - i;
+
+    // Insert depth-prompt items BEFORE this message if depth matches
+    if (depthPrompt && depthFromEnd === depthPrompt.depth && depthPromptContent) {
+      historyWithInsertions.push({
+        role: depthPrompt.role,
+        content: depthPromptContent,
+      });
+    }
+    if (personaAtDepth && depthFromEnd === personaAtDepth.depth) {
+      historyWithInsertions.push({
+        role: personaAtDepth.role,
+        content: personaAtDepth.content,
+      });
+    }
+
+    historyWithInsertions.push({
+      role: msg.isUser ? 'user' : 'assistant',
+      content: sub(msg.content),
     });
   }
 
-  const recentMessages = messages.slice(-20);
-  for (const msg of recentMessages) {
-    if (msg.isSystem) continue;
-    context.push({
-      role: msg.isUser ? 'user' : 'assistant',
-      content: msg.content,
+  // If depth exceeds history length, prepend to entire history
+  if (
+    depthPrompt &&
+    depthPromptContent &&
+    depthPrompt.depth > recentMessages.length
+  ) {
+    historyWithInsertions.unshift({
+      role: depthPrompt.role,
+      content: depthPromptContent,
     });
+  }
+  if (personaAtDepth && personaAtDepth.depth > recentMessages.length) {
+    historyWithInsertions.unshift({
+      role: personaAtDepth.role,
+      content: personaAtDepth.content,
+    });
+  }
+
+  context.push(...historyWithInsertions);
+
+  // Post-history instructions as a final system message
+  if (postHistoryInstructions) {
+    context.push({ role: 'system', content: postHistoryInstructions });
   }
 
   return context;
@@ -407,18 +561,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  loadGroupChat: async (groupChat: GroupChatInfo) => {
+    set({ isLoading: true, error: null, currentChatFile: groupChat.fileName });
+    try {
+      // Use the first character's avatar to fetch the chat file
+      const avatarUrl = groupChat.characterAvatars[0];
+      const rawMessages = await api.getChatMessages(avatarUrl, groupChat.fileName);
+      const messages = rawMessages.map(normalizeMessage);
+      set({ messages, isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load group chat',
+      });
+    }
+  },
+
   startNewChat: async (character: CharacterInfo) => {
     const messages: ChatMessage[] = [];
 
-    if (character.first_mes) {
-      messages.push(createMessage({
+    const firstMes = character.first_mes || character.data?.first_mes || '';
+    const altGreetings = getAlternateGreetings(character);
+
+    if (firstMes || altGreetings.length > 0) {
+      // Build swipes array: primary greeting + alternate greetings
+      const swipes = [firstMes, ...altGreetings].filter(Boolean);
+      const firstMessage = createMessage({
         name: character.name,
         isUser: false,
         isSystem: false,
-        content: character.first_mes,
+        content: swipes[0] || '',
         timestamp: Date.now(),
         characterAvatar: character.avatar,
-      }));
+      });
+      // Override the swipes to include all greetings
+      firstMessage.swipes = swipes;
+      firstMessage.swipeId = 0;
+      messages.push(firstMessage);
     }
 
     const fileName = await api.createChat(character.name);
@@ -437,15 +616,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     for (const character of characters) {
-      if (character.first_mes) {
-        messages.push(createMessage({
+      const firstMes = character.first_mes || character.data?.first_mes || '';
+      const altGreetings = getAlternateGreetings(character);
+      if (firstMes || altGreetings.length > 0) {
+        const swipes = [firstMes, ...altGreetings].filter(Boolean);
+        const message = createMessage({
           name: character.name,
           isUser: false,
           isSystem: false,
-          content: character.first_mes,
+          content: swipes[0] || '',
           timestamp: Date.now() + characters.indexOf(character),
           characterAvatar: character.avatar,
-        }));
+        });
+        message.swipes = swipes;
+        message.swipeId = 0;
+        messages.push(message);
       }
     }
 

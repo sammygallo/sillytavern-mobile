@@ -63,14 +63,37 @@ export interface CharacterInfo {
   chat_size?: number;
   fav?: boolean;
   tags?: string[];
+  // Advanced Character Card V2 fields
+  alternate_greetings?: string[];
+  system_prompt?: string;
+  post_history_instructions?: string;
+  character_version?: string;
+  creator_notes?: string;
+  creator?: string;
   data?: {
     name?: string;
     description?: string;
     personality?: string;
     first_mes?: string;
     scenario?: string;
+    mes_example?: string;
     creator_notes?: string;
     creator?: string;
+    tags?: string[];
+    alternate_greetings?: string[];
+    system_prompt?: string;
+    post_history_instructions?: string;
+    character_version?: string;
+    extensions?: {
+      depth_prompt?: {
+        prompt?: string;
+        depth?: number;
+        role?: string;
+      };
+      talkativeness?: string;
+      fav?: boolean;
+      [key: string]: unknown;
+    };
   };
 }
 
@@ -84,6 +107,16 @@ export interface CharacterCreateData {
   creator_notes?: string;
   creator?: string;
   tags?: string;
+  // Advanced fields - sent via data object JSON string
+  alternate_greetings?: string[];
+  system_prompt?: string;
+  post_history_instructions?: string;
+  character_version?: string;
+  depth_prompt_prompt?: string;
+  depth_prompt_depth?: number;
+  depth_prompt_role?: string;
+  talkativeness?: string;
+  fav?: boolean;
 }
 
 export interface CharacterEditData extends CharacterCreateData {
@@ -191,16 +224,27 @@ export const api = {
     // Returns avatar filename like "CharacterName.png" as plain text
     const token = await getCsrfToken();
 
+    // Serialize arrays/numbers properly for backend
+    const serializedData: Record<string, string> = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined) return;
+      if (Array.isArray(value)) {
+        serializedData[key] = JSON.stringify(value);
+      } else if (typeof value === 'number' || typeof value === 'boolean') {
+        serializedData[key] = String(value);
+      } else {
+        serializedData[key] = String(value);
+      }
+    });
+
     let response: Response;
 
     if (avatarFile) {
       // Use multipart form data when uploading an image
       const formData = new FormData();
       formData.append('avatar', avatarFile);
-      Object.entries(data).forEach(([key, value]) => {
-        if (value !== undefined) {
-          formData.append(key, String(value));
-        }
+      Object.entries(serializedData).forEach(([key, value]) => {
+        formData.append(key, value);
       });
 
       response = await fetch('/api/characters/create', {
@@ -244,16 +288,27 @@ export const api = {
     // Backend returns plain text "OK", not JSON
     const token = await getCsrfToken();
 
+    // Serialize arrays/numbers properly for backend
+    const serializedData: Record<string, string> = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined) return;
+      if (Array.isArray(value)) {
+        serializedData[key] = JSON.stringify(value);
+      } else if (typeof value === 'number' || typeof value === 'boolean') {
+        serializedData[key] = String(value);
+      } else {
+        serializedData[key] = String(value);
+      }
+    });
+
     let response: Response;
 
     if (avatarFile) {
       // Use multipart form data when uploading an image
       const formData = new FormData();
       formData.append('avatar', avatarFile);
-      Object.entries(data).forEach(([key, value]) => {
-        if (value !== undefined) {
-          formData.append(key, String(value));
-        }
+      Object.entries(serializedData).forEach(([key, value]) => {
+        formData.append(key, value);
       });
 
       response = await fetch('/api/characters/edit', {
@@ -279,6 +334,34 @@ export const api = {
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(errorText || `HTTP ${response.status}`);
+    }
+  },
+
+  // Duplicate a character (server-side)
+  async duplicateCharacter(avatarUrl: string): Promise<string> {
+    const token = await getCsrfToken();
+    const response = await fetch('/api/characters/duplicate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': token,
+      },
+      credentials: 'include',
+      body: JSON.stringify({ avatar_url: avatarUrl }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Failed to duplicate');
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+
+    // Backend returns JSON { path: 'newavatar.png' } or plain text
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      return data.path || data.file_name || text;
+    } catch {
+      return text;
     }
   },
 

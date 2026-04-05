@@ -17,11 +17,21 @@ export interface CharacterCardV2 {
     creator_notes: string;
     creator: string;
     tags: string[];
+    character_version?: string;
     system_prompt?: string;
     post_history_instructions?: string;
     alternate_greetings?: string[];
     character_book?: unknown;
-    extensions?: Record<string, unknown>;
+    extensions?: {
+      depth_prompt?: {
+        prompt?: string;
+        depth?: number;
+        role?: string;
+      };
+      talkativeness?: string;
+      fav?: boolean;
+      [key: string]: unknown;
+    };
   };
 }
 
@@ -36,6 +46,16 @@ export interface CharacterExportData {
   creator_notes: string;
   creator: string;
   tags: string[];
+  character_version?: string;
+  system_prompt?: string;
+  post_history_instructions?: string;
+  alternate_greetings?: string[];
+  depth_prompt?: {
+    prompt?: string;
+    depth?: number;
+    role?: string;
+  };
+  talkativeness?: string;
   avatar_base64?: string;
 }
 
@@ -43,6 +63,22 @@ export interface CharacterExportData {
  * Convert CharacterInfo to Character Card V2 format
  */
 export function characterToCardV2(character: CharacterInfo): CharacterCardV2 {
+  const extensions: CharacterCardV2['data']['extensions'] = {
+    ...(character.data?.extensions || {}),
+  };
+
+  // Preserve depth prompt (character's note)
+  const depthPrompt = character.data?.extensions?.depth_prompt;
+  if (depthPrompt && (depthPrompt.prompt || depthPrompt.depth !== undefined || depthPrompt.role)) {
+    extensions.depth_prompt = depthPrompt;
+  }
+
+  // Preserve talkativeness
+  const talkativeness = character.data?.extensions?.talkativeness;
+  if (talkativeness !== undefined) {
+    extensions.talkativeness = talkativeness;
+  }
+
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -52,10 +88,16 @@ export function characterToCardV2(character: CharacterInfo): CharacterCardV2 {
       personality: character.personality || character.data?.personality || '',
       first_mes: character.first_mes || character.data?.first_mes || '',
       scenario: character.scenario || character.data?.scenario || '',
-      mes_example: character.mes_example || '',
-      creator_notes: character.data?.creator_notes || '',
-      creator: character.data?.creator || '',
-      tags: character.tags || [],
+      mes_example: character.mes_example || character.data?.mes_example || '',
+      creator_notes: character.creator_notes || character.data?.creator_notes || '',
+      creator: character.creator || character.data?.creator || '',
+      tags: character.tags || character.data?.tags || [],
+      character_version: character.character_version || character.data?.character_version || '',
+      system_prompt: character.system_prompt || character.data?.system_prompt || '',
+      post_history_instructions:
+        character.post_history_instructions || character.data?.post_history_instructions || '',
+      alternate_greetings: character.alternate_greetings || character.data?.alternate_greetings || [],
+      extensions,
     },
   };
 }
@@ -75,6 +117,7 @@ export function cardToCharacterInfo(
 ): Partial<CharacterInfo> {
   if (isCharacterCardV2(card)) {
     // V2 card format
+    const depthPrompt = card.data.extensions?.depth_prompt;
     return {
       name: card.data.name,
       description: card.data.description,
@@ -83,14 +126,30 @@ export function cardToCharacterInfo(
       scenario: card.data.scenario,
       mes_example: card.data.mes_example,
       tags: card.data.tags,
+      creator: card.data.creator,
+      creator_notes: card.data.creator_notes,
+      character_version: card.data.character_version,
+      system_prompt: card.data.system_prompt,
+      post_history_instructions: card.data.post_history_instructions,
+      alternate_greetings: card.data.alternate_greetings,
       data: {
         name: card.data.name,
         description: card.data.description,
         personality: card.data.personality,
         first_mes: card.data.first_mes,
         scenario: card.data.scenario,
+        mes_example: card.data.mes_example,
         creator_notes: card.data.creator_notes,
         creator: card.data.creator,
+        tags: card.data.tags,
+        character_version: card.data.character_version,
+        system_prompt: card.data.system_prompt,
+        post_history_instructions: card.data.post_history_instructions,
+        alternate_greetings: card.data.alternate_greetings,
+        extensions: {
+          ...(card.data.extensions || {}),
+          ...(depthPrompt ? { depth_prompt: depthPrompt } : {}),
+        },
       },
     };
   }
@@ -104,14 +163,27 @@ export function cardToCharacterInfo(
     scenario: card.scenario,
     mes_example: card.mes_example,
     tags: card.tags,
+    creator: card.creator,
+    creator_notes: card.creator_notes,
+    character_version: card.character_version,
+    system_prompt: card.system_prompt,
+    post_history_instructions: card.post_history_instructions,
+    alternate_greetings: card.alternate_greetings,
     data: {
       name: card.name,
       description: card.description,
       personality: card.personality,
       first_mes: card.first_mes,
       scenario: card.scenario,
+      mes_example: card.mes_example,
       creator_notes: card.creator_notes,
       creator: card.creator,
+      tags: card.tags,
+      character_version: card.character_version,
+      system_prompt: card.system_prompt,
+      post_history_instructions: card.post_history_instructions,
+      alternate_greetings: card.alternate_greetings,
+      extensions: card.depth_prompt ? { depth_prompt: card.depth_prompt } : {},
     },
   };
 }
@@ -327,22 +399,11 @@ export async function embedCharacterInPNG(
 }
 
 /**
- * Export character as JSON file
+ * Export character as JSON file (as Character Card V2 so advanced fields survive)
  */
 export function exportCharacterAsJSON(character: CharacterInfo): Blob {
-  const exportData: CharacterExportData = {
-    name: character.name || '',
-    description: character.description || character.data?.description || '',
-    personality: character.personality || character.data?.personality || '',
-    first_mes: character.first_mes || character.data?.first_mes || '',
-    scenario: character.scenario || character.data?.scenario || '',
-    mes_example: character.mes_example || '',
-    creator_notes: character.data?.creator_notes || '',
-    creator: character.data?.creator || '',
-    tags: character.tags || [],
-  };
-
-  const jsonString = JSON.stringify(exportData, null, 2);
+  const cardV2 = characterToCardV2(character);
+  const jsonString = JSON.stringify(cardV2, null, 2);
   return new Blob([jsonString], { type: 'application/json' });
 }
 
@@ -373,6 +434,14 @@ export async function parseCharacterFromJSON(
       creator_notes: data.creator_notes || '',
       creator: data.creator || '',
       tags: Array.isArray(data.tags) ? data.tags : [],
+      character_version: data.character_version,
+      system_prompt: data.system_prompt,
+      post_history_instructions: data.post_history_instructions,
+      alternate_greetings: Array.isArray(data.alternate_greetings)
+        ? data.alternate_greetings
+        : undefined,
+      depth_prompt: data.depth_prompt,
+      talkativeness: data.talkativeness,
     } as CharacterExportData;
   } catch {
     throw new Error('Invalid JSON file');

@@ -1,5 +1,19 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { X, Search, Plus, MessageSquare, Users, ChevronLeft, UserPlus, Check, Trash2, Upload } from 'lucide-react';
+import {
+  X,
+  Search,
+  Plus,
+  MessageSquare,
+  Users,
+  ChevronLeft,
+  UserPlus,
+  Check,
+  Trash2,
+  Upload,
+  Star,
+  Filter,
+  ArrowUpDown,
+} from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore, type GroupChatInfo } from '../../stores/chatStore';
 import { Avatar, Button, Input } from '../ui';
@@ -19,8 +33,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [showCharacterList, setShowCharacterList] = useState(false);
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [isGroupSelectMode, setIsGroupSelectMode] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const {
-    characters,
     selectedCharacter,
     isLoading,
     fetchCharacters,
@@ -31,9 +45,27 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     exitGroupChat,
     isCharacterInGroup,
     setGroupChatCharacters,
+    favorites,
+    toggleFavorite,
+    searchQuery,
+    setSearchQuery,
+    selectedTags,
+    toggleTagFilter,
+    clearTagFilters,
+    showFavoritesOnly,
+    setShowFavoritesOnly,
+    sortMode,
+    setSortMode,
+    getAllTags,
+    getFilteredCharacters,
   } = useCharacterStore();
   const { messages, startNewGroupChat, groupChats, loadGroupChat, deleteGroupChat } = useChatStore();
   const [showGroupChats, setShowGroupChats] = useState(false);
+
+  const filteredCharacters = getFilteredCharacters();
+  const allTags = getAllTags();
+  const activeFilterCount =
+    selectedTags.size + (showFavoritesOnly ? 1 : 0) + (searchQuery.trim() ? 1 : 0);
 
   // Fetch actual sprite paths from API (hook extracts character name from avatar filename)
   const { getSpritePath } = useCharacterSprites(selectedCharacter?.avatar);
@@ -287,8 +319,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
             </div>
 
-            {/* Search */}
-            <div className="p-3 border-b border-[var(--color-border)]">
+            {/* Search & Filters */}
+            <div className="p-3 border-b border-[var(--color-border)] space-y-2">
               <div className="relative">
                 <Search
                   size={18}
@@ -298,8 +330,89 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   type="search"
                   placeholder="Search characters..."
                   className="pl-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+
+              {/* Filter controls */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+                    showFavoritesOnly
+                      ? 'bg-yellow-500/20 text-yellow-400'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                  }`}
+                  title="Show favorites only"
+                >
+                  <Star size={12} fill={showFavoritesOnly ? 'currentColor' : 'none'} />
+                  <span className="hidden sm:inline">Favorites</span>
+                </button>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+                    showFilters || selectedTags.size > 0
+                      ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                  }`}
+                  title="Tag filters"
+                >
+                  <Filter size={12} />
+                  <span className="hidden sm:inline">Tags</span>
+                  {selectedTags.size > 0 && (
+                    <span className="bg-[var(--color-primary)] text-white px-1 rounded text-[10px]">
+                      {selectedTags.size}
+                    </span>
+                  )}
+                </button>
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as never)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-[var(--color-text-secondary)] bg-transparent hover:bg-[var(--color-bg-tertiary)] cursor-pointer appearance-none focus:outline-none"
+                  title="Sort mode"
+                >
+                  <option value="name">Name</option>
+                  <option value="date_added">Recently added</option>
+                  <option value="date_last_chat">Recent chat</option>
+                </select>
+                <ArrowUpDown size={12} className="text-[var(--color-text-secondary)] -ml-1" />
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => {
+                      clearTagFilters();
+                      setShowFavoritesOnly(false);
+                      setSearchQuery('');
+                    }}
+                    className="ml-auto text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] underline"
+                    title="Clear all filters"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Tag filter chips */}
+              {showFilters && allTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {allTags.map((tag) => {
+                    const isSelected = selectedTags.has(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                          isSelected
+                            ? 'bg-[var(--color-primary)] text-white'
+                            : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Character List */}
@@ -308,30 +421,25 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--color-primary)]" />
                 </div>
-              ) : characters.length === 0 ? (
+              ) : filteredCharacters.length === 0 ? (
                 <div className="text-center py-8 px-4">
                   <MessageSquare size={32} className="mx-auto text-[var(--color-text-secondary)] mb-2" />
                   <p className="text-sm text-[var(--color-text-secondary)]">
-                    No characters found
+                    {activeFilterCount > 0
+                      ? 'No characters match your filters'
+                      : 'No characters found'}
                   </p>
                 </div>
               ) : (
                 <ul className="py-2">
-                  {characters.map((character) => {
+                  {filteredCharacters.map((character) => {
                     const isInGroup = isCharacterInGroup(character.avatar);
+                    const isFav = favorites.has(character.avatar);
                     return (
-                      <li key={character.avatar}>
-                        <button
-                          onClick={() => {
-                            if (isGroupSelectMode) {
-                              toggleGroupChatCharacter(character.avatar);
-                            } else {
-                              handleCharacterSelect(character.avatar);
-                            }
-                          }}
+                      <li key={character.avatar} className="group">
+                        <div
                           className={`
-                            w-full flex items-center gap-3 px-4 py-3
-                            transition-colors
+                            relative flex items-center
                             ${
                               isGroupSelectMode && isInGroup
                                 ? 'bg-[var(--color-primary)]/20 border-l-2 border-[var(--color-primary)]'
@@ -341,33 +449,64 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             }
                           `}
                         >
-                          {/* Checkbox for group select mode */}
-                          {isGroupSelectMode && (
-                            <div
-                              className={`
-                                w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0
-                                ${
-                                  isInGroup
-                                    ? 'bg-[var(--color-primary)] border-[var(--color-primary)]'
-                                    : 'border-[var(--color-text-secondary)]'
-                                }
-                              `}
-                            >
-                              {isInGroup && <Check size={14} className="text-white" />}
-                            </div>
-                          )}
-                          <Avatar src={getThumbnailUrl(character.avatar)} alt={character.name} size="md" />
-                          <div className="flex-1 min-w-0 text-left">
-                            <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
-                              {character.name}
-                            </p>
-                            {character.description && (
-                              <p className="text-xs text-[var(--color-text-secondary)] truncate">
-                                {character.description}
-                              </p>
+                          <button
+                            onClick={() => {
+                              if (isGroupSelectMode) {
+                                toggleGroupChatCharacter(character.avatar);
+                              } else {
+                                handleCharacterSelect(character.avatar);
+                              }
+                            }}
+                            className="flex-1 flex items-center gap-3 px-4 py-3 text-left transition-colors min-w-0"
+                          >
+                            {/* Checkbox for group select mode */}
+                            {isGroupSelectMode && (
+                              <div
+                                className={`
+                                  w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0
+                                  ${
+                                    isInGroup
+                                      ? 'bg-[var(--color-primary)] border-[var(--color-primary)]'
+                                      : 'border-[var(--color-text-secondary)]'
+                                  }
+                                `}
+                              >
+                                {isInGroup && <Check size={14} className="text-white" />}
+                              </div>
                             )}
-                          </div>
-                        </button>
+                            <Avatar
+                              src={getThumbnailUrl(character.avatar)}
+                              alt={character.name}
+                              size="md"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                                {character.name}
+                              </p>
+                              {character.description && (
+                                <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                                  {character.description}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                          {!isGroupSelectMode && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(character.avatar);
+                              }}
+                              className={`p-2 mr-2 rounded-lg transition-opacity ${
+                                isFav
+                                  ? 'text-yellow-400 opacity-100'
+                                  : 'text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                              }`}
+                              title={isFav ? 'Unfavorite' : 'Favorite'}
+                            >
+                              <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
+                            </button>
+                          )}
+                        </div>
                       </li>
                     );
                   })}

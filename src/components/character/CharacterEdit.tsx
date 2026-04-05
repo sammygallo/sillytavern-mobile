@@ -1,18 +1,38 @@
 import { useState, useEffect } from 'react';
-import { Download, FileImage, FileJson } from 'lucide-react';
+import { Download, FileImage, FileJson, Copy, UserCircle } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { spritesApi, type CharacterInfo } from '../../api/client';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload } from '../ui';
+import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 
 interface CharacterEditProps {
   isOpen: boolean;
   onClose: () => void;
   character: CharacterInfo;
   onSaved?: () => void;
+  onDuplicated?: (newAvatarUrl: string) => void;
+  onConvertToPersona?: (character: CharacterInfo) => void;
 }
 
-export function CharacterEdit({ isOpen, onClose, character, onSaved }: CharacterEditProps) {
-  const { updateCharacter, isEditing, isExporting, error, clearError, exportCharacterAsPNG, exportCharacterAsJSON } = useCharacterStore();
+export function CharacterEdit({
+  isOpen,
+  onClose,
+  character,
+  onSaved,
+  onDuplicated,
+  onConvertToPersona,
+}: CharacterEditProps) {
+  const {
+    updateCharacter,
+    duplicateCharacter,
+    isEditing,
+    isExporting,
+    isDuplicating,
+    error,
+    clearError,
+    exportCharacterAsPNG,
+    exportCharacterAsJSON,
+  } = useCharacterStore();
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -30,6 +50,16 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
     tags: '',
   });
 
+  // Phase 2: Advanced character fields
+  const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
+  const [characterVersion, setCharacterVersion] = useState('');
+  const [depthPromptPrompt, setDepthPromptPrompt] = useState('');
+  const [depthPromptDepth, setDepthPromptDepth] = useState(4);
+  const [depthPromptRole, setDepthPromptRole] = useState<'system' | 'user' | 'assistant'>('system');
+  const [systemPromptOverride, setSystemPromptOverride] = useState('');
+  const [postHistoryInstructions, setPostHistoryInstructions] = useState('');
+  const [talkativeness, setTalkativeness] = useState('0.5');
+
   const getAvatarUrl = (avatar: string) => `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
 
   // Populate form when character changes or modal opens
@@ -43,11 +73,35 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
         personality: character.personality || character.data?.personality || '',
         firstMessage: character.first_mes || character.data?.first_mes || '',
         scenario: character.scenario || character.data?.scenario || '',
-        exampleMessages: character.mes_example || '',
-        creatorNotes: character.data?.creator_notes || '',
-        creator: character.data?.creator || '',
-        tags: character.tags?.join(', ') || '',
+        exampleMessages: character.mes_example || character.data?.mes_example || '',
+        creatorNotes: character.creator_notes || character.data?.creator_notes || '',
+        creator: character.creator || character.data?.creator || '',
+        tags: (character.tags || character.data?.tags || []).join(', '),
       });
+
+      // Populate advanced fields
+      setAlternateGreetings(
+        character.alternate_greetings || character.data?.alternate_greetings || []
+      );
+      setCharacterVersion(
+        character.character_version || character.data?.character_version || ''
+      );
+      setSystemPromptOverride(
+        character.system_prompt || character.data?.system_prompt || ''
+      );
+      setPostHistoryInstructions(
+        character.post_history_instructions || character.data?.post_history_instructions || ''
+      );
+
+      const depthPrompt = character.data?.extensions?.depth_prompt;
+      setDepthPromptPrompt(depthPrompt?.prompt || '');
+      setDepthPromptDepth(depthPrompt?.depth ?? 4);
+      setDepthPromptRole(
+        (depthPrompt?.role as 'system' | 'user' | 'assistant') || 'system'
+      );
+
+      const charTalkativeness = character.data?.extensions?.talkativeness;
+      setTalkativeness(typeof charTalkativeness === 'string' ? charTalkativeness : '0.5');
     }
   }, [isOpen, character]);
 
@@ -89,6 +143,15 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
         tags: formData.tags.trim(),
         chat: character.create_date, // Preserve existing
         create_date: character.create_date, // Preserve existing
+        // Advanced fields
+        alternate_greetings: alternateGreetings.filter((g) => g.trim()),
+        system_prompt: systemPromptOverride.trim() || undefined,
+        post_history_instructions: postHistoryInstructions.trim() || undefined,
+        character_version: characterVersion.trim() || undefined,
+        depth_prompt_prompt: depthPromptPrompt.trim() || undefined,
+        depth_prompt_depth: depthPromptPrompt.trim() ? depthPromptDepth : undefined,
+        depth_prompt_role: depthPromptPrompt.trim() ? depthPromptRole : undefined,
+        talkativeness: talkativeness || undefined,
       },
       avatarFile || undefined
     );
@@ -127,6 +190,19 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
     onClose();
   };
 
+  const handleDuplicate = async () => {
+    const newAvatar = await duplicateCharacter(character.avatar);
+    if (newAvatar) {
+      onClose();
+      onDuplicated?.(newAvatar);
+    }
+  };
+
+  const handleConvertToPersona = () => {
+    onClose();
+    onConvertToPersona?.(character);
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={`Edit ${character.name}`} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -137,54 +213,78 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
           label="Avatar"
         />
 
-        {/* Export Options */}
-        <div className="relative">
+        {/* Character Actions */}
+        <div className="grid grid-cols-3 gap-2">
           <Button
             type="button"
             variant="secondary"
-            className="w-full"
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={isExporting}
+            size="sm"
+            onClick={handleDuplicate}
+            isLoading={isDuplicating}
+            title="Create a copy of this character"
           >
-            {isExporting ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                Exporting...
-              </>
-            ) : (
-              <>
-                <Download size={18} className="mr-2" />
-                Export Character
-              </>
-            )}
+            <Copy size={16} className="mr-1.5" />
+            Duplicate
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleConvertToPersona}
+            title="Create a new persona using this character's data"
+          >
+            <UserCircle size={16} className="mr-1.5" />
+            To Persona
+          </Button>
+          <div className="relative">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-1.5" />
+                  Exporting
+                </>
+              ) : (
+                <>
+                  <Download size={16} className="mr-1.5" />
+                  Export
+                </>
+              )}
+            </Button>
 
-          {showExportMenu && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-lg z-10 overflow-hidden">
-              <button
-                type="button"
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                onClick={handleExportPNG}
-              >
-                <FileImage size={18} className="text-[var(--color-primary)]" />
-                <div>
-                  <p className="text-sm font-medium text-[var(--color-text-primary)]">PNG Card</p>
-                  <p className="text-xs text-[var(--color-text-secondary)]">Character card with embedded data</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors border-t border-[var(--color-border)]"
-                onClick={handleExportJSON}
-              >
-                <FileJson size={18} className="text-[var(--color-primary)]" />
-                <div>
-                  <p className="text-sm font-medium text-[var(--color-text-primary)]">JSON</p>
-                  <p className="text-xs text-[var(--color-text-secondary)]">Character data as JSON file</p>
-                </div>
-              </button>
-            </div>
-          )}
+            {showExportMenu && (
+              <div className="absolute top-full right-0 mt-1 min-w-[220px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-lg z-10 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  onClick={handleExportPNG}
+                >
+                  <FileImage size={18} className="text-[var(--color-primary)]" />
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text-primary)]">PNG Card</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">Card with embedded data</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors border-t border-[var(--color-border)]"
+                  onClick={handleExportJSON}
+                >
+                  <FileJson size={18} className="text-[var(--color-primary)]" />
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text-primary)]">JSON</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">V2 card as JSON</p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Name - Required */}
@@ -224,6 +324,12 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
           rows={4}
         />
 
+        {/* Alternate Greetings */}
+        <AlternateGreetingsEditor
+          greetings={alternateGreetings}
+          onChange={setAlternateGreetings}
+        />
+
         {/* Scenario */}
         <TextArea
           label="Scenario"
@@ -253,6 +359,95 @@ export function CharacterEdit({ isOpen, onClose, character, onSaved }: Character
               value={formData.exampleMessages}
               onChange={handleChange('exampleMessages')}
               rows={4}
+            />
+
+            {/* Character's Note (Depth Prompt) */}
+            <div className="space-y-2">
+              <TextArea
+                label="Character's Note"
+                placeholder="Injected at a configurable depth in the chat to reinforce behavior..."
+                value={depthPromptPrompt}
+                onChange={(e) => setDepthPromptPrompt(e.target.value)}
+                rows={2}
+              />
+              {depthPromptPrompt && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                      Injection Depth
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={depthPromptDepth}
+                      onChange={(e) => setDepthPromptDepth(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                      Role
+                    </label>
+                    <select
+                      value={depthPromptRole}
+                      onChange={(e) =>
+                        setDepthPromptRole(e.target.value as 'system' | 'user' | 'assistant')
+                      }
+                      className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                    >
+                      <option value="system">System</option>
+                      <option value="user">User</option>
+                      <option value="assistant">Assistant</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* System Prompt Override */}
+            <TextArea
+              label="System Prompt Override"
+              placeholder="Overrides the main system prompt for this character..."
+              value={systemPromptOverride}
+              onChange={(e) => setSystemPromptOverride(e.target.value)}
+              rows={3}
+            />
+
+            {/* Post-History Instructions */}
+            <TextArea
+              label="Post-History Instructions"
+              placeholder="Instructions appended after the chat history..."
+              value={postHistoryInstructions}
+              onChange={(e) => setPostHistoryInstructions(e.target.value)}
+              rows={2}
+            />
+
+            {/* Talkativeness */}
+            <div>
+              <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">
+                Talkativeness ({talkativeness})
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={talkativeness}
+                onChange={(e) => setTalkativeness(e.target.value)}
+                className="w-full"
+              />
+              <p className="text-xs text-[var(--color-text-secondary)] mt-1">
+                Used in group chats to control how often this character speaks.
+              </p>
+            </div>
+
+            {/* Character Version */}
+            <Input
+              label="Character Version"
+              placeholder="e.g., 1.0"
+              value={characterVersion}
+              onChange={(e) => setCharacterVersion(e.target.value)}
             />
 
             {/* Creator Notes */}
