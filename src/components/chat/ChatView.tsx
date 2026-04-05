@@ -218,6 +218,7 @@ export function ChatView() {
             <GroupChatControls
               fileName={currentChatFile}
               characters={groupChatCharacters}
+              isSending={isSending}
             />
           )}
         </>

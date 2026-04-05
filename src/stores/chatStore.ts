@@ -46,11 +46,13 @@ interface ChatFile {
  *   by talkativeness. Exactly one member responds.
  * - pooled: weighted random pick from the pool, excluding the N most recent
  *   speakers. Exactly one member responds.
+ * - manual: no auto-selection; user must force-talk a specific member.
  */
-export type GroupActivationStrategy = 'list' | 'natural' | 'pooled';
+export type GroupActivationStrategy = 'list' | 'natural' | 'pooled' | 'manual';
 
 export const DEFAULT_GROUP_ACTIVATION_STRATEGY: GroupActivationStrategy = 'list';
 export const DEFAULT_POOLED_EXCLUDE_RECENT = 1;
+export const DEFAULT_AUTO_MODE_DELAY_MS = 1500;
 
 export interface GroupChatInfo {
   fileName: string;
@@ -64,6 +66,12 @@ export interface GroupChatInfo {
   mutedAvatars: string[];
   /** Recent-speaker exclusion window for pooled strategy (N≥0). */
   pooledExcludeRecent: number;
+  /** Phase 5.2: auto-continue generation after each AI turn. */
+  autoModeEnabled: boolean;
+  /** Phase 5.2: delay between auto-mode turns in milliseconds. */
+  autoModeDelayMs: number;
+  /** Phase 5.2: optional group-wide scenario replacing per-character scenario. */
+  scenarioOverride: string;
 }
 
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
@@ -86,7 +94,8 @@ function migrateGroupChat(raw: Partial<GroupChatInfo> & {
     activationStrategy:
       raw.activationStrategy === 'natural' ||
       raw.activationStrategy === 'pooled' ||
-      raw.activationStrategy === 'list'
+      raw.activationStrategy === 'list' ||
+      raw.activationStrategy === 'manual'
         ? raw.activationStrategy
         : DEFAULT_GROUP_ACTIVATION_STRATEGY,
     mutedAvatars: Array.isArray(raw.mutedAvatars) ? raw.mutedAvatars : [],
@@ -94,6 +103,14 @@ function migrateGroupChat(raw: Partial<GroupChatInfo> & {
       typeof raw.pooledExcludeRecent === 'number' && raw.pooledExcludeRecent >= 0
         ? Math.floor(raw.pooledExcludeRecent)
         : DEFAULT_POOLED_EXCLUDE_RECENT,
+    autoModeEnabled:
+      typeof raw.autoModeEnabled === 'boolean' ? raw.autoModeEnabled : false,
+    autoModeDelayMs:
+      typeof raw.autoModeDelayMs === 'number' && raw.autoModeDelayMs >= 0
+        ? Math.floor(raw.autoModeDelayMs)
+        : DEFAULT_AUTO_MODE_DELAY_MS,
+    scenarioOverride:
+      typeof raw.scenarioOverride === 'string' ? raw.scenarioOverride : '',
   };
 }
 
@@ -224,6 +241,8 @@ interface ChatState {
   addMessage: (message: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>) => void;
   sendMessage: (content: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   sendGroupMessage: (content: string, characters: CharacterInfo[]) => Promise<void>;
+  /** Phase 5.2: force a single member to respond next, bypassing strategy + mute. */
+  forceGroupMemberTalk: (character: CharacterInfo, characters: CharacterInfo[]) => Promise<void>;
   editMessageAndRegenerate: (messageId: string, newContent: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   clearChat: () => void;
   refreshGroupChats: () => void;
@@ -234,6 +253,12 @@ interface ChatState {
   toggleGroupMute: (fileName: string, avatar: string) => void;
   setGroupPooledExcludeRecent: (fileName: string, n: number) => void;
   getGroupChatByFile: (fileName: string) => GroupChatInfo | null;
+
+  // Phase 5.2: auto-mode, reorder, scenario override
+  setGroupAutoMode: (fileName: string, enabled: boolean) => void;
+  setGroupAutoModeDelay: (fileName: string, delayMs: number) => void;
+  setGroupScenarioOverride: (fileName: string, scenario: string) => void;
+  reorderGroupMembers: (fileName: string, avatars: string[]) => void;
 
   // New Phase 1 actions
   stopGeneration: () => void;
@@ -680,7 +705,8 @@ Choose the emotion that best matches how ${character.name} would feel based on t
 function buildGroupConversationContext(
   messages: ChatMessage[],
   characters: CharacterInfo[],
-  currentCharacter: CharacterInfo
+  currentCharacter: CharacterInfo,
+  scenarioOverride?: string
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
@@ -692,12 +718,41 @@ function buildGroupConversationContext(
     return `- ${char.name}: ${details || 'A character in the conversation'}`;
   }).join('\n');
 
+  // Resolve scenario: override wins, else falls back to current character's
+  // scenario. Macros are processed on the override, but {{char}} is ambiguous
+  // in a group (multiple speakers), so we scrub char-specific substitutions
+  // by passing an empty charName + character fields.
+  let scenarioText = '';
+  if (scenarioOverride && scenarioOverride.trim()) {
+    const persona = usePersonaStore
+      .getState()
+      .getPersonaForContext(currentCharacter.avatar);
+    const personaName = persona?.name || 'You';
+    const { activeModel } = useSettingsStore.getState();
+    scenarioText = processMacros(scenarioOverride, {
+      charName: '',
+      userName: personaName,
+      personaName,
+      personaDescription: persona?.description || '',
+      characterDescription: '',
+      characterPersonality: '',
+      characterScenario: '',
+      lastMessage: '',
+      lastUserMessage: '',
+      lastCharMessage: '',
+      model: activeModel,
+    }).trim();
+  } else {
+    scenarioText =
+      currentCharacter.scenario || currentCharacter.data?.scenario || '';
+  }
+
   const systemPrompt = `This is a group chat with multiple characters. You are playing ${currentCharacter.name}.
 
 Characters in this conversation:
 ${characterDescriptions}
 
-${currentCharacter.scenario ? `Current scenario: ${currentCharacter.scenario}\n` : ''}
+${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}
 IMPORTANT:
 - Stay in character as ${currentCharacter.name}
 - React naturally to what other characters and the user say
@@ -720,6 +775,86 @@ IMPORTANT:
   }
 
   return context;
+}
+
+// Phase 5.2: shared helper that runs a single group-chat turn (build context,
+// call API, stream, finalize). Both `sendGroupMessage` and `forceGroupMemberTalk`
+// delegate to this to avoid drift in the streaming + parsing path. Returns
+// `false` if the turn was aborted or never produced a stream, `true` otherwise.
+async function generateGroupTurn(
+  character: CharacterInfo,
+  characters: CharacterInfo[],
+  scenarioOverride: string | undefined,
+  abortController: AbortController,
+  get: () => ChatState,
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void
+): Promise<boolean> {
+  const { provider, model } = getProviderAndModel();
+  const updatedMessages = get().messages;
+  const context = buildGroupConversationContext(
+    updatedMessages,
+    characters,
+    character,
+    scenarioOverride
+  );
+
+  const finalContext = maybeApplyInstructMode(context);
+  const stream = await api.generateMessage(
+    finalContext,
+    character.name,
+    provider,
+    model,
+    abortController.signal,
+    getGenerationOptions()
+  );
+
+  if (!stream) return false;
+
+  const aiMessageId = generateId();
+  set((state) => ({
+    isStreaming: false,
+    messages: [
+      ...state.messages,
+      {
+        id: aiMessageId,
+        name: character.name,
+        isUser: false,
+        isSystem: false,
+        content: '',
+        timestamp: Date.now(),
+        characterAvatar: character.avatar,
+        swipes: [''],
+        swipeId: 0,
+      },
+    ],
+  }));
+
+  let responseText = '';
+  for await (const token of parseSSEStream(stream)) {
+    if (!get().isSending) break;
+    responseText += token;
+    if (!get().isStreaming) set({ isStreaming: true });
+    set((state) => ({
+      messages: state.messages.map((msg) =>
+        msg.id === aiMessageId
+          ? { ...msg, content: responseText, swipes: [responseText] }
+          : msg
+      ),
+    }));
+  }
+
+  const emotion = parseEmotion(responseText);
+  const cleanedContent = stripEmotionTag(responseText);
+
+  set((state) => ({
+    messages: state.messages.map((msg) =>
+      msg.id === aiMessageId
+        ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
+        : msg
+    ),
+  }));
+
+  return get().isSending;
 }
 
 // Helper: get provider/model with auto-switch
@@ -925,6 +1060,60 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ groupChats: updated });
   },
 
+  // ---- Phase 5.2: auto-mode, reorder, scenario override ----
+  setGroupAutoMode: (fileName, enabled) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, autoModeEnabled: enabled } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  setGroupAutoModeDelay: (fileName, delayMs) => {
+    const clamped = Math.max(0, Math.floor(delayMs));
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, autoModeDelayMs: clamped } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  setGroupScenarioOverride: (fileName, scenario) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, scenarioOverride: scenario } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  reorderGroupMembers: (fileName, avatars) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) => {
+      if (g.fileName !== fileName) return g;
+      // Reorder characterAvatars + characterNames in lockstep. Skip any avatar
+      // in the payload that isn't in the record, and preserve any existing
+      // members missing from the payload by appending them in original order.
+      const oldAvatars = g.characterAvatars;
+      const oldNames = g.characterNames;
+      const nameByAvatar = new Map<string, string>();
+      oldAvatars.forEach((a, i) => nameByAvatar.set(a, oldNames[i] ?? ''));
+      const validAvatars = avatars.filter((a) => nameByAvatar.has(a));
+      const missing = oldAvatars.filter((a) => !validAvatars.includes(a));
+      const nextAvatars = [...validAvatars, ...missing];
+      const nextNames = nextAvatars.map((a) => nameByAvatar.get(a) ?? '');
+      return {
+        ...g,
+        characterAvatars: nextAvatars,
+        characterNames: nextNames,
+      };
+    });
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
   fetchChatFiles: async (avatarUrl: string) => {
     set({ isLoading: true, error: null });
     try {
@@ -1043,6 +1232,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activationStrategy: DEFAULT_GROUP_ACTIVATION_STRATEGY,
       mutedAvatars: [],
       pooledExcludeRecent: DEFAULT_POOLED_EXCLUDE_RECENT,
+      autoModeEnabled: false,
+      autoModeDelayMs: DEFAULT_AUTO_MODE_DELAY_MS,
+      scenarioOverride: '',
     };
     const updatedGroupChats = [...groupChats, newGroupChat];
     saveGroupChatsToStorage(updatedGroupChats);
@@ -1401,6 +1593,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const mutedAvatars = new Set(groupChat?.mutedAvatars ?? []);
     const pooledExcludeRecent =
       groupChat?.pooledExcludeRecent ?? DEFAULT_POOLED_EXCLUDE_RECENT;
+    const autoModeEnabled = groupChat?.autoModeEnabled ?? false;
+    const autoModeDelayMs =
+      groupChat?.autoModeDelayMs ?? DEFAULT_AUTO_MODE_DELAY_MS;
+    const scenarioOverride = groupChat?.scenarioOverride;
+
+    // Manual strategy: just post the user message and wait for force-talk.
+    // Auto-mode is ignored when the strategy is manual — the user is in
+    // full control.
+    if (strategy === 'manual') {
+      if (currentChatFile && characters.length > 0) {
+        await saveChatToBackend(
+          get().messages,
+          characters[0],
+          currentChatFile,
+          true,
+          characters
+        );
+      }
+      return;
+    }
 
     const activeCharacters = characters.filter((c) => !mutedAvatars.has(c.avatar));
     if (activeCharacters.length === 0) {
@@ -1408,25 +1620,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // Build the speaker queue for this turn. List order keeps legacy behavior
-    // (everyone speaks once in order); natural/pooled produce exactly one
-    // speaker per user turn.
-    let speakerQueue: CharacterInfo[] = [];
-    if (strategy === 'list') {
-      speakerQueue = activeCharacters;
-    } else if (strategy === 'natural') {
-      const pick = selectNaturalOrderSpeaker(activeCharacters, get().messages);
-      if (pick) speakerQueue = [pick];
-    } else if (strategy === 'pooled') {
-      const pick = selectPooledOrderSpeaker(
-        activeCharacters,
-        get().messages,
-        pooledExcludeRecent
-      );
-      if (pick) speakerQueue = [pick];
-    }
+    // Pick the initial speaker queue. List replays the legacy behavior
+    // (everyone speaks once in order); natural/pooled pick one.
+    const pickSpeakers = (): CharacterInfo[] => {
+      if (strategy === 'list') return activeCharacters;
+      if (strategy === 'natural') {
+        const pick = selectNaturalOrderSpeaker(activeCharacters, get().messages);
+        return pick ? [pick] : [];
+      }
+      if (strategy === 'pooled') {
+        const pick = selectPooledOrderSpeaker(
+          activeCharacters,
+          get().messages,
+          pooledExcludeRecent
+        );
+        return pick ? [pick] : [];
+      }
+      return [];
+    };
 
-    if (speakerQueue.length === 0) {
+    const initialQueue = pickSpeakers();
+    if (initialQueue.length === 0) {
       set({ error: 'Could not select a speaker for this turn.' });
       return;
     }
@@ -1435,70 +1649,105 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      const { provider, model } = getProviderAndModel();
-
-      for (const character of speakerQueue) {
-        if (!get().isSending) break; // Check if aborted between characters
-
-        const updatedMessages = get().messages;
-        const context = buildGroupConversationContext(updatedMessages, characters, character);
-
-        const finalContext = maybeApplyInstructMode(context);
-        const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
-
-        if (stream) {
-          const aiMessageId = generateId();
-          set((state) => ({
-            isStreaming: false,
-            messages: [
-              ...state.messages,
-              {
-                id: aiMessageId,
-                name: character.name,
-                isUser: false,
-                isSystem: false,
-                content: '',
-                timestamp: Date.now(),
-                characterAvatar: character.avatar,
-                swipes: [''],
-                swipeId: 0,
-              },
-            ],
-          }));
-
-          let responseText = '';
-          for await (const token of parseSSEStream(stream)) {
-            if (!get().isSending) break;
-            responseText += token;
-            if (!get().isStreaming) set({ isStreaming: true });
-            set((state) => ({
-              messages: state.messages.map((msg) =>
-                msg.id === aiMessageId ? { ...msg, content: responseText, swipes: [responseText] } : msg
-              ),
-            }));
-          }
-
-          const emotion = parseEmotion(responseText);
-          const cleanedContent = stripEmotionTag(responseText);
-
-          set((state) => ({
-            messages: state.messages.map((msg) =>
-              msg.id === aiMessageId
-                ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
-                : msg
-            ),
-          }));
+      // Run the user-kicked turn(s) first, then loop while auto-mode is on
+      // and the user hasn't stopped us. Each loop tick re-runs pickSpeakers:
+      // for list-mode this still replays the whole roster each tick (that's
+      // what list means — a single "turn" for list is all members speaking
+      // once), and natural/pooled pick one speaker per tick.
+      let queue: CharacterInfo[] = initialQueue;
+      while (queue.length > 0 && get().isSending) {
+        for (const character of queue) {
+          if (!get().isSending) break;
+          const continued = await generateGroupTurn(
+            character,
+            characters,
+            scenarioOverride,
+            abortController,
+            get,
+            set
+          );
+          if (!continued) break;
         }
+
+        if (!autoModeEnabled || !get().isSending) break;
+
+        // Delay between auto-mode ticks. Poll isSending so stop breaks the
+        // wait promptly rather than leaving a dangling timer.
+        const delay = Math.max(0, autoModeDelayMs);
+        if (delay > 0) {
+          const start = Date.now();
+          while (Date.now() - start < delay && get().isSending) {
+            await new Promise((r) => setTimeout(r, Math.min(100, delay)));
+          }
+        }
+        if (!get().isSending) break;
+        queue = pickSpeakers();
       }
 
       // Save group chat
-      const { currentChatFile } = get();
-      if (currentChatFile && characters.length > 0) {
-        await saveChatToBackend(get().messages, characters[0], currentChatFile, true, characters);
+      const { currentChatFile: finalChatFile } = get();
+      if (finalChatFile && characters.length > 0) {
+        await saveChatToBackend(
+          get().messages,
+          characters[0],
+          finalChatFile,
+          true,
+          characters
+        );
       }
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
         set({ error: error instanceof Error ? error.message : 'Failed to send group message' });
+      }
+    } finally {
+      set({ isSending: false, isStreaming: false, abortController: null });
+    }
+  },
+
+  // ---- Force Group Member Talk (Phase 5.2) ----
+  // Makes the given member respond next, bypassing the activation strategy
+  // and mute state for exactly one turn. Intended to be wired to per-member
+  // "talk next" buttons in the group controls panel.
+  forceGroupMemberTalk: async (
+    character: CharacterInfo,
+    characters: CharacterInfo[]
+  ) => {
+    if (get().isSending) return; // caller should also gate the button
+    const { currentChatFile, getGroupChatByFile } = get();
+    const groupChat = currentChatFile ? getGroupChatByFile(currentChatFile) : null;
+    const scenarioOverride = groupChat?.scenarioOverride;
+
+    const abortController = new AbortController();
+    set({ isSending: true, isStreaming: false, error: null, abortController });
+
+    try {
+      await generateGroupTurn(
+        character,
+        characters,
+        scenarioOverride,
+        abortController,
+        get,
+        set
+      );
+
+      const { currentChatFile: finalChatFile } = get();
+      if (finalChatFile && characters.length > 0) {
+        await saveChatToBackend(
+          get().messages,
+          characters[0],
+          finalChatFile,
+          true,
+          characters
+        );
+      }
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        set({
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to force member to respond',
+        });
       }
     } finally {
       set({ isSending: false, isStreaming: false, abortController: null });
