@@ -76,33 +76,34 @@ Features are grouped into **phases** ordered by user impact and dependency. Each
 
 ---
 
-## Phase 3: Prompt Engineering & Generation Control
+## Phase 3: Prompt Engineering & Generation Control ✅ DONE
 *Goal: Give users control over how prompts are built and how the AI generates.*
 
-### 3.1 Sampler Parameters
-- **Gap:** Hardcoded `max_tokens: 1024, temperature: 0.9`. No other sampler controls.
-- **ST Feature:** Temperature, Top P, Top K, Min P, frequency/presence penalty, repetition penalty, custom stopping strings, and 15+ advanced samplers.
-- **Work:** Add generation settings panel. Per-provider parameter support (different providers support different params). Persist in settings. Add preset save/load.
+### 3.1 Sampler Parameters ✅
+- Full sampler panel: temperature, max tokens, top P, top K, min P, frequency/presence/repetition penalty, stop strings.
+- Presets: save named presets, load, delete. Persist in localStorage (`generationStore`).
+- Params are sent through `generateMessage` to the backend; unused fields are stripped.
 
-### 3.2 System Prompt / Main Prompt Editing
-- **Gap:** System prompt is hardcoded in chatStore.
-- **ST Feature:** Editable main prompt, post-history instructions, jailbreak prompt, auxiliary prompt.
-- **Work:** Move system prompt to settings store. Add editable system prompt field. Add post-history instructions. Support `{{char}}`/`{{user}}` macros in prompts.
+### 3.2 System Prompt / Main Prompt Editing ✅
+- User-editable main prompt, jailbreak/auxiliary prompt, post-history instructions — all in Generation Settings.
+- Character card overrides are still honored (togglable via checkboxes).
+- All fields support the macro system.
 
-### 3.3 Basic Macro System
-- **Gap:** No macro support.
-- **ST Feature:** 100+ macros (`{{char}}`, `{{user}}`, `{{time}}`, `{{date}}`, `{{random}}`, etc.).
-- **Work:** Implement macro parser. Start with core macros: `{{char}}`, `{{user}}`, `{{time}}`, `{{date}}`, `{{weekday}}`, `{{random}}`, `{{pick}}`, `{{lastMessage}}`, `{{personality}}`, `{{description}}`, `{{scenario}}`, `{{persona}}`. Apply in system prompt, character fields, and user messages.
+### 3.3 Basic Macro System ✅
+- `src/utils/macros.ts`: `{{char}}`, `{{user}}`, `{{persona}}`, `{{description}}`, `{{personality}}`, `{{scenario}}`, `{{time}}`, `{{date}}`, `{{weekday}}`, `{{month}}`, `{{random[:a,b,c]}}`, `{{pick:a,b,c}}`, `{{roll:d6}}`, `{{lastMessage}}`, `{{lastUserMessage}}`, `{{lastCharMessage}}`, `{{model}}`, `{{newline}}`, `{{noop}}`.
+- Applied in system prompt, all character card fields, and user prompt overrides.
 
-### 3.4 Context Size Management
-- **Gap:** Hardcoded context window (last 20-30 messages). No token counting.
-- **ST Feature:** Token-aware context building, configurable context size per model, token counter display.
-- **Work:** Add approximate token counting (tiktoken for OpenAI, cl100k for Claude, character-based estimate as fallback). Configurable context size. Fill context intelligently rather than fixed message count. Show token usage in UI.
+### 3.4 Context Size Management ✅
+- `src/utils/tokenizer.ts` with per-provider char-per-token heuristics (GPT ≈ 4.0, Claude ≈ 3.6, Llama ≈ 3.5, generic ≈ 3.8).
+- Configurable max context tokens + response reserve.
+- Token-aware trimming: keeps system prompts, drops oldest history to fit budget.
+- Fixed-message-count fallback still available.
+- Live token estimate surfaced in the Generation Settings header.
 
-### 3.5 Instruct Mode (Text Completion APIs)
-- **Gap:** Only supports chat completion format.
-- **ST Feature:** Instruct templates for text completion models (Alpaca, ChatML, Llama, Mistral, etc.).
-- **Work:** Add instruct mode toggle. Template system with prefix/suffix for user/assistant/system. Pre-built templates for common formats. Template editor.
+### 3.5 Instruct Mode (Text Completion APIs) ✅
+- `src/utils/instructTemplates.ts` with 7 built-in templates: Alpaca, ChatML, Llama 3, Mistral, Vicuna, Metharme/Pygmalion, Raw.
+- Toggle + template selector + extra stop strings in the Instruct tab.
+- When enabled, chat messages are flattened into a single text-completion prompt with role prefixes/suffixes.
 
 ---
 

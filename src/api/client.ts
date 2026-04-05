@@ -125,6 +125,20 @@ export interface CharacterEditData extends CharacterCreateData {
   create_date?: string;
 }
 
+// Generation sampler options passed through to the backend.
+// Most fields are optional and only sent when set to non-default values.
+export interface GenerationOptions {
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+  minP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  repetitionPenalty?: number;
+  stopStrings?: string[];
+}
+
 export const api = {
   // Auth endpoints
   async getUsers(): Promise<UserInfo[]> {
@@ -393,9 +407,43 @@ export const api = {
     _characterName: string,
     provider?: string,
     model?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    generationOptions?: GenerationOptions
   ): Promise<ReadableStream<Uint8Array> | null> {
     const token = await getCsrfToken();
+
+    // Build request body with optional sampler params.
+    // Unknown fields are ignored by most providers.
+    const body: Record<string, unknown> = {
+      messages,
+      stream: true,
+      max_tokens: generationOptions?.maxTokens ?? 1024,
+      temperature: generationOptions?.temperature ?? 0.9,
+      chat_completion_source: provider || 'openai',
+      model: model || 'gpt-4o',
+    };
+
+    if (generationOptions) {
+      if (generationOptions.topP !== undefined) body.top_p = generationOptions.topP;
+      if (generationOptions.topK !== undefined && generationOptions.topK > 0) {
+        body.top_k = generationOptions.topK;
+      }
+      if (generationOptions.minP !== undefined && generationOptions.minP > 0) {
+        body.min_p = generationOptions.minP;
+      }
+      if (generationOptions.frequencyPenalty !== undefined) {
+        body.frequency_penalty = generationOptions.frequencyPenalty;
+      }
+      if (generationOptions.presencePenalty !== undefined) {
+        body.presence_penalty = generationOptions.presencePenalty;
+      }
+      if (generationOptions.repetitionPenalty !== undefined && generationOptions.repetitionPenalty !== 1.0) {
+        body.repetition_penalty = generationOptions.repetitionPenalty;
+      }
+      if (generationOptions.stopStrings && generationOptions.stopStrings.length > 0) {
+        body.stop = generationOptions.stopStrings;
+      }
+    }
 
     const response = await fetch('/api/backends/chat-completions/generate', {
       method: 'POST',
@@ -405,14 +453,7 @@ export const api = {
       },
       credentials: 'include',
       signal,
-      body: JSON.stringify({
-        messages,
-        stream: true,
-        max_tokens: 1024,
-        temperature: 0.9,
-        chat_completion_source: provider || 'openai',
-        model: model || 'gpt-4o',
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
