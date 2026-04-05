@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, Sliders, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, Mic, Sliders, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
 import { Button, Input } from '../ui';
+import {
+  SPEECH_LANGUAGES,
+  getSpeechLanguage,
+  setSpeechLanguage,
+} from '../../hooks/speechLanguage';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -26,6 +32,8 @@ export function SettingsPage() {
 
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
+  const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
+  const { isSupported: isSpeechSupported } = useSpeechRecognition();
 
   useEffect(() => {
     fetchSecrets();
@@ -296,6 +304,39 @@ export function SettingsPage() {
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
               </button>
             </section>
+
+            {/* Voice Input Language */}
+            {isSpeechSupported && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mic size={16} className="text-[var(--color-text-secondary)]" />
+                  <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Voice Input Language
+                  </h2>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+                  Language used for speech-to-text dictation in the chat input.
+                </p>
+                <select
+                  value={speechLang}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSpeechLangState(next);
+                    setSpeechLanguage(next);
+                  }}
+                  className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                >
+                  {SPEECH_LANGUAGES.some((l) => l.code === speechLang) ? null : (
+                    <option value={speechLang}>{speechLang} (current)</option>
+                  )}
+                  {SPEECH_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.label} ({lang.code})
+                    </option>
+                  ))}
+                </select>
+              </section>
+            )}
 
             {/* Help Text */}
             <section className="text-center py-4">
