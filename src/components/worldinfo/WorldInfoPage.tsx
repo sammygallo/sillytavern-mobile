@@ -47,6 +47,11 @@ export function WorldInfoPage() {
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Character-embedded books are managed from the character editor; hide
+  // them from the global lorebook list to avoid confusion.
+  const globalBooks = books.filter((b) => b.ownerCharacterAvatar == null);
+  const charOwnedCount = books.length - globalBooks.length;
+
   const handleCreate = () => {
     const trimmed = newBookName.trim();
     if (!trimmed) return;
@@ -272,7 +277,7 @@ export function WorldInfoPage() {
             </Button>
           </div>
 
-          {books.length === 0 ? (
+          {globalBooks.length === 0 ? (
             <div className="text-center py-10">
               <BookOpen
                 size={48}
@@ -284,10 +289,17 @@ export function WorldInfoPage() {
               <p className="text-xs text-[var(--color-text-secondary)]">
                 Create one above, or import an existing World Info JSON.
               </p>
+              {charOwnedCount > 0 && (
+                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                  {charOwnedCount} character-embedded lorebook
+                  {charOwnedCount === 1 ? ' is' : 's are'} managed from the
+                  character editor.
+                </p>
+              )}
             </div>
           ) : (
             <ul className="space-y-2">
-              {books.map((book) => {
+              {globalBooks.map((book) => {
                 const isActive = activeBookIds.includes(book.id);
                 const isRenaming = renamingId === book.id;
                 return (
@@ -390,6 +402,13 @@ export function WorldInfoPage() {
             Lorebooks are stored locally. Active books are scanned against recent
             messages; matching entries are injected at their configured position.
           </p>
+          {globalBooks.length > 0 && charOwnedCount > 0 && (
+            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+              {charOwnedCount} character-embedded lorebook
+              {charOwnedCount === 1 ? '' : 's'} hidden (managed from the
+              character editor).
+            </p>
+          )}
         </section>
       </div>
 

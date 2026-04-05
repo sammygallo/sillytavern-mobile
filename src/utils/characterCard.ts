@@ -3,6 +3,38 @@
 
 import type { CharacterInfo } from '../api/client';
 
+// Character Book V2 spec format (embedded inside a character card).
+// This is the on-disk/wire format used by SillyTavern for
+// `data.character_book`. Our internal representation
+// (`WorldInfoBook` / `WorldInfoEntry`) is converted to/from this shape
+// in `worldInfoStore.ts`.
+export interface CharacterBookEntryV2 {
+  keys: string[];
+  content: string;
+  extensions?: Record<string, unknown>;
+  enabled?: boolean;
+  insertion_order?: number;
+  case_sensitive?: boolean;
+  name?: string;
+  priority?: number;
+  id?: number;
+  comment?: string;
+  selective?: boolean;
+  secondary_keys?: string[];
+  constant?: boolean;
+  position?: 'before_char' | 'after_char';
+}
+
+export interface CharacterBookV2 {
+  name?: string;
+  description?: string;
+  scan_depth?: number;
+  token_budget?: number;
+  recursive_scanning?: boolean;
+  extensions?: Record<string, unknown>;
+  entries: CharacterBookEntryV2[];
+}
+
 // Character Card V2 specification format
 export interface CharacterCardV2 {
   spec: 'chara_card_v2';
@@ -21,7 +53,7 @@ export interface CharacterCardV2 {
     system_prompt?: string;
     post_history_instructions?: string;
     alternate_greetings?: string[];
-    character_book?: unknown;
+    character_book?: CharacterBookV2;
     extensions?: {
       depth_prompt?: {
         prompt?: string;
@@ -60,9 +92,15 @@ export interface CharacterExportData {
 }
 
 /**
- * Convert CharacterInfo to Character Card V2 format
+ * Convert CharacterInfo to Character Card V2 format.
+ *
+ * If the caller supplies `characterBook`, it is embedded at
+ * `data.character_book` so the V2 card is self-contained.
  */
-export function characterToCardV2(character: CharacterInfo): CharacterCardV2 {
+export function characterToCardV2(
+  character: CharacterInfo,
+  characterBook?: CharacterBookV2
+): CharacterCardV2 {
   const extensions: CharacterCardV2['data']['extensions'] = {
     ...(character.data?.extensions || {}),
   };
@@ -97,9 +135,28 @@ export function characterToCardV2(character: CharacterInfo): CharacterCardV2 {
       post_history_instructions:
         character.post_history_instructions || character.data?.post_history_instructions || '',
       alternate_greetings: character.alternate_greetings || character.data?.alternate_greetings || [],
+      ...(characterBook ? { character_book: characterBook } : {}),
       extensions,
     },
   };
+}
+
+/**
+ * Pull the embedded character_book off an imported card (if any).
+ * Returns null when the data is missing or malformed.
+ */
+export function extractCharacterBook(
+  card: CharacterCardV2 | CharacterExportData | null | undefined
+): CharacterBookV2 | null {
+  if (!card) return null;
+  if ('spec' in card && card.spec === 'chara_card_v2') {
+    const book = card.data.character_book;
+    if (!book || typeof book !== 'object') return null;
+    const entries = (book as CharacterBookV2).entries;
+    if (!Array.isArray(entries)) return null;
+    return book as CharacterBookV2;
+  }
+  return null;
 }
 
 /**
@@ -342,7 +399,8 @@ function createTextChunk(keyword: string, text: string): Uint8Array {
  */
 export async function embedCharacterInPNG(
   imageBlob: Blob,
-  character: CharacterInfo
+  character: CharacterInfo,
+  characterBook?: CharacterBookV2
 ): Promise<Blob> {
   const buffer = await imageBlob.arrayBuffer();
   const data = new Uint8Array(buffer);
@@ -356,7 +414,7 @@ export async function embedCharacterInPNG(
   }
 
   // Convert character to V2 card and encode as base64
-  const cardData = characterToCardV2(character);
+  const cardData = characterToCardV2(character, characterBook);
   const jsonString = JSON.stringify(cardData);
   const base64Data = btoa(jsonString);
 
@@ -401,8 +459,11 @@ export async function embedCharacterInPNG(
 /**
  * Export character as JSON file (as Character Card V2 so advanced fields survive)
  */
-export function exportCharacterAsJSON(character: CharacterInfo): Blob {
-  const cardV2 = characterToCardV2(character);
+export function exportCharacterAsJSON(
+  character: CharacterInfo,
+  characterBook?: CharacterBookV2
+): Blob {
+  const cardV2 = characterToCardV2(character, characterBook);
   const jsonString = JSON.stringify(cardV2, null, 2);
   return new Blob([jsonString], { type: 'application/json' });
 }

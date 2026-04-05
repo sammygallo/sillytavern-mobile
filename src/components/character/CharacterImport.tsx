@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
-import { Upload, FileImage, FileJson, X } from 'lucide-react';
+import { Upload, FileImage, FileJson, X, BookOpen } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { Modal, Button, Input, TextArea, ImageUpload } from '../ui';
 import type { CharacterInfo } from '../../api/client';
+import type { CharacterBookV2 } from '../../utils/characterCard';
 
 interface CharacterImportProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
   const {
     importCharacter,
     createCharacter,
+    registerEmbeddedBookFromCard,
     isImporting,
     isCreating,
     error,
@@ -24,6 +26,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
   const [importedData, setImportedData] = useState<Partial<CharacterInfo> | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [importedBook, setImportedBook] = useState<CharacterBookV2 | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -45,6 +48,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
 
     if (result) {
       setImportedData(result.data);
+      setImportedBook(result.characterBook || null);
       if (result.avatarFile) {
         setAvatarFile(result.avatarFile);
         // Create preview URL
@@ -112,6 +116,15 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     );
 
     if (avatarUrl) {
+      // Persist the character's embedded lorebook after the server assigns
+      // the final avatar filename.
+      if (importedBook) {
+        registerEmbeddedBookFromCard(
+          avatarUrl,
+          importedBook,
+          `${formData.name.trim() || 'Character'} Lorebook`
+        );
+      }
       handleClose();
       onImported?.(avatarUrl);
     }
@@ -123,6 +136,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       URL.revokeObjectURL(avatarPreview);
     }
     setImportedData(null);
+    setImportedBook(null);
     setAvatarFile(null);
     setAvatarPreview(null);
     setFormData({
@@ -165,6 +179,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
 
     if (result) {
       setImportedData(result.data);
+      setImportedBook(result.characterBook || null);
       if (result.avatarFile) {
         setAvatarFile(result.avatarFile);
         const previewUrl = URL.createObjectURL(result.avatarFile);
@@ -258,6 +273,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
               type="button"
               onClick={() => {
                 setImportedData(null);
+                setImportedBook(null);
                 setAvatarFile(null);
                 if (avatarPreview) {
                   URL.revokeObjectURL(avatarPreview);
@@ -269,6 +285,22 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
               <X size={16} />
             </button>
           </div>
+
+          {/* Embedded Lorebook Notice */}
+          {importedBook && (
+            <div className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/40 rounded-lg flex items-center gap-2.5 text-sm text-[var(--color-text-primary)]">
+              <BookOpen size={16} className="text-[var(--color-primary)] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">Embedded lorebook detected</p>
+                <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                  {importedBook.name || 'Character Lorebook'} ·{' '}
+                  {importedBook.entries?.length ?? 0} entr
+                  {(importedBook.entries?.length ?? 0) === 1 ? 'y' : 'ies'} — will
+                  auto-activate when this character is selected.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Avatar */}
           <ImageUpload

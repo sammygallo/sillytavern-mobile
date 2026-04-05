@@ -3,6 +3,7 @@ import { api, type CharacterInfo, type GenerationOptions } from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { usePersonaStore } from './personaStore';
 import { useGenerationStore } from './generationStore';
+import { useCharacterStore } from './characterStore';
 import {
   useWorldInfoStore,
   scanMessagesForEntries,
@@ -260,12 +261,21 @@ function buildConversationContext(
   );
   const sub = (text: string) => (text ? processMacros(text, macroCtx) : '');
 
-  // Scan active world info books for keyword matches against recent history
+  // Scan active world info books for keyword matches against recent history.
+  // The character's embedded book + per-character linked books are
+  // auto-activated at scan time (scoped to this call), leaving the global
+  // `activeBookIds` list untouched as the user navigates between characters.
   const wiState = useWorldInfoStore.getState();
+  const charBookIds = useCharacterStore
+    .getState()
+    .getActiveBookIdsForCharacter(character.avatar || '');
+  const scanBookIds = Array.from(
+    new Set([...wiState.activeBookIds, ...charBookIds])
+  );
   const tokenProfile = profileForProvider(activeProvider);
   const matchedEntries = scanMessagesForEntries(
     wiState.books,
-    wiState.activeBookIds,
+    scanBookIds,
     messages,
     {
       scanDepth: wiState.scanDepth,
