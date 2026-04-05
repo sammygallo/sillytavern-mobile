@@ -72,6 +72,11 @@ export interface GroupChatInfo {
   autoModeDelayMs: number;
   /** Phase 5.2: optional group-wide scenario replacing per-character scenario. */
   scenarioOverride: string;
+  /** Phase 5.3: per-member talkativeness override (avatar → [0,1]). Does not
+   *  mutate the card; only applies inside this group for weighted strategies. */
+  talkativenessOverrides: Record<string, number>;
+  /** Phase 5.3: user-editable chat title. Falls back to comma-joined names. */
+  title?: string;
 }
 
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
@@ -111,7 +116,27 @@ function migrateGroupChat(raw: Partial<GroupChatInfo> & {
         : DEFAULT_AUTO_MODE_DELAY_MS,
     scenarioOverride:
       typeof raw.scenarioOverride === 'string' ? raw.scenarioOverride : '',
+    talkativenessOverrides: sanitizeTalkativenessOverrides(
+      (raw as Partial<GroupChatInfo>).talkativenessOverrides
+    ),
+    title:
+      typeof (raw as Partial<GroupChatInfo>).title === 'string'
+        ? (raw as Partial<GroupChatInfo>).title
+        : undefined,
   };
+}
+
+function sanitizeTalkativenessOverrides(
+  raw: unknown
+): Record<string, number> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'number' || !isFinite(value)) continue;
+    const clamped = value < 0 ? 0 : value > 1 ? 1 : value;
+    out[key] = clamped;
+  }
+  return out;
 }
 
 function loadGroupChatsFromStorage(): GroupChatInfo[] {
@@ -131,8 +156,19 @@ function saveGroupChatsToStorage(groupChats: GroupChatInfo[]) {
 }
 
 /** Parse the per-character "talkativeness" extension, clamped to [0, 1].
- *  Falls back to 0.5 when absent, not a number, or out of range. */
-export function getTalkativeness(character: CharacterInfo): number {
+ *  Falls back to 0.5 when absent, not a number, or out of range.
+ *
+ *  Phase 5.3: optional `override` (0..1) wins when supplied — this is how
+ *  group-level talkativeness sliders take effect without mutating the card. */
+export function getTalkativeness(
+  character: CharacterInfo,
+  override?: number
+): number {
+  if (typeof override === 'number' && isFinite(override)) {
+    if (override < 0) return 0;
+    if (override > 1) return 1;
+    return override;
+  }
   const raw = character.data?.extensions?.talkativeness;
   if (typeof raw !== 'string') return 0.5;
   const n = parseFloat(raw);
@@ -147,14 +183,18 @@ function escapeRegExp(str: string): string {
 }
 
 /** Weighted random pick using talkativeness. Falls back to uniform when all
- *  weights are zero or the pool has a single entry. */
+ *  weights are zero or the pool has a single entry.
+ *
+ *  Phase 5.3: `overrides` (avatar → weight) lets the caller inject group-scope
+ *  talkativeness values without mutating the card. */
 function weightedRandomPick(
   pool: CharacterInfo[],
+  overrides: Record<string, number> | undefined,
   rng: () => number = Math.random
 ): CharacterInfo | null {
   if (pool.length === 0) return null;
   if (pool.length === 1) return pool[0];
-  const weights = pool.map(getTalkativeness);
+  const weights = pool.map((c) => getTalkativeness(c, overrides?.[c.avatar]));
   const total = weights.reduce((a, b) => a + b, 0);
   if (total <= 0) {
     return pool[Math.floor(rng() * pool.length)];
@@ -173,13 +213,14 @@ function weightedRandomPick(
 export function selectNaturalOrderSpeaker(
   candidates: CharacterInfo[],
   messages: ChatMessage[],
+  overrides?: Record<string, number>,
   rng: () => number = Math.random
 ): CharacterInfo | null {
   if (candidates.length === 0) return null;
 
   const lastMeaningful = [...messages].reverse().find((m) => !m.isSystem);
   if (!lastMeaningful || !lastMeaningful.content.trim()) {
-    return weightedRandomPick(candidates, rng);
+    return weightedRandomPick(candidates, overrides, rng);
   }
 
   const haystack = lastMeaningful.content;
@@ -191,9 +232,9 @@ export function selectNaturalOrderSpeaker(
   });
 
   if (mentioned.length === 0) {
-    return weightedRandomPick(candidates, rng);
+    return weightedRandomPick(candidates, overrides, rng);
   }
-  return weightedRandomPick(mentioned, rng);
+  return weightedRandomPick(mentioned, overrides, rng);
 }
 
 /** Pooled Order: weighted random pick from the candidates, excluding
@@ -203,11 +244,12 @@ export function selectPooledOrderSpeaker(
   candidates: CharacterInfo[],
   messages: ChatMessage[],
   excludeRecent: number,
+  overrides?: Record<string, number>,
   rng: () => number = Math.random
 ): CharacterInfo | null {
   if (candidates.length === 0) return null;
   const n = Math.max(0, Math.floor(excludeRecent));
-  if (n === 0) return weightedRandomPick(candidates, rng);
+  if (n === 0) return weightedRandomPick(candidates, overrides, rng);
 
   const recent: string[] = [];
   for (let i = messages.length - 1; i >= 0 && recent.length < n; i--) {
@@ -217,8 +259,8 @@ export function selectPooledOrderSpeaker(
   }
 
   const pool = candidates.filter((c) => !recent.includes(c.name));
-  if (pool.length === 0) return weightedRandomPick(candidates, rng);
-  return weightedRandomPick(pool, rng);
+  if (pool.length === 0) return weightedRandomPick(candidates, overrides, rng);
+  return weightedRandomPick(pool, overrides, rng);
 }
 
 interface ChatState {
@@ -231,6 +273,9 @@ interface ChatState {
   isStreaming: boolean;
   error: string | null;
   abortController: AbortController | null;
+  /** Phase 5.3: name of the character currently drafting a reply, surfaced
+   *  in the group-chat typing indicator. `null` when nobody is typing. */
+  currentSpeakerName: string | null;
 
   // Existing actions
   fetchChatFiles: (avatarUrl: string) => Promise<void>;
@@ -259,6 +304,16 @@ interface ChatState {
   setGroupAutoModeDelay: (fileName: string, delayMs: number) => void;
   setGroupScenarioOverride: (fileName: string, scenario: string) => void;
   reorderGroupMembers: (fileName: string, avatars: string[]) => void;
+
+  // Phase 5.3: per-member talkativeness overrides, title, live add/remove
+  setGroupTalkativenessOverride: (
+    fileName: string,
+    avatar: string,
+    value: number | null
+  ) => void;
+  setGroupTitle: (fileName: string, title: string) => void;
+  addGroupChatMember: (fileName: string, character: CharacterInfo) => void;
+  removeGroupChatMember: (fileName: string, avatar: string) => void;
 
   // New Phase 1 actions
   stopGeneration: () => void;
@@ -789,6 +844,12 @@ async function generateGroupTurn(
   get: () => ChatState,
   set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void
 ): Promise<boolean> {
+  // Surface this speaker to the typing indicator before the API call so the
+  // "X is typing..." row shows during the request, not just after the first
+  // token. Reset isStreaming so the indicator isn't masked by the prior
+  // speaker's tail streaming state.
+  set({ isStreaming: false, currentSpeakerName: character.name });
+
   const { provider, model } = getProviderAndModel();
   const updatedMessages = get().messages;
   const context = buildGroupConversationContext(
@@ -812,7 +873,6 @@ async function generateGroupTurn(
 
   const aiMessageId = generateId();
   set((state) => ({
-    isStreaming: false,
     messages: [
       ...state.messages,
       {
@@ -974,6 +1034,25 @@ function createMessage(data: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>): Ch
   };
 }
 
+/** Reset streaming flags in a `finally` block only when the local controller
+ *  is still the active one. Prevents a slow-unwinding generator from wiping
+ *  the state of a newer operation the user kicked off (e.g. stop → force-talk
+ *  in quick succession). */
+function resetStreamingStateIfOwner(
+  localController: AbortController,
+  get: () => ChatState,
+  set: (partial: Partial<ChatState>) => void
+) {
+  if (get().abortController === localController) {
+    set({
+      isSending: false,
+      isStreaming: false,
+      abortController: null,
+      currentSpeakerName: null,
+    });
+  }
+}
+
 // Helper: normalize loaded messages to always have swipes
 function normalizeMessage(msg: {
   name: string;
@@ -1011,6 +1090,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   error: null,
   abortController: null,
+  currentSpeakerName: null,
 
   refreshGroupChats: () => {
     set({ groupChats: loadGroupChatsFromStorage() });
@@ -1110,6 +1190,111 @@ export const useChatStore = create<ChatState>((set, get) => ({
         characterNames: nextNames,
       };
     });
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  // ---- Phase 5.3: per-member talkativeness, title, live add/remove ----
+  setGroupTalkativenessOverride: (fileName, avatar, value) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) => {
+      if (g.fileName !== fileName) return g;
+      const nextOverrides = { ...(g.talkativenessOverrides || {}) };
+      if (value === null || typeof value !== 'number' || !isFinite(value)) {
+        delete nextOverrides[avatar];
+      } else {
+        const clamped = value < 0 ? 0 : value > 1 ? 1 : value;
+        nextOverrides[avatar] = clamped;
+      }
+      return { ...g, talkativenessOverrides: nextOverrides };
+    });
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  setGroupTitle: (fileName, title) => {
+    const trimmed = title.trim();
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName
+        ? { ...g, title: trimmed.length > 0 ? trimmed : undefined }
+        : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  addGroupChatMember: (fileName, character) => {
+    const { groupChats, messages } = get();
+    const existing = groupChats.find((g) => g.fileName === fileName);
+    if (!existing) return;
+    if (existing.characterAvatars.includes(character.avatar)) return;
+
+    // Persist roster change.
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName
+        ? {
+            ...g,
+            characterNames: [...g.characterNames, character.name],
+            characterAvatars: [...g.characterAvatars, character.avatar],
+          }
+        : g
+    );
+    saveGroupChatsToStorage(updated);
+
+    // Post greeting so the new member exists in context before being asked
+    // to speak. Use first_mes when available, otherwise a neutral join marker.
+    const firstMes = character.first_mes || character.data?.first_mes || '';
+    const greeting: ChatMessage = firstMes.trim()
+      ? createMessage({
+          name: character.name,
+          isUser: false,
+          isSystem: false,
+          content: firstMes,
+          timestamp: Date.now(),
+          characterAvatar: character.avatar,
+        })
+      : createMessage({
+          name: 'System',
+          isUser: false,
+          isSystem: true,
+          content: `${character.name} joined the chat.`,
+          timestamp: Date.now(),
+        });
+
+    set({
+      groupChats: updated,
+      messages: [...messages, greeting],
+    });
+  },
+
+  removeGroupChatMember: (fileName, avatar) => {
+    const { groupChats } = get();
+    const existing = groupChats.find((g) => g.fileName === fileName);
+    if (!existing) return;
+    if (!existing.characterAvatars.includes(avatar)) return;
+    // Refuse if removing would drop the group below 2 members — a group of 1
+    // is indistinguishable from a solo chat and breaks several assumptions.
+    if (existing.characterAvatars.length <= 2) return;
+
+    const idx = existing.characterAvatars.indexOf(avatar);
+    const nextAvatars = existing.characterAvatars.filter((_, i) => i !== idx);
+    const nextNames = existing.characterNames.filter((_, i) => i !== idx);
+    const nextMuted = existing.mutedAvatars.filter((a) => a !== avatar);
+    const nextOverrides = { ...(existing.talkativenessOverrides || {}) };
+    delete nextOverrides[avatar];
+
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName
+        ? {
+            ...g,
+            characterAvatars: nextAvatars,
+            characterNames: nextNames,
+            mutedAvatars: nextMuted,
+            talkativenessOverrides: nextOverrides,
+          }
+        : g
+    );
     saveGroupChatsToStorage(updated);
     set({ groupChats: updated });
   },
@@ -1235,6 +1420,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       autoModeEnabled: false,
       autoModeDelayMs: DEFAULT_AUTO_MODE_DELAY_MS,
       scenarioOverride: '',
+      talkativenessOverrides: {},
+      title: undefined,
     };
     const updatedGroupChats = [...groupChats, newGroupChat];
     saveGroupChatsToStorage(updatedGroupChats);
@@ -1258,7 +1445,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (abortController) {
       abortController.abort();
     }
-    set({ isSending: false, isStreaming: false, abortController: null });
+    // Clear abortController + sending flags synchronously so the next action
+    // (e.g. force-talk after stop) sees clean state immediately. The in-flight
+    // generation's `finally` block guards against trampling a newer controller.
+    set({
+      isSending: false,
+      isStreaming: false,
+      abortController: null,
+      currentSpeakerName: null,
+    });
   },
 
   // ---- Edit Message (save only, no regeneration) ----
@@ -1597,6 +1792,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const autoModeDelayMs =
       groupChat?.autoModeDelayMs ?? DEFAULT_AUTO_MODE_DELAY_MS;
     const scenarioOverride = groupChat?.scenarioOverride;
+    const talkativenessOverrides = groupChat?.talkativenessOverrides;
 
     // Manual strategy: just post the user message and wait for force-talk.
     // Auto-mode is ignored when the strategy is manual — the user is in
@@ -1625,14 +1821,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const pickSpeakers = (): CharacterInfo[] => {
       if (strategy === 'list') return activeCharacters;
       if (strategy === 'natural') {
-        const pick = selectNaturalOrderSpeaker(activeCharacters, get().messages);
+        const pick = selectNaturalOrderSpeaker(
+          activeCharacters,
+          get().messages,
+          talkativenessOverrides
+        );
         return pick ? [pick] : [];
       }
       if (strategy === 'pooled') {
         const pick = selectPooledOrderSpeaker(
           activeCharacters,
           get().messages,
-          pooledExcludeRecent
+          pooledExcludeRecent,
+          talkativenessOverrides
         );
         return pick ? [pick] : [];
       }
@@ -1700,7 +1901,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ error: error instanceof Error ? error.message : 'Failed to send group message' });
       }
     } finally {
-      set({ isSending: false, isStreaming: false, abortController: null });
+      resetStreamingStateIfOwner(abortController, get, set);
     }
   },
 
@@ -1750,7 +1951,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     } finally {
-      set({ isSending: false, isStreaming: false, abortController: null });
+      resetStreamingStateIfOwner(abortController, get, set);
     }
   },
 

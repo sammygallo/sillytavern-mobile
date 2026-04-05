@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { MessageSquare, Users, Settings2 } from 'lucide-react';
+import { MessageSquare, Users, Settings2, Pencil } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
@@ -37,13 +37,23 @@ export function ChatView() {
     impersonate,
     stopGeneration,
     currentChatFile,
+    currentSpeakerName,
+    setGroupTitle,
   } = useChatStore();
+  // Subscribe to the current group-chat record for title + strategy display.
+  const groupChatRecord = useChatStore((s) =>
+    isGroupChatMode && currentChatFile
+      ? s.groupChats.find((g) => g.fileName === currentChatFile) || null
+      : null
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastCharacterRef = useRef<string | null>(null);
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
   const [prefillNonce, setPrefillNonce] = useState(0);
   const [showGroupControls, setShowGroupControls] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
 
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
@@ -171,9 +181,24 @@ export function ChatView() {
     );
   }
 
+  const membersLabel = groupChatCharacters.map((c) => c.name).join(', ');
+  const groupTitle =
+    groupChatRecord?.title && groupChatRecord.title.trim().length > 0
+      ? groupChatRecord.title
+      : membersLabel;
   const displayName = isGroupChatMode
-    ? groupChatCharacters.map((c) => c.name).join(', ')
+    ? groupTitle
     : selectedCharacter?.name ?? '';
+
+  const commitTitle = () => {
+    if (!currentChatFile) {
+      setIsEditingTitle(false);
+      return;
+    }
+    setGroupTitle(currentChatFile, titleDraft);
+    setIsEditingTitle(false);
+  };
+  const cancelTitleEdit = () => setIsEditingTitle(false);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -186,11 +211,47 @@ export function ChatView() {
                 <Users size={24} className="text-[var(--color-primary)]" />
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
-                  Group Chat
-                </h2>
+                {isEditingTitle ? (
+                  <input
+                    type="text"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={commitTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitTitle();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelTitleEdit();
+                      }
+                    }}
+                    placeholder={membersLabel}
+                    className="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] border-b border-[var(--color-primary)] focus:outline-none"
+                    autoFocus
+                    aria-label="Edit group chat title"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTitleDraft(groupChatRecord?.title ?? '');
+                      setIsEditingTitle(true);
+                    }}
+                    className="flex items-center gap-1.5 group max-w-full"
+                    title="Edit title"
+                  >
+                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
+                      {groupTitle || 'Group Chat'}
+                    </h2>
+                    <Pencil
+                      size={12}
+                      className="text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity"
+                    />
+                  </button>
+                )}
                 <p className="text-xs text-[var(--color-text-secondary)] truncate">
-                  {groupChatCharacters.map((c) => c.name).join(', ')}
+                  {membersLabel}
                 </p>
               </div>
               <button
@@ -326,10 +387,11 @@ export function ChatView() {
               </div>
             )}
 
-            {/* Typing indicator (only before first token) */}
+            {/* Typing indicator (only before first token). In group chats,
+                label with the speaker name so the user knows who is drafting. */}
             {isSending && !isStreaming && (
-              <div className="flex gap-3 px-4 py-3">
-                <div className="w-10 h-10 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center">
+              <div className="flex gap-3 px-4 py-3 items-center">
+                <div className="w-10 h-10 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center flex-shrink-0">
                   <div className="flex gap-1">
                     <span className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-bounce" />
                     <span
@@ -342,6 +404,11 @@ export function ChatView() {
                     />
                   </div>
                 </div>
+                {isGroupChatMode && currentSpeakerName && (
+                  <span className="text-sm text-[var(--color-text-secondary)] italic truncate">
+                    {currentSpeakerName} is typing...
+                  </span>
+                )}
               </div>
             )}
 
@@ -371,6 +438,16 @@ export function ChatView() {
         prefillText={prefillText}
         prefillNonce={prefillNonce}
       />
+
+      {/* Manual-strategy hint: auto-pick is disabled, so user has to force-talk. */}
+      {isGroupChatMode &&
+        groupChatRecord?.activationStrategy === 'manual' &&
+        !isSending && (
+          <div className="px-4 pb-2 text-xs text-[var(--color-text-secondary)] italic border-t border-[var(--color-border)]/30 pt-2">
+            Manual mode: open settings{' '}
+            <Settings2 size={10} className="inline -mt-0.5" /> and tap a talk icon to choose who speaks next.
+          </div>
+        )}
     </div>
   );
 }
