@@ -12,6 +12,10 @@ import {
   getDefaultAvatarUrl,
   type Emotion,
 } from '../../utils/emotions';
+import {
+  compressImageFiles,
+  ACCEPTED_IMAGE_MIMES,
+} from '../../utils/images';
 
 export function ChatView() {
   const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
@@ -54,6 +58,12 @@ export function ChatView() {
   const [showGroupControls, setShowGroupControls] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  // Phase 6.1: drag-drop staging — data URLs to append to ChatInput's
+  // attachment set, re-triggered by the nonce so identical payloads fire.
+  const [droppedImages, setDroppedImages] = useState<string[]>([]);
+  const [droppedImagesNonce, setDroppedImagesNonce] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
 
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
@@ -127,13 +137,55 @@ export function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, images?: string[]) => {
     if (isGroupChatMode && groupChatCharacters.length >= 2) {
-      sendGroupMessage(content, groupChatCharacters);
+      sendGroupMessage(content, groupChatCharacters, images);
     } else if (selectedCharacter) {
-      sendMessage(content, selectedCharacter, availableEmotions);
+      sendMessage(content, selectedCharacter, availableEmotions, images);
     }
   };
+
+  // Phase 6.1: drag-and-drop image staging. Only `image/*` files are
+  // accepted — everything else falls through to the browser. Nested
+  // drag-enter/leave events use a counter so the overlay doesn't flicker
+  // when dragging over child elements.
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setIsDragOver(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files ?? []).filter((f) =>
+      (ACCEPTED_IMAGE_MIMES as readonly string[]).includes(f.type)
+    );
+    if (files.length === 0) return;
+
+    const { dataUrls } = await compressImageFiles(files);
+    if (dataUrls.length > 0) {
+      setDroppedImages(dataUrls);
+      setDroppedImagesNonce((n) => n + 1);
+    }
+  }, []);
 
   const handleRegenerate = () => {
     if (selectedCharacter && !isGroupChatMode) {
@@ -312,7 +364,23 @@ export function ChatView() {
       ) : null}
 
       {/* Messages Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto relative ${
+          isDragOver ? 'ring-2 ring-[var(--color-primary)] ring-inset' : ''
+        }`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Drag-drop overlay — non-interactive, just a visual cue. */}
+        {isDragOver && (
+          <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-[var(--color-primary)]/10 backdrop-blur-sm">
+            <div className="px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-primary)] text-sm text-[var(--color-text-primary)] shadow-lg">
+              Drop images to attach
+            </div>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8">
             <div className="w-20 h-20 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center mb-4">
@@ -356,6 +424,7 @@ export function ChatView() {
                   avatar={messageAvatar}
                   timestamp={message.timestamp}
                   disabled={isSending}
+                  images={message.images}
                   swipes={message.swipes}
                   swipeId={message.swipeId}
                   showSwipeControl={showSwipeControl}
@@ -437,6 +506,8 @@ export function ChatView() {
         placeholder={isGroupChatMode ? `Message the group...` : `Message ${displayName}...`}
         prefillText={prefillText}
         prefillNonce={prefillNonce}
+        droppedImages={droppedImages}
+        droppedImagesNonce={droppedImagesNonce}
       />
 
       {/* Manual-strategy hint: auto-pick is disabled, so user has to force-talk. */}

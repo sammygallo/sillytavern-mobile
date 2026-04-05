@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { api, type CharacterInfo, type GenerationOptions } from '../api/client';
+import {
+  api,
+  type CharacterInfo,
+  type GenerationOptions,
+  type GenerationImage,
+} from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { usePersonaStore } from './personaStore';
 import { useGenerationStore } from './generationStore';
@@ -11,6 +16,7 @@ import {
   type MatchedEntry,
 } from './worldInfoStore';
 import { parseEmotion, stripEmotionTag, type Emotion } from '../utils/emotions';
+import { dataUrlToPart, supportsVision } from '../utils/images';
 import { processMacros, type MacroContext } from '../utils/macros';
 import {
   estimateConversationTokens,
@@ -31,6 +37,11 @@ export interface ChatMessage {
   characterAvatar?: string;
   swipes: string[];
   swipeId: number;
+  /** Phase 6.1: user-attached images as data URLs (e.g. data:image/jpeg;base64,...).
+   *  Rendered as a grid above content in ChatMessage.tsx and folded into the
+   *  provider's multimodal content parts on the LAST user turn when calling
+   *  generateMessage. Persisted into the JSONL record's `extra.images` field. */
+  images?: string[];
 }
 
 interface ChatFile {
@@ -284,8 +295,17 @@ interface ChatState {
   startNewChat: (character: CharacterInfo) => Promise<void>;
   startNewGroupChat: (characters: CharacterInfo[]) => Promise<void>;
   addMessage: (message: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>) => void;
-  sendMessage: (content: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
-  sendGroupMessage: (content: string, characters: CharacterInfo[]) => Promise<void>;
+  sendMessage: (
+    content: string,
+    character: CharacterInfo,
+    availableEmotions?: string[],
+    images?: string[]
+  ) => Promise<void>;
+  sendGroupMessage: (
+    content: string,
+    characters: CharacterInfo[],
+    images?: string[]
+  ) => Promise<void>;
   /** Phase 5.2: force a single member to respond next, bypassing strategy + mute. */
   forceGroupMemberTalk: (character: CharacterInfo, characters: CharacterInfo[]) => Promise<void>;
   editMessageAndRegenerate: (messageId: string, newContent: string, character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
@@ -842,7 +862,8 @@ async function generateGroupTurn(
   scenarioOverride: string | undefined,
   abortController: AbortController,
   get: () => ChatState,
-  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  images?: GenerationImage[]
 ): Promise<boolean> {
   // Surface this speaker to the typing indicator before the API call so the
   // "X is typing..." row shows during the request, not just after the first
@@ -866,7 +887,8 @@ async function generateGroupTurn(
     provider,
     model,
     abortController.signal,
-    getGenerationOptions()
+    getGenerationOptions(),
+    images
   );
 
   if (!stream) return false;
@@ -1010,6 +1032,17 @@ async function saveChatToBackend(
       swipes: msg.swipes,
       swipe_id: msg.swipeId,
       ...(msg.characterAvatar ? { character_avatar: msg.characterAvatar } : {}),
+      // Phase 6.1: persist image attachments into extra.images (array) and
+      // extra.image (first element, SillyTavern-compat fallback for any
+      // code path that still reads the scalar form).
+      ...(msg.images && msg.images.length > 0
+        ? {
+            extra: {
+              images: msg.images,
+              image: msg.images[0],
+            },
+          }
+        : {}),
     })),
   ];
 
@@ -1032,6 +1065,40 @@ function createMessage(data: Omit<ChatMessage, 'id' | 'swipes' | 'swipeId'>): Ch
     swipes: [data.content],
     swipeId: 0,
   };
+}
+
+/** Phase 6.1: convert stored data-URL images into the provider-neutral
+ *  `{mimeType, base64}` form the API client expects. Malformed entries
+ *  are silently dropped — callers already staged valid data URLs. */
+function resolveImagesForSend(
+  images: string[] | undefined
+): GenerationImage[] | undefined {
+  if (!images || images.length === 0) return undefined;
+  const parts: GenerationImage[] = [];
+  for (const url of images) {
+    const part = dataUrlToPart(url);
+    if (part) parts.push(part);
+  }
+  return parts.length > 0 ? parts : undefined;
+}
+
+/** Phase 6.1: pull the most recent user message's images from a history
+ *  so follow-up generations (swipe/regen/continue/edit-and-regen) keep the
+ *  multimodal attachment in play even when the caller didn't pass images
+ *  directly. Returns undefined if the model can't see images or the last
+ *  user message has none. */
+function imagesFromLastUserMessage(
+  messages: ChatMessage[],
+  provider: string,
+  model: string
+): GenerationImage[] | undefined {
+  if (!supportsVision(provider, model)) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m.isUser) continue;
+    return resolveImagesForSend(m.images);
+  }
+  return undefined;
 }
 
 /** Reset streaming flags in a `finally` block only when the local controller
@@ -1063,10 +1130,31 @@ function normalizeMessage(msg: {
   swipes?: string[];
   swipe_id?: number;
   character_avatar?: string;
+  // Phase 6.1: vision attachments persisted via extra.images (our field)
+  // with a fallback to extra.image (single-item, SillyTavern-compat).
+  extra?: {
+    images?: unknown;
+    image?: unknown;
+    [key: string]: unknown;
+  };
 }): ChatMessage {
   const content = msg.swipes && msg.swipe_id !== undefined
     ? msg.swipes[msg.swipe_id] ?? msg.mes
     : msg.mes;
+
+  // Recover image attachments. Array form wins; scalar `extra.image`
+  // (SillyTavern single-image legacy) is promoted to a 1-element array.
+  let images: string[] | undefined;
+  const rawImages = msg.extra?.images;
+  if (Array.isArray(rawImages)) {
+    const arr = rawImages.filter(
+      (x): x is string => typeof x === 'string' && x.startsWith('data:')
+    );
+    if (arr.length > 0) images = arr;
+  } else if (typeof msg.extra?.image === 'string' && msg.extra.image.startsWith('data:')) {
+    images = [msg.extra.image];
+  }
+
   return {
     id: generateId(),
     name: msg.name,
@@ -1077,6 +1165,7 @@ function normalizeMessage(msg: {
     swipes: msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.mes],
     swipeId: msg.swipe_id ?? 0,
     characterAvatar: msg.character_avatar,
+    images,
   };
 }
 
@@ -1516,7 +1605,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
-      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
+      const stream = await api.generateMessage(
+        finalContext,
+        character.name,
+        provider,
+        model,
+        abortController.signal,
+        getGenerationOptions(),
+        imagesFromLastUserMessage(contextMessages, provider, model)
+      );
       if (!stream) return;
 
       // Add new empty swipe
@@ -1596,7 +1693,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const { provider, model } = getProviderAndModel();
       const finalContext = maybeApplyInstructMode(context);
-      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
+      const stream = await api.generateMessage(
+        finalContext,
+        character.name,
+        provider,
+        model,
+        abortController.signal,
+        getGenerationOptions(),
+        imagesFromLastUserMessage(messages, provider, model)
+      );
       if (!stream) return;
 
       const existingContent = lastAiMsg.content;
@@ -1692,8 +1797,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // ---- Send Message (updated with abort support) ----
-  sendMessage: async (content: string, character: CharacterInfo, availableEmotions?: string[]) => {
+  sendMessage: async (
+    content: string,
+    character: CharacterInfo,
+    availableEmotions?: string[],
+    images?: string[]
+  ) => {
     const { addMessage } = get();
+
+    // Phase 6.1: non-vision model guard. Refuse to send images to a model
+    // that can't read them — otherwise the backend turns the content-part
+    // payload into an opaque 400/500. The user-facing message still posts
+    // (minus attachments) so the user can retry after switching models.
+    const { provider, model } = getProviderAndModel();
+    let attachedImages = images;
+    let visionError: string | null = null;
+    if (attachedImages && attachedImages.length > 0 && !supportsVision(provider, model)) {
+      visionError = `${model || provider || 'This model'} can't see images. Switch to a vision-capable model (GPT-4o, Claude 3+, Gemini) to send attachments.`;
+      attachedImages = undefined;
+    }
 
     addMessage({
       name: 'You',
@@ -1701,18 +1823,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isSystem: false,
       content,
       timestamp: Date.now(),
+      images: attachedImages,
     });
 
     const abortController = new AbortController();
-    set({ isSending: true, isStreaming: false, error: null, abortController });
+    set({ isSending: true, isStreaming: false, error: visionError, abortController });
 
     try {
       const updatedMessages = get().messages;
       const context = buildConversationContext(updatedMessages, character, availableEmotions);
-      const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
-      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
+      const stream = await api.generateMessage(
+        finalContext,
+        character.name,
+        provider,
+        model,
+        abortController.signal,
+        getGenerationOptions(),
+        resolveImagesForSend(attachedImages)
+      );
 
       if (stream) {
         const aiMessageId = generateId();
@@ -1768,8 +1898,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // ---- Send Group Message (updated with abort support) ----
-  sendGroupMessage: async (content: string, characters: CharacterInfo[]) => {
+  sendGroupMessage: async (
+    content: string,
+    characters: CharacterInfo[],
+    images?: string[]
+  ) => {
     const { addMessage, currentChatFile, getGroupChatByFile } = get();
+
+    // Phase 6.1: non-vision model guard — same as single-character send.
+    const { provider, model } = getProviderAndModel();
+    let attachedImages = images;
+    let visionError: string | null = null;
+    if (
+      attachedImages &&
+      attachedImages.length > 0 &&
+      !supportsVision(provider, model)
+    ) {
+      visionError = `${model || provider || 'This model'} can't see images. Switch to a vision-capable model (GPT-4o, Claude 3+, Gemini) to send attachments.`;
+      attachedImages = undefined;
+    }
 
     addMessage({
       name: 'You',
@@ -1777,7 +1924,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isSystem: false,
       content,
       timestamp: Date.now(),
+      images: attachedImages,
     });
+
+    if (visionError) {
+      set({ error: visionError });
+    }
 
     // Resolve strategy + mute from the persisted group chat record. Missing
     // record (very old group chats not reloaded) falls back to list order
@@ -1847,7 +1999,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const abortController = new AbortController();
-    set({ isSending: true, isStreaming: false, error: null, abortController });
+    // Preserve visionError from the pre-send guard — the turn is still
+    // attempted (without images), but we keep the inline warning visible.
+    set({
+      isSending: true,
+      isStreaming: false,
+      error: visionError,
+      abortController,
+    });
+    const resolvedImages = resolveImagesForSend(attachedImages);
 
     try {
       // Run the user-kicked turn(s) first, then loop while auto-mode is on
@@ -1856,17 +2016,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // what list means — a single "turn" for list is all members speaking
       // once), and natural/pooled pick one speaker per tick.
       let queue: CharacterInfo[] = initialQueue;
+      let isFirstTurn = true;
       while (queue.length > 0 && get().isSending) {
         for (const character of queue) {
           if (!get().isSending) break;
+          // Only the first turn of the first tick gets images — subsequent
+          // characters in the same round are responding to the prior speaker,
+          // not to the user's attachment. (We'd re-send the same bytes to
+          // each character otherwise.)
           const continued = await generateGroupTurn(
             character,
             characters,
             scenarioOverride,
             abortController,
             get,
-            set
+            set,
+            isFirstTurn ? resolvedImages : undefined
           );
+          isFirstTurn = false;
           if (!continued) break;
         }
 
@@ -1922,13 +2089,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
+      const { provider, model } = getProviderAndModel();
       await generateGroupTurn(
         character,
         characters,
         scenarioOverride,
         abortController,
         get,
-        set
+        set,
+        imagesFromLastUserMessage(get().messages, provider, model)
       );
 
       const { currentChatFile: finalChatFile } = get();
@@ -1975,7 +2144,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
-      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
+      const stream = await api.generateMessage(
+        finalContext,
+        character.name,
+        provider,
+        model,
+        abortController.signal,
+        getGenerationOptions(),
+        imagesFromLastUserMessage(updatedMessages, provider, model)
+      );
 
       if (stream) {
         const aiMessageId = generateId();
