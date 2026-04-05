@@ -132,15 +132,19 @@ Features are grouped into **phases** ordered by user impact and dependency. Each
 ## Phase 5: Group Chat Enhancements
 *Goal: Bring group chats to ST-level functionality.*
 
-### 5.1 Activation Strategies
-- **Gap:** Basic sequential group chat exists. No activation mode selection.
-- **ST Feature:** Natural Order (name mentions + talkativeness), List Order, Pooled Order, Manual trigger.
-- **Work:** Add activation strategy selector. Implement Natural Order (parse last message for name mentions, use talkativeness field). Pooled Order (random from non-recent speakers). Manual mode with character trigger buttons.
+### 5.1 Activation Strategies ✅
+- Three strategies selectable per group chat, persisted on the `GroupChatInfo` record:
+  - **List** (default, legacy): every member replies in order on each user turn.
+  - **Natural**: scans the last non-system message for a member name mention (word-boundary, case-insensitive). On match, that member replies; on multi-match, a weighted roll within the matches. With no mention, falls back to a weighted roll across the full pool. Weights come from `character.data.extensions.talkativeness` (string "0"–"1", default 0.5 when absent/invalid/out-of-range).
+  - **Pooled**: weighted random pick, excluding the N most-recent distinct AI speakers (N configurable via slider, default 1). Pool-empty falls back to the full candidate set.
+- Per-member **mute toggle** ships with 5.1 (partner to 5.2). Muted avatars are filtered out before speaker selection in every strategy.
+- UI: collapsible controls panel in the group chat header with segmented strategy picker, pooled exclude-recent slider, and per-member mute list showing each member's current talkativeness.
+- Manual trigger is deferred (tracked as a follow-up).
 
 ### 5.2 Group Chat Controls
-- **Gap:** Can add characters but no mute, reorder, force-talk, or auto-mode.
+- **Gap:** Can add characters, and mute toggle ships with 5.1. No reorder, force-talk, or auto-mode yet.
 - **ST Feature:** Mute/unmute members, force individual response, auto-mode (continuous generation), character reordering, allow self-responses toggle.
-- **Work:** Add mute toggle per member. Force-talk button. Auto-mode with configurable delay. Drag-to-reorder member list. Group scenario override.
+- **Work:** Mute toggle per member ✅ (landed with 5.1). Force-talk button. Auto-mode with configurable delay. Drag-to-reorder member list. Group scenario override.
 
 ### 5.3 Character Card Handling in Groups
 - **Gap:** Basic per-character system prompts. No join mode.

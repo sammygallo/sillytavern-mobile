@@ -1,10 +1,11 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { MessageSquare, Users } from 'lucide-react';
+import { MessageSquare, Users, Settings2 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
+import { GroupChatControls } from './GroupChatControls';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -35,12 +36,14 @@ export function ChatView() {
     continueMessage,
     impersonate,
     stopGeneration,
+    currentChatFile,
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastCharacterRef = useRef<string | null>(null);
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
   const [prefillNonce, setPrefillNonce] = useState(0);
+  const [showGroupControls, setShowGroupControls] = useState(false);
 
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
@@ -174,29 +177,50 @@ export function ChatView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Mobile Header */}
+      {/* Group Chat Header (always visible when in group mode) */}
       {isGroupChatMode ? (
-        <div className="lg:hidden h-20 relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
-              <Users size={24} className="text-[var(--color-primary)]" />
+        <>
+          <div className="h-20 relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
+                <Users size={24} className="text-[var(--color-primary)]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
+                  Group Chat
+                </h2>
+                <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                  {groupChatCharacters.map((c) => c.name).join(', ')}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGroupControls((v) => !v)}
+                className={`p-1.5 rounded-full transition-colors ${
+                  showGroupControls
+                    ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                }`}
+                aria-label="Group chat settings"
+                aria-expanded={showGroupControls}
+                title="Activation strategy & mute"
+              >
+                <Settings2 size={18} />
+              </button>
+              <button
+                onClick={exitGroupChat}
+                className="text-xs px-3 py-1.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]"
+              >
+                Exit
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
-                Group Chat
-              </h2>
-              <p className="text-xs text-[var(--color-text-secondary)] truncate">
-                {groupChatCharacters.map((c) => c.name).join(', ')}
-              </p>
-            </div>
-            <button
-              onClick={exitGroupChat}
-              className="text-xs px-3 py-1.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]"
-            >
-              Exit
-            </button>
           </div>
-        </div>
+          {showGroupControls && currentChatFile && (
+            <GroupChatControls
+              fileName={currentChatFile}
+              characters={groupChatCharacters}
+            />
+          )}
+        </>
       ) : selectedCharacter ? (
         <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
           <img

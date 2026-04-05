@@ -39,20 +39,71 @@ interface ChatFile {
   lastMessage: string;
 }
 
+/**
+ * Strategies that decide which group-chat member(s) respond on each user turn.
+ * - list: every member speaks in order (legacy behavior, preserved as default).
+ * - natural: pick the member mentioned in the last message, else weighted roll
+ *   by talkativeness. Exactly one member responds.
+ * - pooled: weighted random pick from the pool, excluding the N most recent
+ *   speakers. Exactly one member responds.
+ */
+export type GroupActivationStrategy = 'list' | 'natural' | 'pooled';
+
+export const DEFAULT_GROUP_ACTIVATION_STRATEGY: GroupActivationStrategy = 'list';
+export const DEFAULT_POOLED_EXCLUDE_RECENT = 1;
+
 export interface GroupChatInfo {
   fileName: string;
   characterNames: string[];
   characterAvatars: string[];
   lastMessage: string;
   createdAt: number;
+  /** How the next speaker is chosen each turn. Added in Phase 5.1. */
+  activationStrategy: GroupActivationStrategy;
+  /** Avatars of members whose turns are skipped. Added in Phase 5.1. */
+  mutedAvatars: string[];
+  /** Recent-speaker exclusion window for pooled strategy (N≥0). */
+  pooledExcludeRecent: number;
 }
 
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
 
+/**
+ * Fill defaults for pre-Phase-5.1 records so the rest of the code can assume
+ * the new fields are always present.
+ */
+function migrateGroupChat(raw: Partial<GroupChatInfo> & {
+  fileName: string;
+  characterNames: string[];
+  characterAvatars: string[];
+}): GroupChatInfo {
+  return {
+    fileName: raw.fileName,
+    characterNames: raw.characterNames ?? [],
+    characterAvatars: raw.characterAvatars ?? [],
+    lastMessage: raw.lastMessage ?? '',
+    createdAt: raw.createdAt ?? Date.now(),
+    activationStrategy:
+      raw.activationStrategy === 'natural' ||
+      raw.activationStrategy === 'pooled' ||
+      raw.activationStrategy === 'list'
+        ? raw.activationStrategy
+        : DEFAULT_GROUP_ACTIVATION_STRATEGY,
+    mutedAvatars: Array.isArray(raw.mutedAvatars) ? raw.mutedAvatars : [],
+    pooledExcludeRecent:
+      typeof raw.pooledExcludeRecent === 'number' && raw.pooledExcludeRecent >= 0
+        ? Math.floor(raw.pooledExcludeRecent)
+        : DEFAULT_POOLED_EXCLUDE_RECENT,
+  };
+}
+
 function loadGroupChatsFromStorage(): GroupChatInfo[] {
   try {
     const stored = localStorage.getItem(GROUP_CHATS_KEY);
-    return stored ? JSON.parse(stored) : [];
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(migrateGroupChat);
   } catch {
     return [];
   }
@@ -60,6 +111,97 @@ function loadGroupChatsFromStorage(): GroupChatInfo[] {
 
 function saveGroupChatsToStorage(groupChats: GroupChatInfo[]) {
   localStorage.setItem(GROUP_CHATS_KEY, JSON.stringify(groupChats));
+}
+
+/** Parse the per-character "talkativeness" extension, clamped to [0, 1].
+ *  Falls back to 0.5 when absent, not a number, or out of range. */
+export function getTalkativeness(character: CharacterInfo): number {
+  const raw = character.data?.extensions?.talkativeness;
+  if (typeof raw !== 'string') return 0.5;
+  const n = parseFloat(raw);
+  if (!isFinite(n)) return 0.5;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Weighted random pick using talkativeness. Falls back to uniform when all
+ *  weights are zero or the pool has a single entry. */
+function weightedRandomPick(
+  pool: CharacterInfo[],
+  rng: () => number = Math.random
+): CharacterInfo | null {
+  if (pool.length === 0) return null;
+  if (pool.length === 1) return pool[0];
+  const weights = pool.map(getTalkativeness);
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0) {
+    return pool[Math.floor(rng() * pool.length)];
+  }
+  let r = rng() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
+}
+
+/** Natural Order: pick the character whose name appears in the last
+ *  non-system message. If multiple match, weighted roll within the matches.
+ *  If none match, weighted roll across the full pool. */
+export function selectNaturalOrderSpeaker(
+  candidates: CharacterInfo[],
+  messages: ChatMessage[],
+  rng: () => number = Math.random
+): CharacterInfo | null {
+  if (candidates.length === 0) return null;
+
+  const lastMeaningful = [...messages].reverse().find((m) => !m.isSystem);
+  if (!lastMeaningful || !lastMeaningful.content.trim()) {
+    return weightedRandomPick(candidates, rng);
+  }
+
+  const haystack = lastMeaningful.content;
+  const mentioned = candidates.filter((c) => {
+    const name = (c.name || '').trim();
+    if (!name) return false;
+    const pattern = new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i');
+    return pattern.test(haystack);
+  });
+
+  if (mentioned.length === 0) {
+    return weightedRandomPick(candidates, rng);
+  }
+  return weightedRandomPick(mentioned, rng);
+}
+
+/** Pooled Order: weighted random pick from the candidates, excluding
+ *  the N most recent distinct AI speakers. If exclusion empties the pool
+ *  the full candidate set is used as a safety fallback. */
+export function selectPooledOrderSpeaker(
+  candidates: CharacterInfo[],
+  messages: ChatMessage[],
+  excludeRecent: number,
+  rng: () => number = Math.random
+): CharacterInfo | null {
+  if (candidates.length === 0) return null;
+  const n = Math.max(0, Math.floor(excludeRecent));
+  if (n === 0) return weightedRandomPick(candidates, rng);
+
+  const recent: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && recent.length < n; i--) {
+    const m = messages[i];
+    if (m.isUser || m.isSystem) continue;
+    if (!recent.includes(m.name)) recent.push(m.name);
+  }
+
+  const pool = candidates.filter((c) => !recent.includes(c.name));
+  if (pool.length === 0) return weightedRandomPick(candidates, rng);
+  return weightedRandomPick(pool, rng);
 }
 
 interface ChatState {
@@ -86,6 +228,12 @@ interface ChatState {
   clearChat: () => void;
   refreshGroupChats: () => void;
   deleteGroupChat: (fileName: string) => void;
+
+  // Phase 5.1: activation strategies + per-member mute
+  setGroupActivationStrategy: (fileName: string, strategy: GroupActivationStrategy) => void;
+  toggleGroupMute: (fileName: string, avatar: string) => void;
+  setGroupPooledExcludeRecent: (fileName: string, n: number) => void;
+  getGroupChatByFile: (fileName: string) => GroupChatInfo | null;
 
   // New Phase 1 actions
   stopGeneration: () => void;
@@ -740,6 +888,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ groupChats: updated });
   },
 
+  // ---- Phase 5.1: activation strategies + mute ----
+  getGroupChatByFile: (fileName: string) => {
+    return get().groupChats.find((g) => g.fileName === fileName) || null;
+  },
+
+  setGroupActivationStrategy: (fileName, strategy) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, activationStrategy: strategy } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  toggleGroupMute: (fileName, avatar) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) => {
+      if (g.fileName !== fileName) return g;
+      const muted = new Set(g.mutedAvatars);
+      if (muted.has(avatar)) muted.delete(avatar);
+      else muted.add(avatar);
+      return { ...g, mutedAvatars: Array.from(muted) };
+    });
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
+  setGroupPooledExcludeRecent: (fileName, n) => {
+    const clamped = Math.max(0, Math.floor(n));
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, pooledExcludeRecent: clamped } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
   fetchChatFiles: async (avatarUrl: string) => {
     set({ isLoading: true, error: null });
     try {
@@ -855,6 +1040,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       characterAvatars: characters.map((c) => c.avatar),
       lastMessage: messages[messages.length - 1]?.content || '',
       createdAt: Date.now(),
+      activationStrategy: DEFAULT_GROUP_ACTIVATION_STRATEGY,
+      mutedAvatars: [],
+      pooledExcludeRecent: DEFAULT_POOLED_EXCLUDE_RECENT,
     };
     const updatedGroupChats = [...groupChats, newGroupChat];
     saveGroupChatsToStorage(updatedGroupChats);
@@ -1194,7 +1382,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ---- Send Group Message (updated with abort support) ----
   sendGroupMessage: async (content: string, characters: CharacterInfo[]) => {
-    const { addMessage } = get();
+    const { addMessage, currentChatFile, getGroupChatByFile } = get();
 
     addMessage({
       name: 'You',
@@ -1204,13 +1392,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: Date.now(),
     });
 
+    // Resolve strategy + mute from the persisted group chat record. Missing
+    // record (very old group chats not reloaded) falls back to list order
+    // with no mutes so the legacy behavior still ships.
+    const groupChat = currentChatFile ? getGroupChatByFile(currentChatFile) : null;
+    const strategy: GroupActivationStrategy =
+      groupChat?.activationStrategy ?? DEFAULT_GROUP_ACTIVATION_STRATEGY;
+    const mutedAvatars = new Set(groupChat?.mutedAvatars ?? []);
+    const pooledExcludeRecent =
+      groupChat?.pooledExcludeRecent ?? DEFAULT_POOLED_EXCLUDE_RECENT;
+
+    const activeCharacters = characters.filter((c) => !mutedAvatars.has(c.avatar));
+    if (activeCharacters.length === 0) {
+      set({ error: 'All group members are muted. Unmute someone to continue.' });
+      return;
+    }
+
+    // Build the speaker queue for this turn. List order keeps legacy behavior
+    // (everyone speaks once in order); natural/pooled produce exactly one
+    // speaker per user turn.
+    let speakerQueue: CharacterInfo[] = [];
+    if (strategy === 'list') {
+      speakerQueue = activeCharacters;
+    } else if (strategy === 'natural') {
+      const pick = selectNaturalOrderSpeaker(activeCharacters, get().messages);
+      if (pick) speakerQueue = [pick];
+    } else if (strategy === 'pooled') {
+      const pick = selectPooledOrderSpeaker(
+        activeCharacters,
+        get().messages,
+        pooledExcludeRecent
+      );
+      if (pick) speakerQueue = [pick];
+    }
+
+    if (speakerQueue.length === 0) {
+      set({ error: 'Could not select a speaker for this turn.' });
+      return;
+    }
+
     const abortController = new AbortController();
     set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
       const { provider, model } = getProviderAndModel();
 
-      for (const character of characters) {
+      for (const character of speakerQueue) {
         if (!get().isSending) break; // Check if aborted between characters
 
         const updatedMessages = get().messages;
