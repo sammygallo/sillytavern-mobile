@@ -99,6 +99,8 @@ interface CharacterState {
   exitGroupChat: () => void;
   isCharacterInGroup: (avatar: string) => boolean;
   setGroupChatCharacters: (avatars: string[]) => Promise<void>;
+  /** Reorder the in-memory group roster without hitting the API. */
+  reorderGroupChatCharacters: (avatars: string[]) => void;
   // Import/Export actions
   importCharacter: (
     file: File
@@ -491,6 +493,22 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       isGroupChatMode: true,
       selectedCharacter: null,
     });
+  },
+
+  reorderGroupChatCharacters: (avatars: string[]) => {
+    const { groupChatCharacters } = get();
+    const byAvatar = new Map(groupChatCharacters.map((c) => [c.avatar, c]));
+    const reordered: CharacterInfo[] = [];
+    for (const a of avatars) {
+      const c = byAvatar.get(a);
+      if (c) reordered.push(c);
+    }
+    // Append any members not included in the incoming list so we never lose
+    // a participant to a stale payload.
+    for (const c of groupChatCharacters) {
+      if (!avatars.includes(c.avatar)) reordered.push(c);
+    }
+    set({ groupChatCharacters: reordered });
   },
 
   // Import/Export actions
