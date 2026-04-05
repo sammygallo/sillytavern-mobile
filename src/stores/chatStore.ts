@@ -1,8 +1,17 @@
 import { create } from 'zustand';
-import { api, type CharacterInfo } from '../api/client';
+import { api, type CharacterInfo, type GenerationOptions } from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { usePersonaStore } from './personaStore';
+import { useGenerationStore } from './generationStore';
 import { parseEmotion, stripEmotionTag, type Emotion } from '../utils/emotions';
+import { processMacros, type MacroContext } from '../utils/macros';
+import {
+  estimateConversationTokens,
+  estimateMessageTokens,
+  profileForProvider,
+  trimHistoryToBudget,
+} from '../utils/tokenizer';
+import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemplates';
 
 export interface ChatMessage {
   id: string;
@@ -187,17 +196,34 @@ function getDepthPrompt(character: CharacterInfo): {
   };
 }
 
-// Simple macro substitution: {{char}}, {{user}}, {{persona}}
-function substituteMacros(
-  text: string,
+// Build full macro context from character, persona, and chat state.
+function buildMacroContext(
   character: CharacterInfo,
   personaName: string,
-  personaDescription: string
-): string {
-  return text
-    .replace(/\{\{char\}\}/gi, character.name || '')
-    .replace(/\{\{user\}\}/gi, personaName || 'User')
-    .replace(/\{\{persona\}\}/gi, personaDescription || '');
+  personaDescription: string,
+  messages: ChatMessage[],
+  model: string
+): MacroContext {
+  const nonSystem = messages.filter((m) => !m.isSystem);
+  const lastMessage = nonSystem[nonSystem.length - 1]?.content || '';
+  const lastUser = [...nonSystem].reverse().find((m) => m.isUser)?.content || '';
+  const lastChar = [...nonSystem].reverse().find((m) => !m.isUser)?.content || '';
+
+  return {
+    charName: character.name || '',
+    userName: personaName || 'User',
+    personaName: personaName || 'User',
+    personaDescription: personaDescription || '',
+    characterDescription:
+      character.description || character.data?.description || '',
+    characterPersonality:
+      character.personality || character.data?.personality || '',
+    characterScenario: character.scenario || character.data?.scenario || '',
+    lastMessage,
+    lastUserMessage: lastUser,
+    lastCharMessage: lastChar,
+    model,
+  };
 }
 
 // Build conversation context for AI
@@ -215,17 +241,34 @@ function buildConversationContext(
   const personaName = persona?.name || 'You';
   const personaDescription = persona?.description || '';
 
-  const sub = (text: string) =>
-    substituteMacros(text, character, personaName, personaDescription);
+  // Get generation config + provider for macros/tokenizer
+  const genState = useGenerationStore.getState();
+  const { activeModel, activeProvider } = useSettingsStore.getState();
+
+  const macroCtx = buildMacroContext(
+    character,
+    personaName,
+    personaDescription,
+    messages,
+    activeModel
+  );
+  const sub = (text: string) => (text ? processMacros(text, macroCtx) : '');
 
   const description = sub(getCharacterField(character, 'description'));
   const personality = sub(getCharacterField(character, 'personality'));
   const scenario = sub(getCharacterField(character, 'scenario'));
   const mesExample = sub(getCharacterField(character, 'mes_example'));
-  const systemPromptOverride = sub(getCharacterField(character, 'system_prompt'));
-  const postHistoryInstructions = sub(
-    getCharacterField(character, 'post_history_instructions')
-  );
+  const charSystemPromptOverride = genState.prompt.respectCharacterOverride
+    ? sub(getCharacterField(character, 'system_prompt'))
+    : '';
+  const charPostHistoryInstructions = genState.prompt.respectCharacterPHI
+    ? sub(getCharacterField(character, 'post_history_instructions'))
+    : '';
+
+  // User-level prompt overrides from generation settings
+  const userMainPrompt = sub(genState.prompt.mainPrompt);
+  const userPHI = sub(genState.prompt.postHistoryInstructions);
+  const userJailbreak = sub(genState.prompt.jailbreakPrompt);
 
   const emotionList = availableEmotions && availableEmotions.length > 0
     ? availableEmotions.join(', ')
@@ -250,9 +293,10 @@ Choose the emotion that best matches how ${character.name} would feel based on t
 
   const charInfoBlock = charInfoParts.join('\n\n');
 
-  // Main system prompt: either override or default
+  // Main system prompt: character override > user override > default
   const mainPrompt =
-    systemPromptOverride ||
+    charSystemPromptOverride ||
+    userMainPrompt ||
     `You are ${character.name}. Stay in character.`;
 
   // Persona description injection
@@ -281,6 +325,9 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     // Only add it once; if not added as before_char
     // Already added as before_char, so only add if not already
   }
+  if (userJailbreak) {
+    systemParts.push(userJailbreak);
+  }
   systemParts.push(emotionInstruction);
 
   context.push({
@@ -288,7 +335,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     content: systemParts.filter(Boolean).join('\n\n'),
   });
 
-  const recentMessages = messages.slice(-20).filter((m) => !m.isSystem);
+  // Decide how many messages to consider for history.
+  const ctxConfig = genState.context;
+  const historyPool = ctxConfig.tokenAware
+    ? messages.filter((m) => !m.isSystem)
+    : messages.slice(-ctxConfig.messageCount).filter((m) => !m.isSystem);
+  const recentMessages = historyPool;
 
   // Character's Note (depth prompt): inject at configurable depth from the END of the history
   const depthPrompt = getDepthPrompt(character);
@@ -352,11 +404,35 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     });
   }
 
-  context.push(...historyWithInsertions);
+  // Token-aware trimming: keep system prompts, drop oldest history that exceeds budget
+  if (ctxConfig.tokenAware) {
+    const profile = profileForProvider(activeProvider);
+    const systemPrompts = context.slice(); // system prompt we already pushed
+    const { kept, usedTokens } = trimHistoryToBudget(
+      systemPrompts,
+      historyWithInsertions,
+      ctxConfig.responseReserve,
+      ctxConfig.maxTokens,
+      profile
+    );
+    context.push(...kept);
+    genState.setLastTokenEstimate(usedTokens);
+  } else {
+    context.push(...historyWithInsertions);
+  }
 
-  // Post-history instructions as a final system message
-  if (postHistoryInstructions) {
-    context.push({ role: 'system', content: postHistoryInstructions });
+  // Post-history instructions: character's PHI, then user PHI
+  if (charPostHistoryInstructions) {
+    context.push({ role: 'system', content: charPostHistoryInstructions });
+  }
+  if (userPHI) {
+    context.push({ role: 'system', content: userPHI });
+  }
+
+  // If not token-aware, still estimate tokens for the UI badge
+  if (!ctxConfig.tokenAware) {
+    const profile = profileForProvider(activeProvider);
+    genState.setLastTokenEstimate(estimateConversationTokens(context, profile));
   }
 
   return context;
@@ -426,6 +502,51 @@ function getProviderAndModel(): { provider: string; model: string } {
   }
 
   return { provider, model };
+}
+
+// Helper: build generation options from the current sampler + instruct config.
+function getGenerationOptions(): GenerationOptions {
+  const { sampler, instruct } = useGenerationStore.getState();
+  const combinedStops = [...sampler.stopStrings];
+
+  if (instruct.enabled) {
+    const tpl = getInstructTemplate(instruct.templateId);
+    if (tpl) {
+      for (const s of tpl.stopStrings) {
+        if (!combinedStops.includes(s)) combinedStops.push(s);
+      }
+    }
+    for (const s of instruct.extraStopStrings) {
+      if (s && !combinedStops.includes(s)) combinedStops.push(s);
+    }
+  }
+
+  return {
+    temperature: sampler.temperature,
+    maxTokens: sampler.maxTokens,
+    topP: sampler.topP,
+    topK: sampler.topK,
+    minP: sampler.minP,
+    frequencyPenalty: sampler.frequencyPenalty,
+    presencePenalty: sampler.presencePenalty,
+    repetitionPenalty: sampler.repetitionPenalty,
+    stopStrings: combinedStops,
+  };
+}
+
+// Helper: optionally convert message array into a single instruct-mode message
+// when instruct mode is enabled. The backend still expects chat-completion-style
+// messages, so we wrap the formatted prompt as a single user message.
+function maybeApplyInstructMode(
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[]
+): { role: 'user' | 'assistant' | 'system'; content: string }[] {
+  const { instruct } = useGenerationStore.getState();
+  if (!instruct.enabled) return messages;
+  const tpl = getInstructTemplate(instruct.templateId);
+  if (!tpl) return messages;
+
+  const prompt = formatInstructPrompt(messages, tpl);
+  return [{ role: 'user', content: prompt }];
 }
 
 // Helper: save chat to backend
@@ -729,7 +850,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const context = buildConversationContext(contextMessages, character, availableEmotions);
       const { provider, model } = getProviderAndModel();
 
-      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      const finalContext = maybeApplyInstructMode(context);
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
       if (!stream) return;
 
       // Add new empty swipe
@@ -808,7 +930,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       const { provider, model } = getProviderAndModel();
-      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      const finalContext = maybeApplyInstructMode(context);
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
       if (!stream) return;
 
       const existingContent = lastAiMsg.content;
@@ -868,7 +991,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       const { provider, model } = getProviderAndModel();
-      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      const finalContext = maybeApplyInstructMode(context);
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
       if (!stream) return '';
 
       let responseText = '';
@@ -922,7 +1046,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const context = buildConversationContext(updatedMessages, character, availableEmotions);
       const { provider, model } = getProviderAndModel();
 
-      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      const finalContext = maybeApplyInstructMode(context);
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
 
       if (stream) {
         const aiMessageId = generateId();
@@ -1001,7 +1126,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const updatedMessages = get().messages;
         const context = buildGroupConversationContext(updatedMessages, characters, character);
 
-        const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+        const finalContext = maybeApplyInstructMode(context);
+        const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
 
         if (stream) {
           const aiMessageId = generateId();
@@ -1081,7 +1207,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const context = buildConversationContext(updatedMessages, character, availableEmotions);
       const { provider, model } = getProviderAndModel();
 
-      const stream = await api.generateMessage(context, character.name, provider, model, abortController.signal);
+      const finalContext = maybeApplyInstructMode(context);
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
 
       if (stream) {
         const aiMessageId = generateId();
