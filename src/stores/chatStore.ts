@@ -262,11 +262,17 @@ function buildConversationContext(
 
   // Scan active world info books for keyword matches against recent history
   const wiState = useWorldInfoStore.getState();
+  const tokenProfile = profileForProvider(activeProvider);
   const matchedEntries = scanMessagesForEntries(
     wiState.books,
     wiState.activeBookIds,
     messages,
-    wiState.scanDepth
+    {
+      scanDepth: wiState.scanDepth,
+      maxRecursionSteps: wiState.maxRecursionSteps,
+      tokenBudget: wiState.tokenBudget,
+      profile: tokenProfile,
+    }
   );
   const wiByPosition: Record<WorldInfoPosition, MatchedEntry[]> = {
     before_char: [],
@@ -474,14 +480,13 @@ Choose the emotion that best matches how ${character.name} would feel based on t
 
   // Token-aware trimming: keep system prompts, drop oldest history that exceeds budget
   if (ctxConfig.tokenAware) {
-    const profile = profileForProvider(activeProvider);
     const systemPrompts = context.slice(); // system prompt we already pushed
     const { kept, usedTokens } = trimHistoryToBudget(
       systemPrompts,
       historyWithInsertions,
       ctxConfig.responseReserve,
       ctxConfig.maxTokens,
-      profile
+      tokenProfile
     );
     context.push(...kept);
     genState.setLastTokenEstimate(usedTokens);
@@ -505,8 +510,9 @@ Choose the emotion that best matches how ${character.name} would feel based on t
 
   // If not token-aware, still estimate tokens for the UI badge
   if (!ctxConfig.tokenAware) {
-    const profile = profileForProvider(activeProvider);
-    genState.setLastTokenEstimate(estimateConversationTokens(context, profile));
+    genState.setLastTokenEstimate(
+      estimateConversationTokens(context, tokenProfile)
+    );
   }
 
   return context;

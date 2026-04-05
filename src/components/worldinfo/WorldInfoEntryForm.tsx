@@ -3,6 +3,7 @@ import {
   useWorldInfoStore,
   type WorldInfoEntry,
   type WorldInfoPosition,
+  type SelectiveLogic,
 } from '../../stores/worldInfoStore';
 import { Button, Input, TextArea } from '../ui';
 
@@ -20,6 +21,13 @@ const POSITION_OPTIONS: { value: WorldInfoPosition; label: string; hint: string 
   { value: 'at_depth', label: '@ Depth', hint: 'Injected at a specific depth in the chat' },
 ];
 
+const LOGIC_OPTIONS: { value: SelectiveLogic; label: string; hint: string }[] = [
+  { value: 'AND_ANY', label: 'AND ANY', hint: 'Primary matches AND at least one secondary matches' },
+  { value: 'AND_ALL', label: 'AND ALL', hint: 'Primary matches AND every secondary matches' },
+  { value: 'NOT_ANY', label: 'NOT ANY', hint: 'Primary matches AND no secondary matches' },
+  { value: 'NOT_ALL', label: 'NOT ALL', hint: 'Primary matches AND at least one secondary is missing' },
+];
+
 export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFormProps) {
   const { createEntry, updateEntry } = useWorldInfoStore();
 
@@ -33,6 +41,28 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
   const [depth, setDepth] = useState(4);
   const [order, setOrder] = useState(100);
 
+  // Secondary keys + selective logic
+  const [selective, setSelective] = useState(false);
+  const [keysSecondary, setKeysSecondary] = useState('');
+  const [selectiveLogic, setSelectiveLogic] = useState<SelectiveLogic>('AND_ANY');
+
+  // Scan depth override
+  const [useScanDepthOverride, setUseScanDepthOverride] = useState(false);
+  const [scanDepthOverride, setScanDepthOverride] = useState(4);
+
+  // Probability
+  const [useProbability, setUseProbability] = useState(false);
+  const [probability, setProbability] = useState(100);
+
+  // Grouping
+  const [group, setGroup] = useState('');
+  const [groupOverride, setGroupOverride] = useState(false);
+  const [groupWeight, setGroupWeight] = useState(100);
+
+  // Recursion
+  const [preventRecursion, setPreventRecursion] = useState(false);
+  const [excludeRecursion, setExcludeRecursion] = useState(false);
+
   useEffect(() => {
     if (entry) {
       setKeys(entry.keys.join(', '));
@@ -44,6 +74,18 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       setPosition(entry.position);
       setDepth(entry.depth);
       setOrder(entry.order);
+      setSelective(entry.selective);
+      setKeysSecondary(entry.keysSecondary.join(', '));
+      setSelectiveLogic(entry.selectiveLogic);
+      setUseScanDepthOverride(entry.scanDepth !== null);
+      setScanDepthOverride(entry.scanDepth ?? 4);
+      setUseProbability(entry.useProbability);
+      setProbability(entry.probability);
+      setGroup(entry.group);
+      setGroupOverride(entry.groupOverride);
+      setGroupWeight(entry.groupWeight);
+      setPreventRecursion(entry.preventRecursion);
+      setExcludeRecursion(entry.excludeRecursion);
     } else {
       setKeys('');
       setContent('');
@@ -54,10 +96,27 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       setPosition('before_char');
       setDepth(4);
       setOrder(100);
+      setSelective(false);
+      setKeysSecondary('');
+      setSelectiveLogic('AND_ANY');
+      setUseScanDepthOverride(false);
+      setScanDepthOverride(4);
+      setUseProbability(false);
+      setProbability(100);
+      setGroup('');
+      setGroupOverride(false);
+      setGroupWeight(100);
+      setPreventRecursion(false);
+      setExcludeRecursion(false);
     }
   }, [entry]);
 
   const parsedKeys = keys
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+  const parsedKeysSecondary = keysSecondary
     .split(',')
     .map((k) => k.trim())
     .filter(Boolean);
@@ -77,6 +136,17 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       position,
       depth,
       order,
+      keysSecondary: parsedKeysSecondary,
+      selective,
+      selectiveLogic,
+      scanDepth: useScanDepthOverride ? scanDepthOverride : null,
+      probability,
+      useProbability,
+      group: group.trim(),
+      groupOverride,
+      groupWeight,
+      preventRecursion,
+      excludeRecursion,
     };
 
     if (entry) {
@@ -102,7 +172,7 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       <p className="-mt-3 text-xs text-[var(--color-text-secondary)]">
         {constant
           ? 'Constant entries activate on every generation; keywords are ignored.'
-          : 'Entry activates when ANY keyword appears in scanned chat history.'}
+          : 'Activates when ANY keyword appears. Wrap a key in /slashes/flags to use regex.'}
       </p>
 
       <TextArea
@@ -170,7 +240,7 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
             className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
           <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-            Lower order is injected first.
+            Lower order is injected first and survives token-budget trimming.
           </p>
         </div>
       </div>
@@ -203,6 +273,181 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
             className="w-4 h-4 accent-[var(--color-primary)]"
           />
           Case-sensitive matching
+        </label>
+      </div>
+
+      {/* Secondary keys */}
+      {!constant && (
+        <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+            Secondary Keys
+          </h3>
+          <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selective}
+              onChange={(e) => setSelective(e.target.checked)}
+              className="w-4 h-4 accent-[var(--color-primary)]"
+            />
+            Use secondary keys
+          </label>
+          {selective && (
+            <>
+              <Input
+                label="Secondary keys (comma-separated)"
+                placeholder="e.g. fire, ice"
+                value={keysSecondary}
+                onChange={(e) => setKeysSecondary(e.target.value)}
+              />
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                  Logic
+                </label>
+                <select
+                  value={selectiveLogic}
+                  onChange={(e) => setSelectiveLogic(e.target.value as SelectiveLogic)}
+                  className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                >
+                  {LOGIC_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  {LOGIC_OPTIONS.find((o) => o.value === selectiveLogic)?.hint}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Scan depth override */}
+      {!constant && (
+        <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+          <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useScanDepthOverride}
+              onChange={(e) => setUseScanDepthOverride(e.target.checked)}
+              className="w-4 h-4 accent-[var(--color-primary)]"
+            />
+            Override scan depth
+          </label>
+          {useScanDepthOverride && (
+            <div>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={scanDepthOverride}
+                onChange={(e) => setScanDepthOverride(Number(e.target.value) || 1)}
+                className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Scan this many trailing messages instead of the global default.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Probability */}
+      <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+        <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useProbability}
+            onChange={(e) => setUseProbability(e.target.checked)}
+            className="w-4 h-4 accent-[var(--color-primary)]"
+          />
+          Use probability
+        </label>
+        {useProbability && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-[var(--color-text-secondary)]">
+                Probability
+              </label>
+              <span className="text-xs tabular-nums text-[var(--color-text-secondary)]">
+                {probability}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={probability}
+              onChange={(e) => setProbability(Number(e.target.value))}
+              className="w-full accent-[var(--color-primary)]"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Grouping */}
+      <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+          Inclusion Group
+        </h3>
+        <Input
+          label="Group name (optional)"
+          placeholder="Entries in the same group compete"
+          value={group}
+          onChange={(e) => setGroup(e.target.value)}
+        />
+        {group.trim().length > 0 && (
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={groupOverride}
+                onChange={(e) => setGroupOverride(e.target.checked)}
+                className="w-4 h-4 accent-[var(--color-primary)]"
+              />
+              Override
+            </label>
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                Weight
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={groupWeight}
+                onChange={(e) => setGroupWeight(Number(e.target.value) || 1)}
+                className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Recursion */}
+      <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+          Recursion
+        </h3>
+        <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={preventRecursion}
+            onChange={(e) => setPreventRecursion(e.target.checked)}
+            className="w-4 h-4 accent-[var(--color-primary)]"
+          />
+          Prevent recursion (content won't trigger other entries)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={excludeRecursion}
+            onChange={(e) => setExcludeRecursion(e.target.checked)}
+            className="w-4 h-4 accent-[var(--color-primary)]"
+          />
+          Exclude from recursion (other entries can't trigger this one)
         </label>
       </div>
 
