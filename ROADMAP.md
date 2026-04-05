@@ -110,10 +110,12 @@ Features are grouped into **phases** ordered by user impact and dependency. Each
 ## Phase 4: World Info / Lorebook
 *Goal: Enable persistent world-building context injection.*
 
-### 4.1 Basic World Info
-- **Gap:** No World Info support at all.
-- **ST Feature:** Keyword-triggered lore entries injected into context.
-- **Work:** World Info store and CRUD UI. Entry fields: keys, content, position, insertion order. Keyword scanning against recent messages. Inject matching entries into prompt. Import/export World Info JSON.
+### 4.1 Basic World Info ✅
+- `src/stores/worldInfoStore.ts`: lorebook store with full CRUD for books and entries. Per-entry fields: keys, content, comment, enabled, constant, caseSensitive, position, depth, order. Configurable scan depth. Multiple books can be active at once.
+- Keyword scanner (`scanMessagesForEntries`): joins the last N non-system messages into a haystack and matches entry keys (case-(in)sensitive). Constant entries bypass matching.
+- `buildConversationContext` in `chatStore.ts` groups matched entries by position and injects into the prompt: `before_char`, `after_char`, `before_an`, `after_an`, and `at_depth` (interleaved with history). Macros (`{{char}}` etc.) run on entry content.
+- UI at `/settings/worldinfo`: lorebook list with active toggle, rename, duplicate, delete, create, import, export; dedicated book editor with per-entry create/edit/enable/disable/delete.
+- JSON import/export uses SillyTavern's lorebook format (`{ entries: { uid: { key, content, position, order, ... } } }`) with position codes 0-4 mapped round-trip.
 
 ### 4.2 Advanced World Info
 - **Gap:** N/A (depends on 4.1).

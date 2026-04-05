@@ -3,6 +3,12 @@ import { api, type CharacterInfo, type GenerationOptions } from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { usePersonaStore } from './personaStore';
 import { useGenerationStore } from './generationStore';
+import {
+  useWorldInfoStore,
+  scanMessagesForEntries,
+  type WorldInfoPosition,
+  type MatchedEntry,
+} from './worldInfoStore';
 import { parseEmotion, stripEmotionTag, type Emotion } from '../utils/emotions';
 import { processMacros, type MacroContext } from '../utils/macros';
 import {
@@ -254,6 +260,30 @@ function buildConversationContext(
   );
   const sub = (text: string) => (text ? processMacros(text, macroCtx) : '');
 
+  // Scan active world info books for keyword matches against recent history
+  const wiState = useWorldInfoStore.getState();
+  const matchedEntries = scanMessagesForEntries(
+    wiState.books,
+    wiState.activeBookIds,
+    messages,
+    wiState.scanDepth
+  );
+  const wiByPosition: Record<WorldInfoPosition, MatchedEntry[]> = {
+    before_char: [],
+    after_char: [],
+    before_an: [],
+    after_an: [],
+    at_depth: [],
+  };
+  for (const m of matchedEntries) {
+    wiByPosition[m.entry.position].push(m);
+  }
+  const joinWi = (list: MatchedEntry[]): string =>
+    list
+      .map((m) => sub(m.entry.content))
+      .filter((c) => c.trim().length > 0)
+      .join('\n\n');
+
   const description = sub(getCharacterField(character, 'description'));
   const personality = sub(getCharacterField(character, 'personality'));
   const scenario = sub(getCharacterField(character, 'scenario'));
@@ -315,8 +345,16 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   if (persona && persona.descriptionPosition === 'before_char' && personaBlock) {
     systemParts.push(personaBlock);
   }
+  const wiBeforeChar = joinWi(wiByPosition.before_char);
+  if (wiBeforeChar) {
+    systemParts.push(wiBeforeChar);
+  }
   if (charInfoBlock) {
     systemParts.push(charInfoBlock);
+  }
+  const wiAfterChar = joinWi(wiByPosition.after_char);
+  if (wiAfterChar) {
+    systemParts.push(wiAfterChar);
   }
   if (persona && persona.descriptionPosition === 'after_char' && personaDescription) {
     systemParts.push(`[The user you're talking to is ${personaName}. ${personaDescription}]`);
@@ -324,6 +362,10 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   if (persona && persona.descriptionPosition === 'in_prompt' && personaDescription) {
     // Only add it once; if not added as before_char
     // Already added as before_char, so only add if not already
+  }
+  const wiBeforeAn = joinWi(wiByPosition.before_an);
+  if (wiBeforeAn) {
+    systemParts.push(wiBeforeAn);
   }
   if (userJailbreak) {
     systemParts.push(userJailbreak);
@@ -362,6 +404,14 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     content: string;
   }[] = [];
 
+  // Group WI at-depth entries by their depth value for interleaved injection.
+  const wiAtDepthByDepth: Record<number, MatchedEntry[]> = {};
+  for (const m of wiByPosition.at_depth) {
+    const d = Math.max(0, Math.floor(m.entry.depth));
+    if (!wiAtDepthByDepth[d]) wiAtDepthByDepth[d] = [];
+    wiAtDepthByDepth[d].push(m);
+  }
+
   for (let i = 0; i < recentMessages.length; i++) {
     const msg = recentMessages[i];
     const depthFromEnd = recentMessages.length - i;
@@ -378,6 +428,14 @@ Choose the emotion that best matches how ${character.name} would feel based on t
         role: personaAtDepth.role,
         content: personaAtDepth.content,
       });
+    }
+    // WI at-depth entries: inject as system messages at the matching depth
+    const wiHere = wiAtDepthByDepth[depthFromEnd];
+    if (wiHere && wiHere.length > 0) {
+      const content = joinWi(wiHere);
+      if (content) {
+        historyWithInsertions.push({ role: 'system', content });
+      }
     }
 
     historyWithInsertions.push({
@@ -403,6 +461,16 @@ Choose the emotion that best matches how ${character.name} would feel based on t
       content: personaAtDepth.content,
     });
   }
+  // WI at-depth: any entries whose depth exceeds history length prepend.
+  for (const depthKey of Object.keys(wiAtDepthByDepth)) {
+    const d = parseInt(depthKey, 10);
+    if (d > recentMessages.length) {
+      const content = joinWi(wiAtDepthByDepth[d]);
+      if (content) {
+        historyWithInsertions.unshift({ role: 'system', content });
+      }
+    }
+  }
 
   // Token-aware trimming: keep system prompts, drop oldest history that exceeds budget
   if (ctxConfig.tokenAware) {
@@ -427,6 +495,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   }
   if (userPHI) {
     context.push({ role: 'system', content: userPHI });
+  }
+
+  // World info 'after_an' entries go after post-history instructions
+  const wiAfterAn = joinWi(wiByPosition.after_an);
+  if (wiAfterAn) {
+    context.push({ role: 'system', content: wiAfterAn });
   }
 
   // If not token-aware, still estimate tokens for the UI badge
