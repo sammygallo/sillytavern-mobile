@@ -12,6 +12,8 @@ interface ChatMessageProps {
   avatar?: string;
   timestamp?: number;
   disabled?: boolean;
+  /** Phase 6.1: attached image data URLs shown as a grid above content. */
+  images?: string[];
   // Swipe support (only for AI messages)
   swipes?: string[];
   swipeId?: number;
@@ -98,6 +100,7 @@ export function ChatMessage({
   avatar,
   timestamp,
   disabled,
+  images,
   swipes,
   swipeId,
   showSwipeControl,
@@ -243,6 +246,33 @@ export function ChatMessage({
               ${isEditing ? 'w-full' : ''}
             `}
           >
+            {/* Phase 6.1: image attachments render above the text content.
+                Grid scales column count to keep thumbnails reasonable. */}
+            {!isEditing && images && images.length > 0 && (
+              <div
+                className={`grid gap-1 ${content.length > 0 ? 'mb-2' : ''} ${
+                  images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                }`}
+              >
+                {images.map((src, idx) => (
+                  <a
+                    key={idx}
+                    href={src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-lg overflow-hidden"
+                    aria-label={`View attachment ${idx + 1}`}
+                  >
+                    <img
+                      src={src}
+                      alt={`Attachment ${idx + 1}`}
+                      className="w-full h-auto max-h-60 object-cover block"
+                      loading="lazy"
+                    />
+                  </a>
+                ))}
+              </div>
+            )}
             {isEditing ? (
               <div className="flex flex-col gap-2">
                 <textarea
@@ -298,11 +328,11 @@ export function ChatMessage({
                   )}
                 </div>
               </div>
-            ) : (
+            ) : content.length > 0 ? (
               <div className="text-sm whitespace-pre-wrap break-words">
                 <FormattedContent content={content} isUser={isUser} />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 

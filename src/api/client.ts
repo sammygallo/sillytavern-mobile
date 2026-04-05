@@ -139,6 +139,14 @@ export interface GenerationOptions {
   stopStrings?: string[];
 }
 
+/** Phase 6.1 — image attachment sent with generateMessage. `base64` is
+ *  the raw payload (NO `data:...;base64,` prefix); the API client folds
+ *  these into OpenAI-style content parts before POST. */
+export interface GenerationImage {
+  mimeType: string;
+  base64: string;
+}
+
 export const api = {
   // Auth endpoints
   async getUsers(): Promise<UserInfo[]> {
@@ -408,14 +416,48 @@ export const api = {
     provider?: string,
     model?: string,
     signal?: AbortSignal,
-    generationOptions?: GenerationOptions
+    generationOptions?: GenerationOptions,
+    images?: GenerationImage[]
   ): Promise<ReadableStream<Uint8Array> | null> {
     const token = await getCsrfToken();
+
+    // Phase 6.1: when the caller passed images, fold them into the LAST
+    // user message as OpenAI-style content parts. The SillyTavern backend
+    // at /api/backends/chat-completions/generate translates these to
+    // each provider's native multimodal format (Claude: base64 source,
+    // Gemini: inline_data parts), so we only need to emit one shape here.
+    let messagesToSend: unknown[] = messages;
+    if (images && images.length > 0) {
+      const lastUserIdx = (() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'user') return i;
+        }
+        return -1;
+      })();
+      if (lastUserIdx >= 0) {
+        const target = messages[lastUserIdx];
+        const parts: Array<Record<string, unknown>> = [];
+        if (target.content) {
+          parts.push({ type: 'text', text: target.content });
+        }
+        for (const img of images) {
+          parts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${img.mimeType};base64,${img.base64}`,
+            },
+          });
+        }
+        messagesToSend = messages.map((m, i) =>
+          i === lastUserIdx ? { role: m.role, content: parts } : m
+        );
+      }
+    }
 
     // Build request body with optional sampler params.
     // Unknown fields are ignored by most providers.
     const body: Record<string, unknown> = {
-      messages,
+      messages: messagesToSend,
       stream: true,
       max_tokens: generationOptions?.maxTokens ?? 1024,
       temperature: generationOptions?.temperature ?? 0.9,
