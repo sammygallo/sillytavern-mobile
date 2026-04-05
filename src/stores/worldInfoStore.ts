@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { estimateTokens, type TokenizerProfile } from '../utils/tokenizer';
 
 // Where a world info entry is injected relative to the character definitions
 // and the rest of the prompt. These map 1:1 onto SillyTavern's position codes
@@ -9,6 +10,10 @@ export type WorldInfoPosition =
   | 'before_an' // Before author's note / jailbreak (ST position 2)
   | 'after_an' // After author's note / post-history (ST position 3)
   | 'at_depth'; // Injected at a specific depth in the chat (ST position 4)
+
+// How secondary keys combine with the primary-key match. Mirrors ST's
+// selectiveLogic integer codes: 0=AND_ANY, 1=NOT_ALL, 2=NOT_ANY, 3=AND_ALL.
+export type SelectiveLogic = 'AND_ANY' | 'AND_ALL' | 'NOT_ANY' | 'NOT_ALL';
 
 export interface WorldInfoEntry {
   id: string;
@@ -30,6 +35,28 @@ export interface WorldInfoEntry {
   depth: number;
   /** Insertion order within the same position group. Higher = later. */
   order: number;
+  /** Secondary keywords (combined with primary via selectiveLogic). */
+  keysSecondary: string[];
+  /** When true, secondary keys + selectiveLogic are applied to the match. */
+  selective: boolean;
+  /** How secondary keys combine with the primary match. */
+  selectiveLogic: SelectiveLogic;
+  /** Per-entry scan depth override (null = use global scanDepth). */
+  scanDepth: number | null;
+  /** Activation probability 0-100 (only used when useProbability). */
+  probability: number;
+  /** When true, roll probability each scan before activating. */
+  useProbability: boolean;
+  /** Group name; entries in the same group compete (only one wins). */
+  group: string;
+  /** Within a group, override entries always win over non-overrides. */
+  groupOverride: boolean;
+  /** Weighted-random selection weight within a group. */
+  groupWeight: number;
+  /** When true, this entry's content is NOT scanned for recursive matches. */
+  preventRecursion: boolean;
+  /** When true, this entry is NOT matched during recursive passes. */
+  excludeRecursion: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -45,8 +72,12 @@ export interface WorldInfoBook {
 const BOOKS_KEY = 'sillytavern_worldinfo_books_v1';
 const ACTIVE_BOOKS_KEY = 'sillytavern_worldinfo_active_books_v1';
 const SCAN_DEPTH_KEY = 'sillytavern_worldinfo_scan_depth_v1';
+const MAX_RECURSION_KEY = 'sillytavern_worldinfo_max_recursion_v1';
+const TOKEN_BUDGET_KEY = 'sillytavern_worldinfo_token_budget_v1';
 
 const DEFAULT_SCAN_DEPTH = 4;
+const DEFAULT_MAX_RECURSION = 3;
+const DEFAULT_TOKEN_BUDGET = 1024;
 
 export const DEFAULT_ENTRY: Omit<
   WorldInfoEntry,
@@ -61,6 +92,17 @@ export const DEFAULT_ENTRY: Omit<
   position: 'before_char',
   depth: 4,
   order: 100,
+  keysSecondary: [],
+  selective: false,
+  selectiveLogic: 'AND_ANY',
+  scanDepth: null,
+  probability: 100,
+  useProbability: false,
+  group: '',
+  groupOverride: false,
+  groupWeight: 100,
+  preventRecursion: false,
+  excludeRecursion: false,
 };
 
 function loadBooks(): WorldInfoBook[] {
@@ -115,6 +157,42 @@ function saveScanDepth(depth: number) {
   }
 }
 
+function loadMaxRecursion(): number {
+  try {
+    const raw = localStorage.getItem(MAX_RECURSION_KEY);
+    const n = raw !== null ? parseInt(raw, 10) : DEFAULT_MAX_RECURSION;
+    return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MAX_RECURSION;
+  } catch {
+    return DEFAULT_MAX_RECURSION;
+  }
+}
+
+function saveMaxRecursion(steps: number) {
+  try {
+    localStorage.setItem(MAX_RECURSION_KEY, String(steps));
+  } catch {
+    // ignore
+  }
+}
+
+function loadTokenBudget(): number {
+  try {
+    const raw = localStorage.getItem(TOKEN_BUDGET_KEY);
+    const n = raw !== null ? parseInt(raw, 10) : DEFAULT_TOKEN_BUDGET;
+    return Number.isFinite(n) && n >= 0 ? n : DEFAULT_TOKEN_BUDGET;
+  } catch {
+    return DEFAULT_TOKEN_BUDGET;
+  }
+}
+
+function saveTokenBudget(budget: number) {
+  try {
+    localStorage.setItem(TOKEN_BUDGET_KEY, String(budget));
+  } catch {
+    // ignore
+  }
+}
+
 function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -154,28 +232,64 @@ interface StEntry {
   constant?: boolean;
   vectorized?: boolean;
   selective?: boolean;
+  selectiveLogic?: number;
   order?: number;
   position?: number;
   disable?: boolean;
   depth?: number;
+  scanDepth?: number | null;
+  probability?: number;
+  useProbability?: boolean;
+  group?: string;
+  groupOverride?: boolean;
+  groupWeight?: number;
+  preventRecursion?: boolean;
+  excludeRecursion?: boolean;
   displayIndex?: number;
   caseSensitive?: boolean | null;
   addMemo?: boolean;
   name?: string;
 }
 
+const ST_LOGIC_TO_LOCAL: Record<number, SelectiveLogic> = {
+  0: 'AND_ANY',
+  1: 'NOT_ALL',
+  2: 'NOT_ANY',
+  3: 'AND_ALL',
+};
+
+const LOCAL_LOGIC_TO_ST: Record<SelectiveLogic, number> = {
+  AND_ANY: 0,
+  NOT_ALL: 1,
+  NOT_ANY: 2,
+  AND_ALL: 3,
+};
+
 interface StBook {
   entries?: Record<string, StEntry> | StEntry[];
   name?: string;
 }
 
+function pickStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((k): k is string => typeof k === 'string' && !!k.trim())
+    : [];
+}
+
+function clamp(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
 export function entryFromStFormat(raw: StEntry): WorldInfoEntry {
   const now = Date.now();
+  const logic =
+    typeof raw.selectiveLogic === 'number'
+      ? ST_LOGIC_TO_LOCAL[raw.selectiveLogic] || 'AND_ANY'
+      : 'AND_ANY';
   return {
     id: generateId('wi'),
-    keys: Array.isArray(raw.key)
-      ? raw.key.filter((k): k is string => typeof k === 'string' && !!k.trim())
-      : [],
+    keys: pickStringArray(raw.key),
     content: typeof raw.content === 'string' ? raw.content : '',
     comment: typeof raw.comment === 'string' ? raw.comment : '',
     enabled: raw.disable === true ? false : true,
@@ -187,6 +301,26 @@ export function entryFromStFormat(raw: StEntry): WorldInfoEntry {
         : 'before_char',
     depth: typeof raw.depth === 'number' ? raw.depth : DEFAULT_ENTRY.depth,
     order: typeof raw.order === 'number' ? raw.order : DEFAULT_ENTRY.order,
+    keysSecondary: pickStringArray(raw.keysecondary),
+    selective: raw.selective === true,
+    selectiveLogic: logic,
+    scanDepth:
+      typeof raw.scanDepth === 'number' && raw.scanDepth >= 0
+        ? Math.floor(raw.scanDepth)
+        : null,
+    probability:
+      typeof raw.probability === 'number'
+        ? clamp(raw.probability, 0, 100)
+        : 100,
+    useProbability: raw.useProbability === true,
+    group: typeof raw.group === 'string' ? raw.group : '',
+    groupOverride: raw.groupOverride === true,
+    groupWeight:
+      typeof raw.groupWeight === 'number' && raw.groupWeight > 0
+        ? raw.groupWeight
+        : 100,
+    preventRecursion: raw.preventRecursion === true,
+    excludeRecursion: raw.excludeRecursion === true,
     createdAt: now,
     updatedAt: now,
   };
@@ -199,16 +333,25 @@ export function entryToStFormat(
   return {
     uid,
     key: entry.keys,
-    keysecondary: [],
+    keysecondary: entry.keysSecondary,
     comment: entry.comment,
     content: entry.content,
     constant: entry.constant,
     vectorized: false,
-    selective: true,
+    selective: entry.selective,
+    selectiveLogic: LOCAL_LOGIC_TO_ST[entry.selectiveLogic],
     order: entry.order,
     position: LOCAL_POS_TO_ST[entry.position],
     disable: !entry.enabled,
     depth: entry.depth,
+    scanDepth: entry.scanDepth,
+    probability: entry.probability,
+    useProbability: entry.useProbability,
+    group: entry.group,
+    groupOverride: entry.groupOverride,
+    groupWeight: entry.groupWeight,
+    preventRecursion: entry.preventRecursion,
+    excludeRecursion: entry.excludeRecursion,
     displayIndex: uid,
     caseSensitive: entry.caseSensitive,
     addMemo: !!entry.comment,
@@ -251,55 +394,246 @@ export interface MatchedEntry {
   bookName: string;
 }
 
-function containsKey(haystack: string, key: string, caseSensitive: boolean): boolean {
+export interface WorldInfoScanOptions {
+  /** Global scan depth – number of trailing non-system messages to scan. */
+  scanDepth: number;
+  /** Maximum recursive passes over entries that matched earlier. 0 disables. */
+  maxRecursionSteps: number;
+  /** Maximum total tokens across all matched entries. 0 = unlimited. */
+  tokenBudget: number;
+  /** Tokenizer profile used when estimating entry content length. */
+  profile: TokenizerProfile;
+}
+
+function buildHaystack(
+  messages: { content: string; isSystem?: boolean }[],
+  depth: number
+): string {
+  const nonSystem = messages.filter((m) => !m.isSystem);
+  const recent = nonSystem.slice(-Math.max(1, depth));
+  return recent.map((m) => m.content || '').join('\n');
+}
+
+/**
+ * Match a single key against the haystack. When the key is wrapped in
+ * /slashes/ we attempt to compile it as a regex; on failure we fall back to
+ * a case-aware substring match on the literal key text.
+ */
+function keyMatches(
+  haystack: string,
+  key: string,
+  caseSensitive: boolean
+): boolean {
   if (!key) return false;
+  const re = key.match(/^\/(.+)\/([gimsuy]*)$/);
+  if (re) {
+    try {
+      let flags = re[2];
+      if (!caseSensitive && !flags.includes('i')) flags += 'i';
+      const compiled = new RegExp(re[1], flags);
+      return compiled.test(haystack);
+    } catch {
+      // fall through to substring match
+    }
+  }
   if (caseSensitive) return haystack.includes(key);
   return haystack.toLowerCase().includes(key.toLowerCase());
 }
 
+function evalSelectiveLogic(
+  mode: SelectiveLogic,
+  results: boolean[]
+): boolean {
+  if (results.length === 0) return true;
+  switch (mode) {
+    case 'AND_ANY':
+      return results.some((r) => r);
+    case 'AND_ALL':
+      return results.every((r) => r);
+    case 'NOT_ANY':
+      return !results.some((r) => r);
+    case 'NOT_ALL':
+      return results.some((r) => !r);
+  }
+}
+
+function entryActivates(entry: WorldInfoEntry, haystack: string): boolean {
+  // Primary keys (OR). Caller is responsible for skipping constant entries.
+  if (entry.keys.length === 0) return false;
+  const primary = entry.keys.some((k) =>
+    keyMatches(haystack, k, entry.caseSensitive)
+  );
+  if (!primary) return false;
+  if (entry.selective && entry.keysSecondary.length > 0) {
+    const results = entry.keysSecondary.map((k) =>
+      keyMatches(haystack, k, entry.caseSensitive)
+    );
+    if (!evalSelectiveLogic(entry.selectiveLogic, results)) return false;
+  }
+  return true;
+}
+
+function rollProbability(entry: WorldInfoEntry): boolean {
+  if (!entry.useProbability) return true;
+  return Math.random() * 100 < entry.probability;
+}
+
 /**
- * Scan the last `scanDepth` messages for keyword matches across the given
- * active books. Returns an ordered list (by position > order > insertion).
+ * Resolve inclusion-group conflicts: for each group, pick one winner.
+ * Skips groups listed in `wonGroups` (they already have a winner from a
+ * previous pass) and updates the set with new winners.
+ */
+function resolveGroups(
+  matches: MatchedEntry[],
+  wonGroups: Set<string>
+): MatchedEntry[] {
+  const ungrouped: MatchedEntry[] = [];
+  const byGroup = new Map<string, MatchedEntry[]>();
+  for (const m of matches) {
+    const g = m.entry.group;
+    if (!g) {
+      ungrouped.push(m);
+      continue;
+    }
+    if (wonGroups.has(g)) continue; // previous pass already picked a winner
+    let list = byGroup.get(g);
+    if (!list) {
+      list = [];
+      byGroup.set(g, list);
+    }
+    list.push(m);
+  }
+
+  const winners = [...ungrouped];
+  for (const [groupName, groupMatches] of byGroup) {
+    const overrides = groupMatches.filter((m) => m.entry.groupOverride);
+    const pool = overrides.length > 0 ? overrides : groupMatches;
+    const totalWeight = pool.reduce(
+      (sum, m) => sum + Math.max(1, m.entry.groupWeight),
+      0
+    );
+    let roll = Math.random() * totalWeight;
+    let winner = pool[pool.length - 1];
+    for (const m of pool) {
+      roll -= Math.max(1, m.entry.groupWeight);
+      if (roll <= 0) {
+        winner = m;
+        break;
+      }
+    }
+    winners.push(winner);
+    wonGroups.add(groupName);
+  }
+  return winners;
+}
+
+function applyTokenBudget(
+  matches: MatchedEntry[],
+  budget: number,
+  profile: TokenizerProfile
+): MatchedEntry[] {
+  if (budget <= 0) return matches;
+  // High priority first (lower `order`), drop lowest priority when over budget.
+  const sorted = [...matches].sort((a, b) => a.entry.order - b.entry.order);
+  const costs = sorted.map((m) => estimateTokens(m.entry.content, profile));
+  let total = costs.reduce((s, c) => s + c, 0);
+  while (total > budget && sorted.length > 0) {
+    sorted.pop();
+    total -= costs.pop() || 0;
+  }
+  return sorted;
+}
+
+/**
+ * Scan active books for matching entries. Supports primary/secondary keys,
+ * regex keys, per-entry scan depth override, probability activation,
+ * inclusion groups, recursive scanning, and token budgeting.
  */
 export function scanMessagesForEntries(
   books: WorldInfoBook[],
   activeBookIds: string[],
   messages: { content: string; isSystem?: boolean }[],
-  scanDepth: number
+  options: WorldInfoScanOptions
 ): MatchedEntry[] {
   const activeBooks = books.filter((b) => activeBookIds.includes(b.id));
   if (activeBooks.length === 0) return [];
 
-  // Build haystack from the last `scanDepth` non-system messages.
-  const nonSystem = messages.filter((m) => !m.isSystem);
-  const recent = nonSystem.slice(-Math.max(1, scanDepth));
-  const haystack = recent.map((m) => m.content || '').join('\n');
-
-  const matches: MatchedEntry[] = [];
+  // Flatten all candidate entries, pairing each with its book for citations.
+  interface Candidate {
+    entry: WorldInfoEntry;
+    bookId: string;
+    bookName: string;
+  }
+  const candidates: Candidate[] = [];
   for (const book of activeBooks) {
     for (const entry of book.entries) {
       if (!entry.enabled) continue;
       if (entry.content.trim().length === 0) continue;
-
-      if (entry.constant) {
-        matches.push({ entry, bookId: book.id, bookName: book.name });
-        continue;
-      }
-
-      if (entry.keys.length === 0) continue;
-
-      const matched = entry.keys.some((k) =>
-        containsKey(haystack, k, entry.caseSensitive)
-      );
-      if (matched) {
-        matches.push({ entry, bookId: book.id, bookName: book.name });
-      }
+      candidates.push({ entry, bookId: book.id, bookName: book.name });
     }
   }
 
-  // Sort by order (ascending). Position grouping happens at injection time.
-  matches.sort((a, b) => a.entry.order - b.entry.order);
-  return matches;
+  const wonGroups = new Set<string>();
+  const matchedIds = new Set<string>();
+  const initial: MatchedEntry[] = [];
+  for (const c of candidates) {
+    // Constant entries fire unconditionally, still subject to probability.
+    if (c.entry.constant) {
+      if (!rollProbability(c.entry)) continue;
+      initial.push(c);
+      matchedIds.add(c.entry.id);
+      continue;
+    }
+    const depth = c.entry.scanDepth ?? options.scanDepth;
+    const haystack = buildHaystack(messages, depth);
+    if (!entryActivates(c.entry, haystack)) continue;
+    if (!rollProbability(c.entry)) continue;
+    initial.push(c);
+    matchedIds.add(c.entry.id);
+  }
+
+  let matched = resolveGroups(initial, wonGroups);
+  // resolveGroups may drop entries that lost their group pick. Reconcile.
+  const matchedSet = new Set(matched.map((m) => m.entry.id));
+  for (const id of matchedIds) {
+    if (!matchedSet.has(id)) matchedIds.delete(id);
+  }
+
+  // Recursive passes: use newly-added entries' content as the next haystack.
+  let lastAdded = matched;
+  for (let step = 0; step < options.maxRecursionSteps; step++) {
+    const recursionHaystack = lastAdded
+      .filter((m) => !m.entry.preventRecursion)
+      .map((m) => m.entry.content)
+      .join('\n');
+    if (!recursionHaystack) break;
+
+    const newMatches: MatchedEntry[] = [];
+    for (const c of candidates) {
+      if (matchedIds.has(c.entry.id)) continue;
+      if (c.entry.excludeRecursion) continue;
+      if (c.entry.constant) continue; // constants were decided in initial pass
+      if (c.entry.keys.length === 0) continue;
+      if (c.entry.group && wonGroups.has(c.entry.group)) continue;
+      if (!entryActivates(c.entry, recursionHaystack)) continue;
+      if (!rollProbability(c.entry)) continue;
+      newMatches.push(c);
+      matchedIds.add(c.entry.id);
+    }
+    if (newMatches.length === 0) break;
+    const resolved = resolveGroups(newMatches, wonGroups);
+    // Drop any that lost their group from matchedIds.
+    const resolvedIds = new Set(resolved.map((m) => m.entry.id));
+    for (const m of newMatches) {
+      if (!resolvedIds.has(m.entry.id)) matchedIds.delete(m.entry.id);
+    }
+    matched = matched.concat(resolved);
+    lastAdded = resolved;
+  }
+
+  matched = applyTokenBudget(matched, options.tokenBudget, options.profile);
+  matched.sort((a, b) => a.entry.order - b.entry.order);
+  return matched;
 }
 
 // ---- Store ---------------------------------------------------------------
@@ -308,6 +642,8 @@ interface WorldInfoState {
   books: WorldInfoBook[];
   activeBookIds: string[];
   scanDepth: number;
+  maxRecursionSteps: number;
+  tokenBudget: number;
   error: string | null;
 
   // Book CRUD
@@ -332,6 +668,8 @@ interface WorldInfoState {
   setBookActive: (bookId: string, active: boolean) => void;
   toggleBookActive: (bookId: string) => void;
   setScanDepth: (depth: number) => void;
+  setMaxRecursionSteps: (steps: number) => void;
+  setTokenBudget: (budget: number) => void;
 
   // Import / export
   exportBookJson: (bookId: string) => string | null;
@@ -344,6 +682,8 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
   books: loadBooks(),
   activeBookIds: loadActiveBooks(),
   scanDepth: loadScanDepth(),
+  maxRecursionSteps: loadMaxRecursion(),
+  tokenBudget: loadTokenBudget(),
   error: null,
 
   createBook: (name) => {
@@ -481,6 +821,18 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     const d = Math.max(1, Math.min(50, Math.floor(depth)));
     saveScanDepth(d);
     set({ scanDepth: d });
+  },
+
+  setMaxRecursionSteps: (steps) => {
+    const n = Math.max(0, Math.min(10, Math.floor(steps)));
+    saveMaxRecursion(n);
+    set({ maxRecursionSteps: n });
+  },
+
+  setTokenBudget: (budget) => {
+    const n = Math.max(0, Math.min(32768, Math.floor(budget)));
+    saveTokenBudget(n);
+    set({ tokenBudget: n });
   },
 
   exportBookJson: (bookId) => {

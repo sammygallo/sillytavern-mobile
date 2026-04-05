@@ -23,6 +23,8 @@ export function WorldInfoPage() {
     books,
     activeBookIds,
     scanDepth,
+    maxRecursionSteps,
+    tokenBudget,
     error,
     createBook,
     renameBook,
@@ -30,6 +32,8 @@ export function WorldInfoPage() {
     duplicateBook,
     toggleBookActive,
     setScanDepth,
+    setMaxRecursionSteps,
+    setTokenBudget,
     exportBookJson,
     importBookJson,
     clearError,
@@ -139,8 +143,8 @@ export function WorldInfoPage() {
         )}
 
         {/* Global settings */}
-        <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
+        <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 space-y-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
             Scan Settings
           </h2>
           <div>
@@ -168,6 +172,59 @@ export function WorldInfoPage() {
             />
             <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
               Number of recent messages scanned for keyword matches.
+            </p>
+          </div>
+
+          <div className="pt-3 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+                Max Recursion Steps
+              </label>
+              <input
+                type="number"
+                value={maxRecursionSteps}
+                min={0}
+                max={10}
+                onChange={(e) =>
+                  setMaxRecursionSteps(Number(e.target.value) || 0)
+                }
+                className="w-20 px-2 py-1 text-sm text-right bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              step={1}
+              value={maxRecursionSteps}
+              onChange={(e) => setMaxRecursionSteps(Number(e.target.value))}
+              className="w-full accent-[var(--color-primary)]"
+            />
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              How many times to rescan using matched entries' content as the
+              haystack. 0 disables recursion.
+            </p>
+          </div>
+
+          <div className="pt-3 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+                Token Budget
+              </label>
+              <input
+                type="number"
+                value={tokenBudget}
+                min={0}
+                max={32768}
+                step={64}
+                onChange={(e) => setTokenBudget(Number(e.target.value) || 0)}
+                className="w-24 px-2 py-1 text-sm text-right bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              Max total tokens of injected entries. Entries with higher{' '}
+              <code>order</code> are dropped first when over budget. 0 =
+              unlimited.
             </p>
           </div>
         </section>
