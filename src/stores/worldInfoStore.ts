@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import { estimateTokens, type TokenizerProfile } from '../utils/tokenizer';
+import type {
+  CharacterBookV2,
+  CharacterBookEntryV2,
+} from '../utils/characterCard';
 
 // Where a world info entry is injected relative to the character definitions
 // and the rest of the prompt. These map 1:1 onto SillyTavern's position codes
@@ -65,6 +69,13 @@ export interface WorldInfoBook {
   id: string;
   name: string;
   entries: WorldInfoEntry[];
+  /**
+   * Non-null when this book is embedded in / owned by a character card
+   * (its avatar filename). Character-owned books are hidden from the
+   * global lorebook list and are auto-activated when that character is
+   * selected. Null = a normal global book.
+   */
+  ownerCharacterAvatar: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -108,7 +119,15 @@ export const DEFAULT_ENTRY: Omit<
 function loadBooks(): WorldInfoBook[] {
   try {
     const raw = localStorage.getItem(BOOKS_KEY);
-    return raw ? (JSON.parse(raw) as WorldInfoBook[]) : [];
+    const list = raw ? (JSON.parse(raw) as WorldInfoBook[]) : [];
+    // Backfill `ownerCharacterAvatar` for books saved before it existed.
+    return list.map((b) => ({
+      ...b,
+      ownerCharacterAvatar:
+        typeof b.ownerCharacterAvatar === 'string'
+          ? b.ownerCharacterAvatar
+          : null,
+    }));
   } catch {
     return [];
   }
@@ -373,6 +392,7 @@ export function bookFromStFormat(name: string, raw: StBook): WorldInfoBook {
     id: generateId('wibook'),
     name: raw.name || name || 'Imported Lorebook',
     entries: list.map(entryFromStFormat),
+    ownerCharacterAvatar: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -384,6 +404,161 @@ export function bookToStFormat(book: WorldInfoBook): StBook {
     entries[String(idx)] = entryToStFormat(e, idx);
   });
   return { name: book.name, entries };
+}
+
+// ---- Character Card V2 character_book interop --------------------------
+//
+// The V2 card spec embeds a lorebook as `data.character_book` with a
+// different shape than ST's standalone export: entries are an *array*,
+// `position` is the string "before_char"|"after_char", `insertion_order`
+// replaces `order`, and our ST-specific fields (depth, scanDepth,
+// probability, groups, recursion flags, numeric-position override, etc.)
+// go under `entry.extensions` so that SillyTavern can round-trip them.
+
+interface CharacterBookExtensions {
+  position?: number; // ST 0-6 numeric position; overrides the spec's string position
+  depth?: number;
+  scan_depth?: number | null;
+  probability?: number;
+  useProbability?: boolean;
+  selectiveLogic?: number;
+  group?: string;
+  group_override?: boolean;
+  group_weight?: number;
+  prevent_recursion?: boolean;
+  exclude_recursion?: boolean;
+}
+
+function positionFromString(
+  pos: string | undefined
+): WorldInfoPosition {
+  return pos === 'after_char' ? 'after_char' : 'before_char';
+}
+
+function positionToString(
+  pos: WorldInfoPosition
+): 'before_char' | 'after_char' {
+  // The V2 spec only has two positions; everything that isn't `after_char`
+  // falls back to `before_char`. Full ST position code is preserved in
+  // extensions.position so ST can recover the original on import.
+  return pos === 'after_char' ? 'after_char' : 'before_char';
+}
+
+export function entryFromCharacterBookV2(
+  raw: CharacterBookEntryV2
+): WorldInfoEntry {
+  const now = Date.now();
+  const ext = (raw.extensions || {}) as CharacterBookExtensions;
+
+  // Prefer the ST numeric position in extensions when present (it can
+  // express at_depth / before_an / after_an which the spec's two-state
+  // string cannot).
+  const position: WorldInfoPosition =
+    typeof ext.position === 'number'
+      ? ST_POS_TO_LOCAL[ext.position] || positionFromString(raw.position)
+      : positionFromString(raw.position);
+
+  const logic: SelectiveLogic =
+    typeof ext.selectiveLogic === 'number'
+      ? ST_LOGIC_TO_LOCAL[ext.selectiveLogic] || 'AND_ANY'
+      : 'AND_ANY';
+
+  return {
+    id: generateId('wi'),
+    keys: pickStringArray(raw.keys),
+    content: typeof raw.content === 'string' ? raw.content : '',
+    comment: typeof raw.comment === 'string' ? raw.comment : '',
+    enabled: raw.enabled !== false,
+    constant: raw.constant === true,
+    caseSensitive: raw.case_sensitive === true,
+    position,
+    depth: typeof ext.depth === 'number' ? ext.depth : DEFAULT_ENTRY.depth,
+    order:
+      typeof raw.insertion_order === 'number'
+        ? raw.insertion_order
+        : DEFAULT_ENTRY.order,
+    keysSecondary: pickStringArray(raw.secondary_keys),
+    selective: raw.selective === true,
+    selectiveLogic: logic,
+    scanDepth:
+      typeof ext.scan_depth === 'number' && ext.scan_depth >= 0
+        ? Math.floor(ext.scan_depth)
+        : null,
+    probability:
+      typeof ext.probability === 'number'
+        ? clamp(ext.probability, 0, 100)
+        : 100,
+    useProbability: ext.useProbability === true,
+    group: typeof ext.group === 'string' ? ext.group : '',
+    groupOverride: ext.group_override === true,
+    groupWeight:
+      typeof ext.group_weight === 'number' && ext.group_weight > 0
+        ? ext.group_weight
+        : 100,
+    preventRecursion: ext.prevent_recursion === true,
+    excludeRecursion: ext.exclude_recursion === true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function entryToCharacterBookV2(
+  entry: WorldInfoEntry,
+  id: number
+): CharacterBookEntryV2 {
+  const extensions: CharacterBookExtensions = {
+    position: LOCAL_POS_TO_ST[entry.position],
+    depth: entry.depth,
+    scan_depth: entry.scanDepth,
+    probability: entry.probability,
+    useProbability: entry.useProbability,
+    selectiveLogic: LOCAL_LOGIC_TO_ST[entry.selectiveLogic],
+    group: entry.group,
+    group_override: entry.groupOverride,
+    group_weight: entry.groupWeight,
+    prevent_recursion: entry.preventRecursion,
+    exclude_recursion: entry.excludeRecursion,
+  };
+  return {
+    id,
+    keys: entry.keys,
+    secondary_keys: entry.keysSecondary,
+    content: entry.content,
+    comment: entry.comment,
+    enabled: entry.enabled,
+    constant: entry.constant,
+    selective: entry.selective,
+    case_sensitive: entry.caseSensitive,
+    insertion_order: entry.order,
+    position: positionToString(entry.position),
+    name: entry.comment,
+    priority: entry.order,
+    extensions: extensions as unknown as Record<string, unknown>,
+  };
+}
+
+export function bookFromCharacterBookV2(
+  raw: CharacterBookV2,
+  fallbackName: string,
+  ownerCharacterAvatar: string | null
+): WorldInfoBook {
+  const entries = Array.isArray(raw.entries) ? raw.entries : [];
+  const now = Date.now();
+  return {
+    id: generateId('wibook'),
+    name: raw.name || fallbackName || 'Character Lorebook',
+    entries: entries.map(entryFromCharacterBookV2),
+    ownerCharacterAvatar,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function bookToCharacterBookV2(book: WorldInfoBook): CharacterBookV2 {
+  return {
+    name: book.name,
+    entries: book.entries.map((e, idx) => entryToCharacterBookV2(e, idx)),
+  };
 }
 
 // ---- Keyword scanning ----------------------------------------------------
@@ -675,6 +850,16 @@ interface WorldInfoState {
   exportBookJson: (bookId: string) => string | null;
   importBookJson: (json: string, fallbackName?: string) => WorldInfoBook | null;
 
+  // Character-embedded lorebooks: at most one book per character avatar,
+  // auto-scoped to that character's chats.
+  upsertCharacterBook: (
+    ownerAvatar: string,
+    raw: CharacterBookV2,
+    fallbackName: string
+  ) => WorldInfoBook;
+  getCharacterBook: (ownerAvatar: string) => WorldInfoBook | null;
+  deleteCharacterBook: (ownerAvatar: string) => void;
+
   clearError: () => void;
 }
 
@@ -693,6 +878,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
       id: generateId('wibook'),
       name: trimmed,
       entries: [],
+      ownerCharacterAvatar: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -724,6 +910,8 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     const original = get().books.find((b) => b.id === bookId);
     if (!original) return null;
     const now = Date.now();
+    // Duplicates are always standalone globals so they don't collide with
+    // the original character's embedded-book link.
     const copy: WorldInfoBook = {
       id: generateId('wibook'),
       name: `${original.name} (Copy)`,
@@ -733,6 +921,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
         createdAt: now,
         updatedAt: now,
       })),
+      ownerCharacterAvatar: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -869,6 +1058,54 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
       });
       return null;
     }
+  },
+
+  upsertCharacterBook: (ownerAvatar, raw, fallbackName) => {
+    const existing = get().books.find(
+      (b) => b.ownerCharacterAvatar === ownerAvatar
+    );
+    const now = Date.now();
+    if (existing) {
+      // Preserve the book id (keeps linked-books references stable) and
+      // swap in the freshly-parsed entries + name.
+      const fresh = bookFromCharacterBookV2(raw, fallbackName, ownerAvatar);
+      const updated: WorldInfoBook = {
+        ...existing,
+        name: fresh.name,
+        entries: fresh.entries,
+        ownerCharacterAvatar: ownerAvatar,
+        updatedAt: now,
+      };
+      const next = get().books.map((b) =>
+        b.id === existing.id ? updated : b
+      );
+      saveBooks(next);
+      set({ books: next });
+      return updated;
+    }
+    const book = bookFromCharacterBookV2(raw, fallbackName, ownerAvatar);
+    const next = [...get().books, book];
+    saveBooks(next);
+    set({ books: next });
+    return book;
+  },
+
+  getCharacterBook: (ownerAvatar) => {
+    return (
+      get().books.find((b) => b.ownerCharacterAvatar === ownerAvatar) || null
+    );
+  },
+
+  deleteCharacterBook: (ownerAvatar) => {
+    const existing = get().books.find(
+      (b) => b.ownerCharacterAvatar === ownerAvatar
+    );
+    if (!existing) return;
+    const next = get().books.filter((b) => b.id !== existing.id);
+    const activeNext = get().activeBookIds.filter((id) => id !== existing.id);
+    saveBooks(next);
+    saveActiveBooks(activeNext);
+    set({ books: next, activeBookIds: activeNext });
   },
 
   clearError: () => set({ error: null }),

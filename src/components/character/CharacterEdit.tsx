@@ -4,6 +4,7 @@ import { useCharacterStore } from '../../stores/characterStore';
 import { spritesApi, type CharacterInfo } from '../../api/client';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
+import { CharacterLorebookSection } from './CharacterLorebookSection';
 
 interface CharacterEditProps {
   isOpen: boolean;
@@ -32,6 +33,8 @@ export function CharacterEdit({
     clearError,
     exportCharacterAsPNG,
     exportCharacterAsJSON,
+    getLinkedBookIds,
+    setLinkedBookIds,
   } = useCharacterStore();
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -59,6 +62,8 @@ export function CharacterEdit({
   const [systemPromptOverride, setSystemPromptOverride] = useState('');
   const [postHistoryInstructions, setPostHistoryInstructions] = useState('');
   const [talkativeness, setTalkativeness] = useState('0.5');
+  // Phase 4.3: extra linked lorebooks (staged, committed on Save)
+  const [linkedBookIds, setLinkedBookIdsLocal] = useState<string[]>([]);
 
   const getAvatarUrl = (avatar: string) => `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
 
@@ -102,8 +107,11 @@ export function CharacterEdit({
 
       const charTalkativeness = character.data?.extensions?.talkativeness;
       setTalkativeness(typeof charTalkativeness === 'string' ? charTalkativeness : '0.5');
+
+      // Phase 4.3: hydrate linked lorebook ids for this character
+      setLinkedBookIdsLocal(getLinkedBookIds(character.avatar));
     }
-  }, [isOpen, character]);
+  }, [isOpen, character, getLinkedBookIds]);
 
   const handleExportPNG = async () => {
     setShowExportMenu(false);
@@ -157,6 +165,9 @@ export function CharacterEdit({
     );
 
     if (success) {
+      // Persist linked lorebook selections (client-side only)
+      setLinkedBookIds(character.avatar, linkedBookIds);
+
       // Upload expression images if any
       if (expressionFiles.size > 0) {
         setIsUploadingExpressions(true);
@@ -343,6 +354,13 @@ export function CharacterEdit({
         <ExpressionUpload
           characterName={character.name}
           onExpressionsChange={setExpressionFiles}
+        />
+
+        {/* Phase 4.3: Character lorebooks */}
+        <CharacterLorebookSection
+          avatar={character.avatar}
+          linkedBookIds={linkedBookIds}
+          onLinkedBookIdsChange={setLinkedBookIdsLocal}
         />
 
         {/* Collapsible Advanced Section */}

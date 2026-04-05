@@ -2,17 +2,24 @@ import { create } from 'zustand';
 import { api, type CharacterInfo, type CharacterCreateData, type CharacterEditData } from '../api/client';
 import {
   extractCharacterFromPNG,
+  extractCharacterBook,
   parseCharacterFromJSON,
   cardToCharacterInfo,
   embedCharacterInPNG,
   exportCharacterAsJSON,
   downloadFile,
   fetchImageAsBlob,
+  type CharacterBookV2,
   type CharacterCardV2,
   type CharacterExportData,
 } from '../utils/characterCard';
+import {
+  useWorldInfoStore,
+  bookToCharacterBookV2,
+} from './worldInfoStore';
 
 const FAVORITES_KEY = 'sillytavern_character_favorites';
+const LINKED_BOOKS_KEY = 'sillytavern_character_linked_books_v1';
 
 function loadFavorites(): Set<string> {
   try {
@@ -27,6 +34,28 @@ function loadFavorites(): Set<string> {
 
 function saveFavorites(favorites: Set<string>) {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(favorites)));
+}
+
+function loadLinkedBooks(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(LINKED_BOOKS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, string[]>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLinkedBooks(map: Record<string, string[]>) {
+  try {
+    localStorage.setItem(LINKED_BOOKS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore quota/security errors
+  }
 }
 
 export type CharacterSortMode = 'name' | 'date_added' | 'date_last_chat' | 'recent_chat';
@@ -50,6 +79,10 @@ interface CharacterState {
   selectedTags: Set<string>;
   showFavoritesOnly: boolean;
   sortMode: CharacterSortMode;
+  // Per-character extra lorebooks to auto-activate (avatar → book ids).
+  // The embedded book (if any) is tracked on the WI book itself via
+  // `ownerCharacterAvatar` and is NOT duplicated here.
+  linkedBookIdsByAvatar: Record<string, string[]>;
 
   // Actions
   fetchCharacters: () => Promise<void>;
@@ -67,9 +100,25 @@ interface CharacterState {
   isCharacterInGroup: (avatar: string) => boolean;
   setGroupChatCharacters: (avatars: string[]) => Promise<void>;
   // Import/Export actions
-  importCharacter: (file: File) => Promise<{ data: Partial<CharacterInfo>; avatarFile?: File } | null>;
+  importCharacter: (
+    file: File
+  ) => Promise<{
+    data: Partial<CharacterInfo>;
+    avatarFile?: File;
+    characterBook?: CharacterBookV2;
+  } | null>;
   exportCharacterAsPNG: (character: CharacterInfo) => Promise<void>;
   exportCharacterAsJSON: (character: CharacterInfo) => void;
+  // Character-embedded lorebook actions
+  registerEmbeddedBookFromCard: (
+    avatar: string,
+    characterBook: CharacterBookV2,
+    fallbackName: string
+  ) => void;
+  getLinkedBookIds: (avatar: string) => string[];
+  setLinkedBookIds: (avatar: string, ids: string[]) => void;
+  /** Ids to merge with the globally-active ids during scan. */
+  getActiveBookIdsForCharacter: (avatar: string) => string[];
   // Organization actions
   toggleFavorite: (avatar: string) => void;
   isFavorite: (avatar: string) => boolean;
@@ -99,6 +148,7 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   selectedTags: new Set<string>(),
   showFavoritesOnly: false,
   sortMode: 'name' as CharacterSortMode,
+  linkedBookIdsByAvatar: loadLinkedBooks(),
 
   fetchCharacters: async () => {
     set({ isLoading: true, error: null });
@@ -193,7 +243,7 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     try {
       await api.deleteCharacter(avatar);
       // Clear selection if deleting the selected character
-      const { selectedCharacter, favorites } = get();
+      const { selectedCharacter, favorites, linkedBookIdsByAvatar } = get();
       if (selectedCharacter?.avatar === avatar) {
         set({ selectedCharacter: null });
       }
@@ -203,6 +253,14 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         newFavorites.delete(avatar);
         saveFavorites(newFavorites);
         set({ favorites: newFavorites });
+      }
+      // Clean up character-embedded lorebook and linked-book references
+      useWorldInfoStore.getState().deleteCharacterBook(avatar);
+      if (linkedBookIdsByAvatar[avatar]) {
+        const nextLinks = { ...linkedBookIdsByAvatar };
+        delete nextLinks[avatar];
+        saveLinkedBooks(nextLinks);
+        set({ linkedBookIdsByAvatar: nextLinks });
       }
       // Refresh the character list
       await get().fetchCharacters();
@@ -461,8 +519,9 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       }
 
       const info = cardToCharacterInfo(characterData);
+      const characterBook = extractCharacterBook(characterData) || undefined;
       set({ isImporting: false });
-      return { data: info, avatarFile };
+      return { data: info, avatarFile, characterBook };
     } catch (error) {
       set({
         isImporting: false,
@@ -479,8 +538,12 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       const avatarUrl = `/characters/${encodeURIComponent(character.avatar)}`;
       const imageBlob = await fetchImageAsBlob(avatarUrl);
 
+      // Include the character's embedded lorebook when exporting
+      const embedded = useWorldInfoStore.getState().getCharacterBook(character.avatar);
+      const characterBook = embedded ? bookToCharacterBookV2(embedded) : undefined;
+
       // Embed character data in the PNG
-      const pngBlob = await embedCharacterInPNG(imageBlob, character);
+      const pngBlob = await embedCharacterInPNG(imageBlob, character, characterBook);
 
       // Download the file
       const filename = `${character.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
@@ -497,7 +560,9 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
 
   exportCharacterAsJSON: (character: CharacterInfo) => {
     try {
-      const jsonBlob = exportCharacterAsJSON(character);
+      const embedded = useWorldInfoStore.getState().getCharacterBook(character.avatar);
+      const characterBook = embedded ? bookToCharacterBookV2(embedded) : undefined;
+      const jsonBlob = exportCharacterAsJSON(character, characterBook);
       const filename = `${character.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
       downloadFile(jsonBlob, filename);
     } catch (error) {
@@ -505,5 +570,57 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to export character',
       });
     }
+  },
+
+  // ---- Character-embedded lorebook actions ----
+  registerEmbeddedBookFromCard: (avatar, characterBook, fallbackName) => {
+    useWorldInfoStore
+      .getState()
+      .upsertCharacterBook(avatar, characterBook, fallbackName);
+  },
+
+  getLinkedBookIds: (avatar) => {
+    return get().linkedBookIdsByAvatar[avatar] || [];
+  },
+
+  setLinkedBookIds: (avatar, ids) => {
+    // Drop missing books + character-owned books belonging to a different
+    // character. A user linking a book for character A should not be able
+    // to scope-activate character B's embedded book.
+    const allBooks = useWorldInfoStore.getState().books;
+    const valid = ids.filter((id) => {
+      const book = allBooks.find((b) => b.id === id);
+      if (!book) return false;
+      if (book.ownerCharacterAvatar && book.ownerCharacterAvatar !== avatar) {
+        return false;
+      }
+      return true;
+    });
+    const deduped = Array.from(new Set(valid));
+    const next = { ...get().linkedBookIdsByAvatar, [avatar]: deduped };
+    if (deduped.length === 0) {
+      delete next[avatar];
+    }
+    saveLinkedBooks(next);
+    set({ linkedBookIdsByAvatar: next });
+  },
+
+  getActiveBookIdsForCharacter: (avatar) => {
+    if (!avatar) return [];
+    const ids: string[] = [];
+    const embedded = useWorldInfoStore.getState().getCharacterBook(avatar);
+    if (embedded) ids.push(embedded.id);
+    const linked = get().linkedBookIdsByAvatar[avatar] || [];
+    const allBooks = useWorldInfoStore.getState().books;
+    for (const linkedId of linked) {
+      if (ids.includes(linkedId)) continue; // avoid double-adding the embedded id
+      const book = allBooks.find((b) => b.id === linkedId);
+      if (!book) continue;
+      if (book.ownerCharacterAvatar && book.ownerCharacterAvatar !== avatar) {
+        continue;
+      }
+      ids.push(linkedId);
+    }
+    return ids;
   },
 }));
