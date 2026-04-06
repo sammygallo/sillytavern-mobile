@@ -1,11 +1,12 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { MessageSquare, Users, Settings2, Pencil } from 'lucide-react';
+import { MessageSquare, Users, Settings2, Pencil, Square } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
+import { TypingIndicator } from './TypingIndicator';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -53,6 +54,9 @@ export function ChatView() {
       : null
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  /** Whether the user is scrolled near the bottom (within 150px). */
+  const isNearBottomRef = useRef(true);
   const lastCharacterRef = useRef<string | null>(null);
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
@@ -135,9 +139,21 @@ export function ChatView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatFiles]);
 
+  // Track scroll position to decide whether auto-scroll should fire.
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 150;
+    isNearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
+
+  // Auto-scroll: always scroll on new user messages or when streaming starts,
+  // but during ongoing streaming only scroll if the user hasn't scrolled up.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!isNearBottomRef.current && isStreaming) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' });
+  }, [messages, isStreaming]);
 
   // Phase 6.3: Auto-read — speak the last AI message when streaming completes.
   const wasStreamingRef = useRef(false);
@@ -385,9 +401,11 @@ export function ChatView() {
 
       {/* Messages Area */}
       <div
+        ref={scrollContainerRef}
         className={`flex-1 min-h-0 overflow-y-auto relative ${
           isDragOver ? 'ring-2 ring-[var(--color-primary)] ring-inset' : ''
         }`}
+        onScroll={handleScroll}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -446,6 +464,7 @@ export function ChatView() {
                   timestamp={message.timestamp}
                   disabled={isSending}
                   images={message.images}
+                  isStreaming={isLastAiMessage && isStreaming}
                   swipes={message.swipes}
                   swipeId={message.swipeId}
                   showSwipeControl={showSwipeControl}
@@ -477,29 +496,11 @@ export function ChatView() {
               </div>
             )}
 
-            {/* Typing indicator (only before first token). In group chats,
-                label with the speaker name so the user knows who is drafting. */}
+            {/* Typing indicator — shown while waiting for the first token. */}
             {isSending && !isStreaming && (
-              <div className="flex gap-3 px-4 py-3 items-center">
-                <div className="w-10 h-10 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center flex-shrink-0">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-bounce" />
-                    <span
-                      className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-bounce"
-                      style={{ animationDelay: '0.1s' }}
-                    />
-                    <span
-                      className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-bounce"
-                      style={{ animationDelay: '0.2s' }}
-                    />
-                  </div>
-                </div>
-                {isGroupChatMode && currentSpeakerName && (
-                  <span className="text-sm text-[var(--color-text-secondary)] italic truncate">
-                    {currentSpeakerName} is typing...
-                  </span>
-                )}
-              </div>
+              <TypingIndicator
+                speakerName={isGroupChatMode ? currentSpeakerName : null}
+              />
             )}
 
             <div ref={messagesEndRef} />
@@ -508,7 +509,7 @@ export function ChatView() {
       </div>
 
       {/* Action Bar (regenerate/continue/impersonate/stop) */}
-      {!isGroupChatMode && (
+      {!isGroupChatMode ? (
         <ChatActionBar
           onRegenerate={handleRegenerate}
           onContinue={handleContinue}
@@ -518,7 +519,17 @@ export function ChatView() {
           hasAiMessage={hasAiMessage}
           disabled={isSending}
         />
-      )}
+      ) : isSending ? (
+        <div className="flex items-center justify-center gap-2 px-4 py-2 border-t border-[var(--color-border)]">
+          <button
+            onClick={stopGeneration}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors"
+          >
+            <Square size={14} fill="currentColor" />
+            <span>Stop</span>
+          </button>
+        </div>
+      ) : null}
 
       {/* Input Area */}
       <ChatInput

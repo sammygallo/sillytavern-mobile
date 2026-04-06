@@ -15,6 +15,10 @@ interface TextSegment {
 interface MarkdownContentProps {
   content: string;
   isUser: boolean;
+  /** When true the content is still arriving token-by-token. Unclosed code
+   *  fences are auto-closed before markdown parsing so they render as code
+   *  rather than leaking raw backticks, and a blinking cursor is appended. */
+  isStreaming?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,11 +152,25 @@ const SANITIZE_CONFIG: DOMPurify.Config = {
 /** Heuristic: does the text contain block-level markdown structures? */
 const BLOCK_PATTERN = /\n\n|^#{1,6}\s|^```|^>\s|^[-*+]\s|^\d+\.\s|^\|.+\|/m;
 
-function renderMarkdown(text: string): { html: string; isBlock: boolean } {
-  const isBlock = BLOCK_PATTERN.test(text);
+/**
+ * Close any unclosed fenced code blocks so the markdown parser treats them as
+ * code instead of leaking raw backticks into the output.  Only needed while
+ * streaming — once the response is complete the fences are balanced.
+ */
+function closeOpenCodeFences(text: string): string {
+  // Count occurrences of triple-backtick fence markers (``` with optional lang)
+  const fenceMatches = text.match(/^`{3,}/gm);
+  if (!fenceMatches || fenceMatches.length % 2 === 0) return text;
+  // Odd number of fences → last one is unclosed. Append a closing fence.
+  return text + '\n```';
+}
+
+function renderMarkdown(text: string, streaming?: boolean): { html: string; isBlock: boolean } {
+  const prepared = streaming ? closeOpenCodeFences(text) : text;
+  const isBlock = BLOCK_PATTERN.test(prepared);
   const raw = isBlock
-    ? (marked.parse(text) as string)
-    : (marked.parseInline(text) as string);
+    ? (marked.parse(prepared) as string)
+    : (marked.parseInline(prepared) as string);
   return { html: DOMPurify.sanitize(raw, SANITIZE_CONFIG), isBlock };
 }
 
@@ -160,7 +178,7 @@ function renderMarkdown(text: string): { html: string; isBlock: boolean } {
 // Component
 // ---------------------------------------------------------------------------
 
-export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
+export function MarkdownContent({ content, isUser, isStreaming }: MarkdownContentProps) {
   const segments = useMemo(() => parseRPSegments(content), [content]);
 
   /** Copy-button click handler — uses event delegation. */
@@ -178,6 +196,8 @@ export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
   return (
     <div className="markdown-content" onClick={handleClick}>
       {segments.map((segment, index) => {
+        const isLast = index === segments.length - 1;
+
         if (segment.type === 'action') {
           return (
             <span
@@ -185,6 +205,7 @@ export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
               className={`italic ${isUser ? 'text-white/70' : 'text-amber-400/90'}`}
             >
               {segment.content}
+              {isStreaming && isLast && <span className="streaming-cursor" />}
             </span>
           );
         }
@@ -195,18 +216,22 @@ export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
               className={`italic ${isUser ? 'text-white/60' : 'text-purple-400/80'}`}
             >
               {segment.content}
+              {isStreaming && isLast && <span className="streaming-cursor" />}
             </span>
           );
         }
 
         // Dialogue → markdown
-        const { html, isBlock } = renderMarkdown(segment.content);
+        const { html, isBlock } = renderMarkdown(segment.content, isStreaming && isLast);
+        const cursorHtml = isStreaming && isLast
+          ? html + '<span class="streaming-cursor"></span>'
+          : html;
         const Tag = isBlock ? 'div' : 'span';
         return (
           <Tag
             key={index}
             className="md-segment"
-            dangerouslySetInnerHTML={{ __html: html }}
+            dangerouslySetInnerHTML={{ __html: cursorHtml }}
           />
         );
       })}
