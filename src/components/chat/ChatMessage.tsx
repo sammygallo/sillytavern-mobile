@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { MoreHorizontal, Check, X } from 'lucide-react';
+import { MoreHorizontal, Check, X, Volume2, Square } from 'lucide-react';
 import { Avatar } from '../ui';
 import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
+import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 
 interface ChatMessageProps {
+  /** Unique message id — used as TTS tracking key. */
+  messageId: string;
   name: string;
   content: string;
   isUser: boolean;
@@ -93,6 +96,7 @@ function FormattedContent({ content, isUser }: { content: string; isUser: boolea
 }
 
 export function ChatMessage({
+  messageId,
   name,
   content,
   isUser,
@@ -116,6 +120,10 @@ export function ChatMessage({
   const [showMenu, setShowMenu] = useState(false);
   const [showEditOptions, setShowEditOptions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Phase 6.3: TTS — only wired for non-user, non-system messages.
+  const { isSupported: ttsSupported, isSpeaking, speak, stop } = useSpeechSynthesis();
+  const showTtsButton = ttsSupported && !isUser && !isSystem && content.length > 0;
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -213,9 +221,9 @@ export function ChatMessage({
         </div>
 
         <div className="flex items-start gap-2 relative">
-          {/* Action menu button */}
+          {/* Action menu button + TTS button */}
           {!isEditing && (onEdit || onDelete) && (
-            <div className="relative">
+            <div className="relative flex flex-col gap-0.5">
               <button
                 onClick={() => setShowMenu(!showMenu)}
                 disabled={disabled}
@@ -234,6 +242,20 @@ export function ChatMessage({
                 showRegenerate={!isUser && !!onRegenerate}
                 anchorRight={isUser}
               />
+              {showTtsButton && (
+                <button
+                  onClick={() => isSpeaking ? stop() : speak(content, messageId)}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    isSpeaking
+                      ? 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 opacity-100'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100'
+                  }`}
+                  aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+                  title={isSpeaking ? 'Stop' : 'Read aloud'}
+                >
+                  {isSpeaking ? <Square size={14} /> : <Volume2 size={14} />}
+                </button>
+              )}
             </div>
           )}
 
