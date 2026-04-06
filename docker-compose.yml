@@ -10,10 +10,11 @@ services:
 
   sillytavern:
     image: ghcr.io/sillytavern/sillytavern:latest
+    entrypoint: ["/bin/sh", "/st-init.sh"]
     environment:
       - ST_PORT=8000
-      - ST_ENABLE_USER_ACCOUNTS=true
     volumes:
+      - ./docker/st-init.sh:/st-init.sh:ro
       - st-config:/home/node/app/config
       - st-data:/home/node/app/data
     restart: unless-stopped
