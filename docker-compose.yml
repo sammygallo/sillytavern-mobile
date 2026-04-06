@@ -1,0 +1,22 @@
+services:
+  frontend:
+    build: .
+    ports:
+      - "80:80"
+    depends_on:
+      sillytavern:
+        condition: service_started
+    restart: unless-stopped
+
+  sillytavern:
+    image: ghcr.io/sillytavern/sillytavern:latest
+    environment:
+      - ST_PORT=8000
+    volumes:
+      - st-config:/home/node/app/config
+      - st-data:/home/node/app/data
+    restart: unless-stopped
+
+volumes:
+  st-config:
+  st-data:
