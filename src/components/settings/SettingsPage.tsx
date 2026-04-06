@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, Mic, Sliders, Trash2, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Sliders, Trash2, Volume2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -17,6 +17,18 @@ import {
   getTtsAutoRead,
   setTtsAutoRead,
 } from '../../hooks/speechLanguage';
+import {
+  getChatLayoutMode,
+  setChatLayoutMode,
+  getAvatarShape,
+  setAvatarShape,
+  getChatFontSize,
+  setChatFontSize,
+  getChatMaxWidth,
+  setChatMaxWidth,
+  type ChatLayoutMode,
+  type AvatarShape,
+} from '../../hooks/displayPreferences';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 
@@ -43,6 +55,12 @@ export function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
+
+  // Phase 7.3: Chat display preferences
+  const [layoutMode, setLayoutModeState] = useState<ChatLayoutMode>(() => getChatLayoutMode());
+  const [avatarShapePref, setAvatarShapeState] = useState<AvatarShape>(() => getAvatarShape());
+  const [fontSizePref, setFontSizeState] = useState<number>(() => getChatFontSize());
+  const [chatWidthPref, setChatWidthState] = useState<number>(() => getChatMaxWidth());
 
   // Phase 6.3: TTS settings state
   const { isSupported: isTtsSupported, voices: ttsVoices } = useSpeechSynthesis();
@@ -319,6 +337,114 @@ export function SettingsPage() {
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
               </button>
+            </section>
+
+            {/* Chat Display (Phase 7.3) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Chat Display
+                </h2>
+              </div>
+
+              {/* Layout Mode */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                Layout
+              </label>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {([
+                  { value: 'bubbles' as const, label: 'Bubbles', desc: 'Rounded colored bubbles' },
+                  { value: 'flat' as const, label: 'Flat', desc: 'Full-width, dividers' },
+                  { value: 'document' as const, label: 'Document', desc: 'Compact, inline names' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { setLayoutModeState(opt.value); setChatLayoutMode(opt.value); }}
+                    className={`p-2.5 rounded-lg text-center transition-all ${
+                      layoutMode === opt.value
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-zinc-700'
+                    }`}
+                  >
+                    <span className="text-xs font-medium block">{opt.label}</span>
+                    <span className={`text-[10px] block mt-0.5 ${
+                      layoutMode === opt.value ? 'text-white/70' : 'text-[var(--color-text-secondary)]'
+                    }`}>
+                      {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Avatar Shape */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                Avatar Shape
+              </label>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {([
+                  { value: 'circle' as const, label: 'Circle', cls: 'rounded-full' },
+                  { value: 'square' as const, label: 'Square', cls: 'rounded-none' },
+                  { value: 'rounded-square' as const, label: 'Rounded', cls: 'rounded-md' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { setAvatarShapeState(opt.value); setAvatarShape(opt.value); }}
+                    className={`flex items-center justify-center gap-2 p-2.5 rounded-lg transition-all ${
+                      avatarShapePref === opt.value
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-zinc-700'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 ${opt.cls} ${
+                      avatarShapePref === opt.value ? 'bg-white/80' : 'bg-[var(--color-text-secondary)]'
+                    }`} />
+                    <span className="text-xs font-medium">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Font Size */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Font Size: {fontSizePref}px
+              </label>
+              <input
+                type="range"
+                min={12}
+                max={20}
+                step={1}
+                value={fontSizePref}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setFontSizeState(v);
+                  setChatFontSize(v);
+                }}
+                className="w-full accent-[var(--color-primary)] mb-1"
+              />
+              <p className="text-[var(--color-text-secondary)] mb-4" style={{ fontSize: `${fontSizePref}px` }}>
+                Sample text Aa
+              </p>
+
+              {/* Chat Width */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Message Width: {chatWidthPref}%
+                {layoutMode !== 'bubbles' && (
+                  <span className="ml-1 text-[var(--color-text-secondary)]">(bubbles only)</span>
+                )}
+              </label>
+              <input
+                type="range"
+                min={60}
+                max={100}
+                step={5}
+                value={chatWidthPref}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setChatWidthState(v);
+                  setChatMaxWidth(v);
+                }}
+                className="w-full accent-[var(--color-primary)]"
+              />
             </section>
 
             {/* Voice Input Language */}

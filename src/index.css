@@ -256,3 +256,10 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ===================================================================
+   Phase 7.3 — Chat Display Styles
+   Layout modes (bubbles/flat/document), avatar shapes, font size, and
+   chat width are all driven by inline Tailwind classes + inline styles
+   in ChatMessage.tsx.  No additional CSS needed here.
+   =================================================================== */
