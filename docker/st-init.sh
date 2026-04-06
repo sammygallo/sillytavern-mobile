@@ -14,6 +14,9 @@ if [ ! -f "$CONFIG" ]; then
 whitelistMode: false
 enableUserAccounts: true
 listen: true
+# Allows ST to start without whitelist/basic-auth when user accounts
+# are the sole authentication mechanism (avoids exit-code-1 security check).
+securityOverride: true
 EOF
 fi
 
