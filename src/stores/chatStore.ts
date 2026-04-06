@@ -20,7 +20,6 @@ import { dataUrlToPart, supportsVision } from '../utils/images';
 import { processMacros, type MacroContext } from '../utils/macros';
 import {
   estimateConversationTokens,
-  estimateMessageTokens,
   profileForProvider,
   trimHistoryToBudget,
 } from '../utils/tokenizer';
