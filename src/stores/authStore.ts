@@ -3,11 +3,12 @@ import { api, type UserInfo } from '../api/client';
 import { useCharacterStore } from './characterStore';
 import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
+import type { UserRole } from '../types';
 
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  currentUser: { handle: string; name: string } | null;
+  currentUser: { handle: string; name: string; role: UserRole } | null;
   availableUsers: UserInfo[];
   error: string | null;
   canSelfRegister: boolean;
@@ -35,7 +36,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await api.getCurrentUser();
       if (user) {
-        set({ isAuthenticated: true, currentUser: user, isLoading: false });
+        set({
+          isAuthenticated: true,
+          currentUser: { handle: user.handle, name: user.name, role: user.role },
+          isLoading: false,
+        });
       } else {
         set({ isAuthenticated: false, currentUser: null, isLoading: false });
       }
@@ -70,7 +75,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const loginResult = await api.login(result.handle, password);
       set({
         isAuthenticated: true,
-        currentUser: { handle: loginResult.handle, name },
+        currentUser: { handle: loginResult.handle, name, role: 'end_user' },
         isLoading: false,
       });
       return true;
@@ -89,7 +94,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const result = await api.login(handle, password);
       set({
         isAuthenticated: true,
-        currentUser: { handle: result.handle, name: result.handle },
+        currentUser: { handle: result.handle, name: result.handle, role: 'end_user' },
         isLoading: false,
       });
       return true;

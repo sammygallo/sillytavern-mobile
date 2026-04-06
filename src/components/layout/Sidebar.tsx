@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore, type GroupChatInfo } from '../../stores/chatStore';
+import { useAuthStore } from '../../stores/authStore';
+import { can } from '../../utils/permissions';
 import { Avatar, Button, Input } from '../ui';
 import { CharacterCreation } from '../character/CharacterCreation';
 import { CharacterImport } from '../character/CharacterImport';
@@ -28,6 +30,9 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const { currentUser } = useAuthStore();
+  const userRole = currentUser?.role;
+  const canCreateCharacters = can(userRole, 'character:create');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCharacterList, setShowCharacterList] = useState(false);
@@ -583,7 +588,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   <Users size={18} className="mr-2" />
                   Start Group Chat ({groupChatCharacters.length}/2+)
                 </Button>
-              ) : (
+              ) : canCreateCharacters ? (
                 <div className="flex gap-2">
                   <Button
                     variant="secondary"
@@ -602,7 +607,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     New
                   </Button>
                 </div>
-              )}
+              ) : null}
             </div>
           </>
         )}

@@ -172,9 +172,14 @@ export const api = {
     await apiRequest('/api/users/logout', { method: 'POST' });
   },
 
-  async getCurrentUser(): Promise<{ handle: string; name: string } | null> {
+  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole } | null> {
     try {
-      return await apiRequest('/api/users/me');
+      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string }>('/api/users/me');
+      // Derive role: backend may return role directly (Phase 1 backend),
+      // or fall back to admin boolean for older servers.
+      const role = (user.role as import('../types').UserRole) ||
+        (user.admin ? 'admin' : 'end_user');
+      return { handle: user.handle, name: user.name, role };
     } catch {
       return null;
     }
