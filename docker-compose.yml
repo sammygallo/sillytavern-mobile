@@ -3,6 +3,11 @@ services:
     build: .
     ports:
       - "80:80"
+    environment:
+      # Set these to auto-create an owner account on first boot:
+      - OWNER_HANDLE=${OWNER_HANDLE:-}
+      - OWNER_PASSWORD=${OWNER_PASSWORD:-}
+      - OWNER_NAME=${OWNER_NAME:-}
     depends_on:
       sillytavern:
         condition: service_started
@@ -12,6 +17,7 @@ services:
     image: ghcr.io/sillytavern/sillytavern:latest
     environment:
       - ST_PORT=8000
+      - ST_ENABLE_USER_ACCOUNTS=true
     volumes:
       - st-config:/home/node/app/config
       - st-data:/home/node/app/data
