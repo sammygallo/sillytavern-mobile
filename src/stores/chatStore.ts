@@ -25,6 +25,8 @@ import {
   trimHistoryToBudget,
 } from '../utils/tokenizer';
 import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemplates';
+import { useRegexScriptStore } from './regexScriptStore';
+import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
 
 export interface ChatMessage {
   id: string;
@@ -1002,7 +1004,7 @@ async function generateGroupTurn(
   }
 
   const emotion = parseEmotion(responseText);
-  const cleanedContent = stripEmotionTag(responseText);
+  const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
 
   set((state) => ({
     messages: state.messages.map((msg) =>
@@ -1187,6 +1189,26 @@ function imagesFromLastUserMessage(
     return resolveImagesForSend(m.images);
   }
   return undefined;
+}
+
+/** Phase 8.2: apply permanent (non-display-only) regex scripts to AI output text. */
+function applyAiOutputRegex(text: string, characterAvatar?: string): string {
+  const scripts = getActiveScripts(
+    useRegexScriptStore.getState().scripts,
+    characterAvatar,
+    'ai_output'
+  ).filter((s) => !s.displayOnly);
+  return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
+}
+
+/** Phase 8.2: apply permanent (non-display-only) regex scripts to user input text. */
+function applyUserInputRegex(text: string, characterAvatar?: string): string {
+  const scripts = getActiveScripts(
+    useRegexScriptStore.getState().scripts,
+    characterAvatar,
+    'user_input'
+  ).filter((s) => !s.displayOnly);
+  return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
 }
 
 /** Reset streaming flags in a `finally` block only when the local controller
@@ -1752,7 +1774,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const emotion = parseEmotion(responseText);
-      const cleanedContent = stripEmotionTag(responseText);
+      const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
 
       set((state) => ({
         messages: state.messages.map((m) => {
@@ -1835,7 +1857,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Strip any new emotion tags from the continuation
       const fullText = existingContent + newTokens;
-      const cleanedContent = stripEmotionTag(fullText);
+      const cleanedContent = applyAiOutputRegex(stripEmotionTag(fullText), character.avatar);
 
       set((state) => ({
         messages: state.messages.map((m) => {
@@ -1928,11 +1950,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachedImages = undefined;
     }
 
+    // Phase 8.2: apply permanent regex scripts to user input
+    const processedContent = applyUserInputRegex(content, character.avatar);
+
     addMessage({
       name: 'You',
       isUser: true,
       isSystem: false,
-      content,
+      content: processedContent,
       timestamp: Date.now(),
       images: attachedImages,
     });
@@ -1986,7 +2011,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         const emotion = parseEmotion(responseText);
-        const cleanedContent = stripEmotionTag(responseText);
+        const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
 
         set((state) => ({
           messages: state.messages.map((msg) =>
@@ -2029,11 +2054,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachedImages = undefined;
     }
 
+    // Phase 8.2: apply permanent regex scripts to user input (group)
+    const processedGroupContent = applyUserInputRegex(content);
+
     addMessage({
       name: 'You',
       isUser: true,
       isSystem: false,
-      content,
+      content: processedGroupContent,
       timestamp: Date.now(),
       images: attachedImages,
     });
