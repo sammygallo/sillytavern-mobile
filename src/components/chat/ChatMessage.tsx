@@ -18,6 +18,8 @@ interface ChatMessageProps {
   disabled?: boolean;
   /** Phase 6.1: attached image data URLs shown as a grid above content. */
   images?: string[];
+  /** Phase 7.2: true while this message is actively being streamed. */
+  isStreaming?: boolean;
   // Swipe support (only for AI messages)
   swipes?: string[];
   swipeId?: number;
@@ -111,6 +113,7 @@ export function ChatMessage({
   showSwipeControl,
   onSwipeLeft,
   onSwipeRight,
+  isStreaming: isStreamingMsg,
   onEdit,
   onEditAndRegenerate,
   onDelete,
@@ -358,7 +361,7 @@ export function ChatMessage({
                 </div>
               ) : (
                 <div className="text-sm break-words">
-                  <MarkdownContent content={content} isUser={false} />
+                  <MarkdownContent content={content} isUser={false} isStreaming={isStreamingMsg} />
                 </div>
               )
             ) : null}
