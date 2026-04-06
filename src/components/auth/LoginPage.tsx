@@ -85,14 +85,14 @@ export function LoginPage() {
               <p className="text-[var(--color-text-secondary)] mb-4">
                 No users found. Create your first account to get started.
               </p>
-              {canSelfRegister && (
-                <Link to="/register">
-                  <Button size="lg">
-                    <UserPlus size={20} className="mr-2" />
-                    Create Account
-                  </Button>
-                </Link>
-              )}
+              {/* Always show register when no users are visible — without it
+                  there's no way to access the app at all. */}
+              <Link to="/register">
+                <Button size="lg">
+                  <UserPlus size={20} className="mr-2" />
+                  Create Account
+                </Button>
+              </Link>
             </div>
           ) : (
             <>

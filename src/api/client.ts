@@ -157,8 +157,10 @@ export const api = {
     const response = await apiRequest<UserInfo[] | undefined>('/api/users/list', {
       method: 'POST',
     });
-    // Returns array directly, or empty array if 204 (discreet login)
-    return response || [];
+    // Returns array directly, or empty array if 204 (discreet login).
+    // Must use Array.isArray — a 204 causes apiRequest to return {} which
+    // is truthy, so `response || []` would incorrectly return {} instead of [].
+    return Array.isArray(response) ? response : [];
   },
 
   async login(handle: string, password?: string): Promise<{ handle: string }> {
