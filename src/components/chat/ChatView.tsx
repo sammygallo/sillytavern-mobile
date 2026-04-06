@@ -478,6 +478,7 @@ export function ChatView() {
                   timestamp={message.timestamp}
                   disabled={isSending}
                   images={message.images}
+                  characterAvatar={message.isUser ? selectedCharacter?.avatar : (message.characterAvatar || selectedCharacter?.avatar)}
                   isStreaming={isLastAiMessage && isStreaming}
                   layoutMode={chatLayoutMode}
                   avatarShape={avatarShapePref}

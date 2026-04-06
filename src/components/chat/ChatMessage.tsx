@@ -6,6 +6,8 @@ import { SwipeControl } from './SwipeControl';
 import { MarkdownContent } from './MarkdownContent';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences';
+import { useRegexScriptStore } from '../../stores/regexScriptStore';
+import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -19,6 +21,8 @@ interface ChatMessageProps {
   disabled?: boolean;
   /** Phase 6.1: attached image data URLs shown as a grid above content. */
   images?: string[];
+  /** Phase 8.2: raw character avatar string for display-only regex scoping. */
+  characterAvatar?: string;
   /** Phase 7.2: true while this message is actively being streamed. */
   isStreaming?: boolean;
   /** Phase 7.3: display style settings. */
@@ -114,6 +118,7 @@ export function ChatMessage({
   timestamp,
   disabled,
   images,
+  characterAvatar,
   swipes,
   swipeId,
   showSwipeControl,
@@ -134,6 +139,17 @@ export function ChatMessage({
   const [showMenu, setShowMenu] = useState(false);
   const [showEditOptions, setShowEditOptions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Phase 8.2: apply display-only regex scripts for rendering
+  const regexScripts = useRegexScriptStore((s) => s.scripts);
+  const displayContent = useMemo(() => {
+    const scripts = getActiveScripts(
+      regexScripts,
+      characterAvatar,
+      isUser ? 'user_input' : 'ai_output'
+    ).filter((s) => s.displayOnly);
+    return scripts.length > 0 ? applyRegexScripts(content, scripts) : content;
+  }, [content, regexScripts, characterAvatar, isUser]);
 
   // Phase 6.3: TTS — only wired for non-user, non-system messages.
   const { isSupported: ttsSupported, isSpeaking, speak, stop } = useSpeechSynthesis();
@@ -363,7 +379,7 @@ export function ChatMessage({
       </div>
     ) : (
       <div className="break-words" style={fontStyle}>
-        <MarkdownContent content={content} isUser={false} isStreaming={isStreamingMsg} />
+        <MarkdownContent content={displayContent} isUser={false} isStreaming={isStreamingMsg} />
       </div>
     )
   ) : null;
