@@ -2,7 +2,7 @@ services:
   frontend:
     build: .
     ports:
-      - "80:80"
+      - "${PORT:-8080}:80"
     environment:
       # Set these to auto-create an owner account on first boot:
       - OWNER_HANDLE=${OWNER_HANDLE:-}
@@ -21,6 +21,7 @@ services:
     volumes:
       - st-config:/home/node/app/config
       - st-data:/home/node/app/data
+      - ./docker/st-config.yaml:/home/node/app/config/config.yaml:ro
     restart: unless-stopped
 
 volumes:
