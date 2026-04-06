@@ -27,6 +27,6 @@ fi
 # it, ST would check the X-Forwarded-For IP (the real client) against the
 # whitelist instead of the direct connection IP (127.0.0.1), blocking everyone.
 # With the shared network namespace, ST always sees 127.0.0.1 directly.
-sed -i '/^enableForwardedWhitelist:/d' "$CONFIG"
+sed -i '/enableForwardedWhitelist/d' "$CONFIG"
 
 exec node /home/node/app/server.js "$@"
