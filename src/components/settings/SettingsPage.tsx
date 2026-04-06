@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, Mic, Sliders, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, Mic, Sliders, Trash2, Volume2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -8,8 +8,17 @@ import {
   SPEECH_LANGUAGES,
   getSpeechLanguage,
   setSpeechLanguage,
+  getTtsVoiceUri,
+  setTtsVoiceUri,
+  getTtsRate,
+  setTtsRate,
+  getTtsPitch,
+  setTtsPitch,
+  getTtsAutoRead,
+  setTtsAutoRead,
 } from '../../hooks/speechLanguage';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -34,6 +43,13 @@ export function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
+
+  // Phase 6.3: TTS settings state
+  const { isSupported: isTtsSupported, voices: ttsVoices } = useSpeechSynthesis();
+  const [ttsVoiceUri, setTtsVoiceUriState] = useState<string>(() => getTtsVoiceUri());
+  const [ttsRate, setTtsRateState] = useState<number>(() => getTtsRate());
+  const [ttsPitch, setTtsPitchState] = useState<number>(() => getTtsPitch());
+  const [ttsAutoReadOn, setTtsAutoReadState] = useState<boolean>(() => getTtsAutoRead());
 
   useEffect(() => {
     fetchSecrets();
@@ -335,6 +351,107 @@ export function SettingsPage() {
                     </option>
                   ))}
                 </select>
+              </section>
+            )}
+
+            {/* Text-to-Speech (Phase 6.3) */}
+            {isTtsSupported && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Volume2 size={16} className="text-[var(--color-text-secondary)]" />
+                  <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Text-to-Speech
+                  </h2>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+                  Voice used when reading AI messages aloud.
+                </p>
+
+                {/* Voice picker */}
+                <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                  Voice
+                </label>
+                <select
+                  value={ttsVoiceUri}
+                  onChange={(e) => {
+                    const uri = e.target.value;
+                    setTtsVoiceUriState(uri);
+                    setTtsVoiceUri(uri);
+                  }}
+                  className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] mb-4"
+                >
+                  <option value="">System default</option>
+                  {ttsVoices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Rate slider */}
+                <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                  Rate: {ttsRate.toFixed(1)}x
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={ttsRate}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setTtsRateState(val);
+                    setTtsRate(val);
+                  }}
+                  className="w-full mb-4 accent-[var(--color-primary)]"
+                />
+
+                {/* Pitch slider */}
+                <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                  Pitch: {ttsPitch.toFixed(1)}
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={ttsPitch}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setTtsPitchState(val);
+                    setTtsPitch(val);
+                  }}
+                  className="w-full mb-4 accent-[var(--color-primary)]"
+                />
+
+                {/* Auto-read toggle */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[var(--color-text-primary)]">Auto-read new messages</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Automatically read each new AI message aloud
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={ttsAutoReadOn}
+                    onClick={() => {
+                      const next = !ttsAutoReadOn;
+                      setTtsAutoReadState(next);
+                      setTtsAutoRead(next);
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                      ttsAutoReadOn ? 'bg-[var(--color-primary)]' : 'bg-zinc-600'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                        ttsAutoReadOn ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </section>
             )}
 

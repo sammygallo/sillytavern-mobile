@@ -16,6 +16,8 @@ import {
   compressImageFiles,
   ACCEPTED_IMAGE_MIMES,
 } from '../../utils/images';
+import { getTtsAutoRead } from '../../hooks/speechLanguage';
+import { speakText } from '../../hooks/useSpeechSynthesis';
 
 export function ChatView() {
   const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
@@ -136,6 +138,24 @@ export function ChatView() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Phase 6.3: Auto-read — speak the last AI message when streaming completes.
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (isStreaming) {
+      wasStreamingRef.current = true;
+      return;
+    }
+    // Streaming just ended
+    if (wasStreamingRef.current) {
+      wasStreamingRef.current = false;
+      if (!getTtsAutoRead()) return;
+      const lastAi = [...messages].reverse().find((m) => !m.isUser && !m.isSystem);
+      if (lastAi && lastAi.content) {
+        speakText(lastAi.content);
+      }
+    }
+  }, [isStreaming, messages]);
 
   const handleSend = (content: string, images?: string[]) => {
     if (isGroupChatMode && groupChatCharacters.length >= 2) {
@@ -417,6 +437,7 @@ export function ChatView() {
               return (
                 <ChatMessage
                   key={message.id}
+                  messageId={message.id}
                   name={message.name}
                   content={message.content}
                   isUser={message.isUser}
