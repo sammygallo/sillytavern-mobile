@@ -16,6 +16,7 @@ if [ ! -f "$CONFIG" ]; then
 # connects to localhost:8000 — ST always sees 127.0.0.1, which is
 # whitelisted. Port 8000 is never exposed externally.
 whitelistMode: true
+enableForwardedWhitelist: false
 enableUserAccounts: true
 listen: true
 whitelist:
@@ -23,10 +24,15 @@ whitelist:
 EOF
 fi
 
-# Ensure enableForwardedWhitelist is absent — if a previous deployment wrote
-# it, ST would check the X-Forwarded-For IP (the real client) against the
-# whitelist instead of the direct connection IP (127.0.0.1), blocking everyone.
-# With the shared network namespace, ST always sees 127.0.0.1 directly.
-sed -i '/enableForwardedWhitelist/d' "$CONFIG"
+# Explicitly set enableForwardedWhitelist: false.
+# If the key is absent, ST re-adds it on startup with its own default of true,
+# which would cause it to check X-Forwarded-For against the whitelist.
+# Setting it to false here (BEFORE ST starts) ensures ST reads the explicit
+# value and does not replace it with the default.
+if grep -q 'enableForwardedWhitelist' "$CONFIG"; then
+  sed -i 's/enableForwardedWhitelist:.*/enableForwardedWhitelist: false/' "$CONFIG"
+else
+  echo 'enableForwardedWhitelist: false' >> "$CONFIG"
+fi
 
 exec node /home/node/app/server.js "$@"
