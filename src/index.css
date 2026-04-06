@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
-/* Custom CSS variables for theming */
+/* CSS custom properties for theming.
+   These fallback values match the default dark-purple theme.
+   At runtime, applyTheme() (called from main.tsx before first render)
+   overwrites them on <html> based on the user's saved preference. */
 :root {
   --color-primary: #8b5cf6;
   --color-primary-hover: #7c3aed;
@@ -10,6 +13,7 @@
   --color-text-primary: #ffffff;
   --color-text-secondary: #a1a1aa;
   --color-border: #3f3f46;
+  color-scheme: dark;
 }
 
 /* Base styles */

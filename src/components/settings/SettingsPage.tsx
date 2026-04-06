@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Sliders, Trash2, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Palette, Sliders, Trash2, Volume2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -29,6 +29,17 @@ import {
   type ChatLayoutMode,
   type AvatarShape,
 } from '../../hooks/displayPreferences';
+import {
+  getThemeMode,
+  setThemeMode,
+  getThemePreset,
+  setThemePreset,
+  applyTheme,
+  THEME_PRESETS,
+  PRESET_SWATCHES,
+  type ThemeMode,
+  type ThemePreset,
+} from '../../hooks/themePreferences';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 
@@ -55,6 +66,10 @@ export function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
+
+  // Phase 7.4: Theme preferences
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
+  const [themePresetVal, setThemePresetState] = useState<ThemePreset>(() => getThemePreset());
 
   // Phase 7.3: Chat display preferences
   const [layoutMode, setLayoutModeState] = useState<ChatLayoutMode>(() => getChatLayoutMode());
@@ -337,6 +352,69 @@ export function SettingsPage() {
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
               </button>
+            </section>
+
+            {/* Appearance (Phase 7.4) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Palette size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Appearance
+                </h2>
+              </div>
+
+              {/* Theme Mode */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                Theme
+              </label>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {([
+                  { value: 'light' as const, label: 'Light' },
+                  { value: 'dark' as const, label: 'Dark' },
+                  { value: 'auto' as const, label: 'Auto' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setThemeModeState(opt.value);
+                      setThemeMode(opt.value);
+                      applyTheme();
+                    }}
+                    className={`p-2.5 rounded-lg text-center text-xs font-medium transition-all ${
+                      themeMode === opt.value
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-zinc-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Accent Color */}
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                Accent Color
+              </label>
+              <div className="flex gap-3">
+                {THEME_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => {
+                      setThemePresetState(preset);
+                      setThemePreset(preset);
+                      applyTheme();
+                    }}
+                    className={`w-8 h-8 rounded-full transition-all ${
+                      themePresetVal === preset
+                        ? 'ring-2 ring-offset-2 ring-offset-[var(--color-bg-secondary)] ring-[var(--color-primary)] scale-110'
+                        : 'hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: PRESET_SWATCHES[preset] }}
+                    title={preset.charAt(0).toUpperCase() + preset.slice(1)}
+                    aria-label={`${preset} theme`}
+                  />
+                ))}
+              </div>
             </section>
 
             {/* Chat Display (Phase 7.3) */}
