@@ -10,9 +10,7 @@ export function RegisterPage() {
     isLoading,
     error,
     isAuthenticated,
-    canSelfRegister,
     register,
-    checkRegistration,
     clearError,
   } = useAuthStore();
 
@@ -27,10 +25,6 @@ export function RegisterPage() {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
-
-  useEffect(() => {
-    checkRegistration();
-  }, [checkRegistration]);
 
   const validateForm = (): boolean => {
     setLocalError(null);
@@ -95,23 +89,9 @@ export function RegisterPage() {
 
         {/* Registration Form */}
         <div className="bg-[var(--color-bg-secondary)] rounded-xl p-6 shadow-xl">
-          {!canSelfRegister ? (
-            <div className="text-center py-8">
-              <Lock size={48} className="mx-auto text-[var(--color-text-secondary)] mb-4" />
-              <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
-                Registration Restricted
-              </h3>
-              <p className="text-[var(--color-text-secondary)] mb-4">
-                New user registration requires admin approval. Please contact an administrator.
-              </p>
-              <Link
-                to="/login"
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                Back to Login
-              </Link>
-            </div>
-          ) : (
+          {/* The backend enforces registration permissions — don't gate here.
+              If registration is disallowed, the API call will return an error. */}
+          {true ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Username */}
               <div className="flex items-center gap-3 p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
