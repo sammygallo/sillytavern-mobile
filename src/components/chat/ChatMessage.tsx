@@ -3,6 +3,7 @@ import { MoreHorizontal, Check, X, Volume2, Square } from 'lucide-react';
 import { Avatar } from '../ui';
 import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
+import { MarkdownContent } from './MarkdownContent';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 
 interface ChatMessageProps {
@@ -351,9 +352,15 @@ export function ChatMessage({
                 </div>
               </div>
             ) : content.length > 0 ? (
-              <div className="text-sm whitespace-pre-wrap break-words">
-                <FormattedContent content={content} isUser={isUser} />
-              </div>
+              isUser ? (
+                <div className="text-sm whitespace-pre-wrap break-words">
+                  <FormattedContent content={content} isUser={isUser} />
+                </div>
+              ) : (
+                <div className="text-sm break-words">
+                  <MarkdownContent content={content} isUser={false} />
+                </div>
+              )
             ) : null}
           </div>
         </div>
