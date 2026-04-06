@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { api, type UserInfo } from '../api/client';
+import { useCharacterStore } from './characterStore';
+import { useChatStore } from './chatStore';
+import { useSettingsStore } from './settingsStore';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -104,6 +107,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api.logout();
     } finally {
       set({ isAuthenticated: false, currentUser: null });
+
+      // Clear all stores to prevent data leakage between users
+      useCharacterStore.setState({
+        characters: [],
+        selectedCharacter: null,
+        isGroupChatMode: false,
+        groupChatCharacters: [],
+      });
+      useChatStore.setState({
+        messages: [],
+        chatFiles: [],
+        groupChats: [],
+        currentChatFile: null,
+        isStreaming: false,
+        isSending: false,
+        error: null,
+        abortController: null,
+        currentSpeakerName: null,
+      });
+      useSettingsStore.setState({
+        secrets: {},
+        activeProvider: 'openai',
+        activeModel: 'gpt-4o',
+        error: null,
+        successMessage: null,
+      });
+
+      // Clear persisted localStorage data
+      localStorage.removeItem('sillytavern_group_chats');
+      localStorage.removeItem('sillytavern_author_notes');
     }
   },
 

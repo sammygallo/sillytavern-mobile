@@ -38,7 +38,11 @@ export async function apiRequest<T>(
   const text = await response.text();
   if (!text) return {} as T;
 
-  return JSON.parse(text);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON response from ${endpoint}`);
+  }
 }
 
 export interface UserInfo {
