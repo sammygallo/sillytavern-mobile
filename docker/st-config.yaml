@@ -1,5 +1,0 @@
-# SillyTavern base config for Docker deployment
-# Whitelist disabled so the frontend container can reach the API on first boot
-whitelistMode: false
-whitelist:
-  - 127.0.0.1

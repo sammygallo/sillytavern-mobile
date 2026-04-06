@@ -2,12 +2,7 @@ services:
   frontend:
     build: .
     ports:
-      - "${PORT:-8080}:80"
-    environment:
-      # Set these to auto-create an owner account on first boot:
-      - OWNER_HANDLE=${OWNER_HANDLE:-}
-      - OWNER_PASSWORD=${OWNER_PASSWORD:-}
-      - OWNER_NAME=${OWNER_NAME:-}
+      - "${PORT:-80}:80"
     depends_on:
       sillytavern:
         condition: service_started
@@ -21,8 +16,25 @@ services:
     volumes:
       - st-config:/home/node/app/config
       - st-data:/home/node/app/data
-      - ./docker/st-config.yaml:/home/node/app/config/config.yaml:ro
     restart: unless-stopped
+
+  seed-owner:
+    image: alpine:latest
+    # Share ST's network namespace so seed calls localhost — always whitelisted
+    network_mode: "service:sillytavern"
+    volumes:
+      - ./docker/seed-owner.sh:/seed-owner.sh:ro
+      - st-config:/config
+    environment:
+      - OWNER_HANDLE=${OWNER_HANDLE:-}
+      - OWNER_PASSWORD=${OWNER_PASSWORD:-}
+      - OWNER_NAME=${OWNER_NAME:-}
+      - ST_PORT=8000
+    entrypoint: ["/bin/sh", "/seed-owner.sh"]
+    depends_on:
+      sillytavern:
+        condition: service_started
+    restart: "no"
 
 volumes:
   st-config:
