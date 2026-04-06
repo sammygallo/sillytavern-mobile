@@ -89,10 +89,7 @@ export function RegisterPage() {
 
         {/* Registration Form */}
         <div className="bg-[var(--color-bg-secondary)] rounded-xl p-6 shadow-xl">
-          {/* The backend enforces registration permissions — don't gate here.
-              If registration is disallowed, the API call will return an error. */}
-          {true ? (
-            <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
               {/* Username */}
               <div className="flex items-center gap-3 p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
                 <AtSign size={20} className="text-[var(--color-text-secondary)] flex-shrink-0" />
@@ -177,7 +174,6 @@ export function RegisterPage() {
                 </Link>
               </p>
             </form>
-          )}
         </div>
 
         {/* Footer */}
