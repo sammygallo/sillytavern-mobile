@@ -19,6 +19,12 @@ import {
 } from '../../utils/images';
 import { getTtsAutoRead } from '../../hooks/speechLanguage';
 import { speakText } from '../../hooks/useSpeechSynthesis';
+import {
+  getChatLayoutMode,
+  getAvatarShape,
+  getChatFontSize,
+  getChatMaxWidth,
+} from '../../hooks/displayPreferences';
 
 export function ChatView() {
   const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
@@ -58,6 +64,13 @@ export function ChatView() {
   /** Whether the user is scrolled near the bottom (within 150px). */
   const isNearBottomRef = useRef(true);
   const lastCharacterRef = useRef<string | null>(null);
+
+  // Phase 7.3: display preferences (read from localStorage on mount/render)
+  const chatLayoutMode = getChatLayoutMode();
+  const avatarShapePref = getAvatarShape();
+  const chatFontSize = getChatFontSize();
+  const chatMaxWidth = getChatMaxWidth();
+
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
   const [prefillNonce, setPrefillNonce] = useState(0);
@@ -465,6 +478,10 @@ export function ChatView() {
                   disabled={isSending}
                   images={message.images}
                   isStreaming={isLastAiMessage && isStreaming}
+                  layoutMode={chatLayoutMode}
+                  avatarShape={avatarShapePref}
+                  fontSize={chatFontSize}
+                  chatMaxWidth={chatMaxWidth}
                   swipes={message.swipes}
                   swipeId={message.swipeId}
                   showSwipeControl={showSwipeControl}

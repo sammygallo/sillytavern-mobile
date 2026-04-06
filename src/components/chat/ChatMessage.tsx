@@ -5,6 +5,7 @@ import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
 import { MarkdownContent } from './MarkdownContent';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
+import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -20,6 +21,11 @@ interface ChatMessageProps {
   images?: string[];
   /** Phase 7.2: true while this message is actively being streamed. */
   isStreaming?: boolean;
+  /** Phase 7.3: display style settings. */
+  layoutMode?: ChatLayoutMode;
+  avatarShape?: AvatarShape;
+  fontSize?: number;
+  chatMaxWidth?: number;
   // Swipe support (only for AI messages)
   swipes?: string[];
   swipeId?: number;
@@ -114,6 +120,10 @@ export function ChatMessage({
   onSwipeLeft,
   onSwipeRight,
   isStreaming: isStreamingMsg,
+  layoutMode = 'bubbles',
+  avatarShape = 'circle',
+  fontSize,
+  chatMaxWidth = 80,
   onEdit,
   onEditAndRegenerate,
   onDelete,
@@ -191,6 +201,10 @@ export function ChatMessage({
     }
   };
 
+  // Font size style applied to content containers
+  const fontStyle = fontSize && fontSize !== 14 ? { fontSize: `${fontSize}px` } : undefined;
+
+  // ---- System messages: identical in all modes ----
   if (isSystem) {
     return (
       <div className="flex justify-center my-4">
@@ -201,184 +215,276 @@ export function ChatMessage({
     );
   }
 
-  return (
-    <div
-      className={`flex gap-3 px-4 py-3 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
-    >
-      <Avatar src={avatar} alt={name} size="md" className="flex-shrink-0" />
+  // ---- Shared UI fragments ----
 
-      <div
-        className={`flex flex-col max-w-[80%] md:max-w-[70%] ${isUser ? 'items-end' : 'items-start'}`}
+  const timeStr = timestamp
+    ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  const actionButtons = !isEditing && (onEdit || onDelete) ? (
+    <div className="relative flex flex-col gap-0.5">
+      <button
+        onClick={() => setShowMenu(!showMenu)}
+        disabled={disabled}
+        className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+        aria-label="Message actions"
       >
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-            {name}
-          </span>
-          {timestamp && (
-            <span className="text-xs text-zinc-500">
-              {new Date(timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-          )}
-        </div>
+        <MoreHorizontal size={16} />
+      </button>
+      <MessageActionMenu
+        isOpen={showMenu}
+        onClose={() => setShowMenu(false)}
+        onEdit={handleStartEdit}
+        onCopy={handleCopy}
+        onDelete={() => onDelete?.()}
+        onRegenerate={onRegenerate}
+        showRegenerate={!isUser && !!onRegenerate}
+        anchorRight={layoutMode === 'bubbles' && isUser}
+      />
+      {showTtsButton && (
+        <button
+          onClick={() => isSpeaking ? stop() : speak(content, messageId)}
+          className={`p-1.5 rounded-lg transition-all ${
+            isSpeaking
+              ? 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 opacity-100'
+              : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100'
+          }`}
+          aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+          title={isSpeaking ? 'Stop' : 'Read aloud'}
+        >
+          {isSpeaking ? <Square size={14} /> : <Volume2 size={14} />}
+        </button>
+      )}
+    </div>
+  ) : null;
 
-        <div className="flex items-start gap-2 relative">
-          {/* Action menu button + TTS button */}
-          {!isEditing && (onEdit || onDelete) && (
-            <div className="relative flex flex-col gap-0.5">
-              <button
-                onClick={() => setShowMenu(!showMenu)}
-                disabled={disabled}
-                className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
-                aria-label="Message actions"
-              >
-                <MoreHorizontal size={16} />
-              </button>
-              <MessageActionMenu
-                isOpen={showMenu}
-                onClose={() => setShowMenu(false)}
-                onEdit={handleStartEdit}
-                onCopy={handleCopy}
-                onDelete={() => onDelete?.()}
-                onRegenerate={onRegenerate}
-                showRegenerate={!isUser && !!onRegenerate}
-                anchorRight={isUser}
-              />
-              {showTtsButton && (
+  const imageGrid = !isEditing && images && images.length > 0 ? (
+    <div
+      className={`grid gap-1 ${content.length > 0 ? 'mb-2' : ''} ${
+        images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+      }`}
+    >
+      {images.map((src, idx) => (
+        <a
+          key={idx}
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block rounded-lg overflow-hidden"
+          aria-label={`View attachment ${idx + 1}`}
+        >
+          <img
+            src={src}
+            alt={`Attachment ${idx + 1}`}
+            className="w-full h-auto max-h-60 object-cover block"
+            loading="lazy"
+          />
+        </a>
+      ))}
+    </div>
+  ) : null;
+
+  const editingUI = isEditing ? (
+    <div className="flex flex-col gap-2">
+      <textarea
+        ref={textareaRef}
+        value={editContent}
+        onChange={(e) => setEditContent(e.target.value)}
+        onKeyDown={handleKeyDown}
+        className={`w-full bg-transparent text-sm resize-none outline-none min-h-[60px] ${
+          isUser && layoutMode === 'bubbles' ? 'text-white' : 'text-[var(--color-text-primary)]'
+        }`}
+        style={fontStyle}
+        placeholder="Enter message..."
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={handleCancelEdit}
+          className={`p-1.5 rounded-lg transition-colors ${
+            isUser && layoutMode === 'bubbles'
+              ? 'bg-white/20 hover:bg-white/30'
+              : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'
+          }`}
+          title="Cancel (Esc)"
+        >
+          <X size={14} />
+        </button>
+        {isUser && onEditAndRegenerate ? (
+          <div className="relative">
+            <button
+              onClick={() => setShowEditOptions(!showEditOptions)}
+              className={`p-1.5 rounded-lg transition-colors ${
+                isUser && layoutMode === 'bubbles'
+                  ? 'bg-white/20 hover:bg-white/30'
+                  : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'
+              }`}
+              title="Save options"
+            >
+              <Check size={14} />
+            </button>
+            {showEditOptions && (
+              <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
                 <button
-                  onClick={() => isSpeaking ? stop() : speak(content, messageId)}
-                  className={`p-1.5 rounded-lg transition-all ${
-                    isSpeaking
-                      ? 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 opacity-100'
-                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100'
-                  }`}
-                  aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
-                  title={isSpeaking ? 'Stop' : 'Read aloud'}
+                  onClick={handleSaveOnly}
+                  className="w-full px-3 py-2 text-xs text-left text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
                 >
-                  {isSpeaking ? <Square size={14} /> : <Volume2 size={14} />}
+                  Save only
                 </button>
-              )}
-            </div>
-          )}
-
-          <div
-            className={`
-              px-4 py-2 rounded-2xl
-              ${isUser
-                ? 'bg-[var(--color-primary)] text-white rounded-br-md'
-                : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-bl-md'}
-              ${isEditing ? 'w-full' : ''}
-            `}
-          >
-            {/* Phase 6.1: image attachments render above the text content.
-                Grid scales column count to keep thumbnails reasonable. */}
-            {!isEditing && images && images.length > 0 && (
-              <div
-                className={`grid gap-1 ${content.length > 0 ? 'mb-2' : ''} ${
-                  images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-                }`}
-              >
-                {images.map((src, idx) => (
-                  <a
-                    key={idx}
-                    href={src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-lg overflow-hidden"
-                    aria-label={`View attachment ${idx + 1}`}
-                  >
-                    <img
-                      src={src}
-                      alt={`Attachment ${idx + 1}`}
-                      className="w-full h-auto max-h-60 object-cover block"
-                      loading="lazy"
-                    />
-                  </a>
-                ))}
+                <button
+                  onClick={handleSaveAndRegenerate}
+                  className="w-full px-3 py-2 text-xs text-left text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                >
+                  Save &amp; regenerate
+                </button>
               </div>
             )}
-            {isEditing ? (
-              <div className="flex flex-col gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className={`w-full bg-transparent text-sm resize-none outline-none min-h-[60px] ${isUser ? 'text-white' : 'text-[var(--color-text-primary)]'}`}
-                  placeholder="Enter message..."
-                />
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={handleCancelEdit}
-                    className={`p-1.5 rounded-lg transition-colors ${isUser ? 'bg-white/20 hover:bg-white/30' : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'}`}
-                    title="Cancel (Esc)"
-                  >
-                    <X size={14} />
-                  </button>
-                  {isUser && onEditAndRegenerate ? (
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowEditOptions(!showEditOptions)}
-                        className={`p-1.5 rounded-lg transition-colors ${isUser ? 'bg-white/20 hover:bg-white/30' : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'}`}
-                        title="Save options"
-                      >
-                        <Check size={14} />
-                      </button>
-                      {showEditOptions && (
-                        <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
-                          <button
-                            onClick={handleSaveOnly}
-                            className="w-full px-3 py-2 text-xs text-left text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                          >
-                            Save only
-                          </button>
-                          <button
-                            onClick={handleSaveAndRegenerate}
-                            className="w-full px-3 py-2 text-xs text-left text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                          >
-                            Save &amp; regenerate
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleSaveOnly}
-                      className={`p-1.5 rounded-lg transition-colors ${isUser ? 'bg-white/20 hover:bg-white/30' : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'}`}
-                      title="Save (Enter)"
-                    >
-                      <Check size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : content.length > 0 ? (
-              isUser ? (
-                <div className="text-sm whitespace-pre-wrap break-words">
-                  <FormattedContent content={content} isUser={isUser} />
-                </div>
-              ) : (
-                <div className="text-sm break-words">
-                  <MarkdownContent content={content} isUser={false} isStreaming={isStreamingMsg} />
-                </div>
-              )
-            ) : null}
           </div>
-        </div>
-
-        {/* Swipe control for AI messages */}
-        {showSwipeControl && !isEditing && swipes && swipeId !== undefined && onSwipeLeft && onSwipeRight && swipes.length >= 1 && (
-          <SwipeControl
-            swipeId={swipeId}
-            swipesCount={swipes.length}
-            onSwipeLeft={onSwipeLeft}
-            onSwipeRight={onSwipeRight}
-            disabled={disabled}
-          />
+        ) : (
+          <button
+            onClick={handleSaveOnly}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isUser && layoutMode === 'bubbles'
+                ? 'bg-white/20 hover:bg-white/30'
+                : 'bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-primary)]'
+            }`}
+            title="Save (Enter)"
+          >
+            <Check size={14} />
+          </button>
         )}
       </div>
+    </div>
+  ) : null;
+
+  const messageContent = !isEditing && content.length > 0 ? (
+    isUser ? (
+      <div className="whitespace-pre-wrap break-words" style={fontStyle}>
+        <FormattedContent content={content} isUser={isUser} />
+      </div>
+    ) : (
+      <div className="break-words" style={fontStyle}>
+        <MarkdownContent content={content} isUser={false} isStreaming={isStreamingMsg} />
+      </div>
+    )
+  ) : null;
+
+  const swipeControl = showSwipeControl && !isEditing && swipes && swipeId !== undefined && onSwipeLeft && onSwipeRight && swipes.length >= 1 ? (
+    <SwipeControl
+      swipeId={swipeId}
+      swipesCount={swipes.length}
+      onSwipeLeft={onSwipeLeft}
+      onSwipeRight={onSwipeRight}
+      disabled={disabled}
+    />
+  ) : null;
+
+  // ==================================================================
+  // Bubbles layout (default — original behavior)
+  // ==================================================================
+  if (layoutMode === 'bubbles') {
+    return (
+      <div className={`flex gap-3 px-4 py-3 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <Avatar src={avatar} alt={name} size="md" shape={avatarShape} className="flex-shrink-0" />
+
+        <div
+          className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+          style={{ maxWidth: `${chatMaxWidth}%` }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">{name}</span>
+            {timeStr && <span className="text-xs text-zinc-500">{timeStr}</span>}
+          </div>
+
+          <div className="flex items-start gap-2 relative">
+            {actionButtons}
+            <div
+              className={`
+                px-4 py-2 rounded-2xl
+                ${isUser
+                  ? 'bg-[var(--color-primary)] text-white rounded-br-md'
+                  : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-bl-md'}
+                ${isEditing ? 'w-full' : ''}
+              `}
+            >
+              {imageGrid}
+              {editingUI}
+              {messageContent}
+            </div>
+          </div>
+
+          {swipeControl}
+        </div>
+      </div>
+    );
+  }
+
+  // ==================================================================
+  // Flat layout — full-width, dividers, no bubble background
+  // ==================================================================
+  if (layoutMode === 'flat') {
+    return (
+      <div
+        className={`px-4 py-3 group border-b border-[var(--color-border)]/20 ${
+          isUser ? 'border-l-2 border-l-[var(--color-primary)]' : ''
+        }`}
+      >
+        {/* Header row: avatar + name + time + actions */}
+        <div className="flex items-center gap-2 mb-1.5">
+          <Avatar src={avatar} alt={name} size="sm" shape={avatarShape} className="flex-shrink-0" />
+          <span className={`text-xs font-semibold ${
+            isUser ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'
+          }`}>
+            {name}
+          </span>
+          {timeStr && <span className="text-xs text-zinc-500">{timeStr}</span>}
+          <div className="ml-auto">{actionButtons}</div>
+        </div>
+
+        {/* Content area */}
+        <div className="text-[var(--color-text-primary)]">
+          {imageGrid}
+          {isEditing ? (
+            <div className="p-2 rounded-lg bg-[var(--color-bg-tertiary)]">
+              {editingUI}
+            </div>
+          ) : messageContent}
+        </div>
+
+        {swipeControl}
+      </div>
+    );
+  }
+
+  // ==================================================================
+  // Document layout — compact, inline names, no avatars
+  // ==================================================================
+  return (
+    <div className="px-4 py-1.5 group">
+      <div className="flex items-start gap-2">
+        <div className="flex-1 min-w-0 text-[var(--color-text-primary)]">
+          {/* Inline name + timestamp */}
+          <span className={`font-bold text-sm ${
+            isUser ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'
+          }`}>
+            {name}
+          </span>
+          {timeStr && <span className="text-xs text-zinc-500 ml-2">{timeStr}</span>}
+
+          {imageGrid && <div className="mt-1">{imageGrid}</div>}
+
+          {isEditing ? (
+            <div className="mt-1 p-2 rounded-lg bg-[var(--color-bg-tertiary)]">
+              {editingUI}
+            </div>
+          ) : messageContent ? (
+            <div className="mt-0.5">{messageContent}</div>
+          ) : null}
+        </div>
+
+        {actionButtons}
+      </div>
+
+      {swipeControl}
     </div>
   );
 }

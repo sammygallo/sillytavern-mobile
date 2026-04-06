@@ -5,10 +5,12 @@ interface AvatarProps {
   src?: string;
   alt?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Phase 7.3: avatar shape — circle (default), square, or rounded square. */
+  shape?: 'circle' | 'square' | 'rounded-square';
   className?: string;
 }
 
-export function Avatar({ src, alt, size = 'md', className = '' }: AvatarProps) {
+export function Avatar({ src, alt, size = 'md', shape = 'circle', className = '' }: AvatarProps) {
   const [error, setError] = useState(false);
 
   // Reset error state when src changes
@@ -30,10 +32,18 @@ export function Avatar({ src, alt, size = 'md', className = '' }: AvatarProps) {
     xl: 32,
   };
 
+  const shapes = {
+    'circle': 'rounded-full',
+    'square': 'rounded-none',
+    'rounded-square': 'rounded-lg',
+  };
+
+  const shapeClass = shapes[shape];
+
   if (!src || error) {
     return (
       <div
-        className={`${sizes[size]} rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center ${className}`}
+        className={`${sizes[size]} ${shapeClass} bg-[var(--color-bg-tertiary)] flex items-center justify-center ${className}`}
       >
         <User size={iconSizes[size]} className="text-[var(--color-text-secondary)]" />
       </div>
@@ -44,7 +54,7 @@ export function Avatar({ src, alt, size = 'md', className = '' }: AvatarProps) {
     <img
       src={src}
       alt={alt || 'Avatar'}
-      className={`${sizes[size]} rounded-full object-cover ${className}`}
+      className={`${sizes[size]} ${shapeClass} object-cover ${className}`}
       onError={() => setError(true)}
     />
   );
