@@ -1,8 +1,11 @@
 // User types
+export type UserRole = 'owner' | 'admin' | 'contributor' | 'end_user';
+
 export interface User {
   handle: string;
   name: string;
   admin: boolean;
+  role: UserRole;
   avatar?: string;
 }
 

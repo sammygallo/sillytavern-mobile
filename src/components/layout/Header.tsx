@@ -3,6 +3,7 @@ import { Menu, Settings, LogOut, Pencil, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCharacterStore } from '../../stores/characterStore';
+import { can } from '../../utils/permissions';
 import { Avatar, Button } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
 import { ChatHistoryPanel } from '../chat/ChatHistoryPanel';
@@ -17,6 +18,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuthStore();
   const { selectedCharacter, isGroupChatMode, fetchCharacters } = useCharacterStore();
+  const userRole = currentUser?.role;
+  const canEdit = can(userRole, 'character:edit');
+  const canViewSettings = can(userRole, 'settings:view');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [convertToPersonaData, setConvertToPersonaData] = useState<
@@ -61,15 +65,17 @@ export function Header({ onMenuClick }: HeaderProps) {
                 {selectedCharacter.name}
               </h1>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="p-2"
-              aria-label="Edit character"
-              onClick={() => setShowEditModal(true)}
-            >
-              <Pencil size={18} />
-            </Button>
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-2"
+                aria-label="Edit character"
+                onClick={() => setShowEditModal(true)}
+              >
+                <Pencil size={18} />
+              </Button>
+            )}
           </>
         ) : (
           <h1 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -92,15 +98,17 @@ export function Header({ onMenuClick }: HeaderProps) {
           </Button>
         )}
         <PersonaSelector />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="p-2"
-          aria-label="Settings"
-          onClick={() => navigate('/settings')}
-        >
-          <Settings size={20} />
-        </Button>
+        {canViewSettings && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-2"
+            aria-label="Settings"
+            onClick={() => navigate('/settings')}
+          >
+            <Settings size={20} />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
