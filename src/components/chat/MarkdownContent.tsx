@@ -132,7 +132,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   }
 });
 
-const SANITIZE_CONFIG: DOMPurify.Config = {
+const SANITIZE_CONFIG = {
   ALLOWED_TAGS: [
     'p', 'br', 'strong', 'b', 'em', 'i', 'del', 's',
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -171,7 +171,7 @@ function renderMarkdown(text: string, streaming?: boolean): { html: string; isBl
   const raw = isBlock
     ? (marked.parse(prepared) as string)
     : (marked.parseInline(prepared) as string);
-  return { html: DOMPurify.sanitize(raw, SANITIZE_CONFIG), isBlock };
+  return { html: DOMPurify.sanitize(raw, SANITIZE_CONFIG) as string, isBlock };
 }
 
 // ---------------------------------------------------------------------------
