@@ -6,6 +6,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
+import { AuthorNote } from './AuthorNote';
 import { TypingIndicator } from './TypingIndicator';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
@@ -547,6 +548,9 @@ export function ChatView() {
           </button>
         </div>
       ) : null}
+
+      {/* Phase 8.1: Author's Note — collapsible panel for per-chat instructions */}
+      {currentChatFile && <AuthorNote fileName={currentChatFile} />}
 
       {/* Input Area */}
       <ChatInput

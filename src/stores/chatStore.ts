@@ -90,6 +90,33 @@ export interface GroupChatInfo {
   title?: string;
 }
 
+/** Phase 8.1: per-chat Author's Note — a persistent instruction that gets
+ *  injected into the AI prompt at a configurable depth from the end of the
+ *  conversation history. Stored in localStorage keyed by chat file name. */
+export interface AuthorNote {
+  content: string;
+  depth: number;
+  role: 'system' | 'user' | 'assistant';
+}
+
+const AUTHOR_NOTES_KEY = 'sillytavern_author_notes';
+
+function loadAuthorNotesFromStorage(): Record<string, AuthorNote> {
+  try {
+    const stored = localStorage.getItem(AUTHOR_NOTES_KEY);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveAuthorNotesToStorage(notes: Record<string, AuthorNote>) {
+  localStorage.setItem(AUTHOR_NOTES_KEY, JSON.stringify(notes));
+}
+
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
 
 /**
@@ -334,6 +361,11 @@ interface ChatState {
   setGroupTitle: (fileName: string, title: string) => void;
   addGroupChatMember: (fileName: string, character: CharacterInfo) => void;
   removeGroupChatMember: (fileName: string, avatar: string) => void;
+
+  // Phase 8.1: Author's Note
+  authorNotes: Record<string, AuthorNote>;
+  getAuthorNote: (fileName: string) => AuthorNote | null;
+  setAuthorNote: (fileName: string, note: Partial<AuthorNote>) => void;
 
   // New Phase 1 actions
   stopGeneration: () => void;
@@ -652,6 +684,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   const depthPrompt = getDepthPrompt(character);
   const depthPromptContent = depthPrompt ? sub(depthPrompt.prompt) : '';
 
+  // Phase 8.1: Author's Note — per-chat persistent instruction injected at depth
+  const { currentChatFile } = useChatStore.getState();
+  const authorNote = currentChatFile
+    ? useChatStore.getState().getAuthorNote(currentChatFile)
+    : null;
+
   // Persona @ depth
   const personaAtDepth =
     persona && persona.descriptionPosition === 'at_depth' && personaDescription
@@ -687,6 +725,13 @@ Choose the emotion that best matches how ${character.name} would feel based on t
         content: depthPromptContent,
       });
     }
+    // Phase 8.1: Author's Note injection at depth
+    if (authorNote && depthFromEnd === authorNote.depth) {
+      historyWithInsertions.push({
+        role: authorNote.role,
+        content: sub(authorNote.content),
+      });
+    }
     if (personaAtDepth && depthFromEnd === personaAtDepth.depth) {
       historyWithInsertions.push({
         role: personaAtDepth.role,
@@ -717,6 +762,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     historyWithInsertions.unshift({
       role: depthPrompt.role,
       content: depthPromptContent,
+    });
+  }
+  if (authorNote && authorNote.depth > recentMessages.length) {
+    historyWithInsertions.unshift({
+      role: authorNote.role,
+      content: sub(authorNote.content),
     });
   }
   if (personaAtDepth && personaAtDepth.depth > recentMessages.length) {
@@ -837,15 +888,40 @@ IMPORTANT:
 
   context.push({ role: 'system', content: systemPrompt });
 
-  const recentMessages = messages.slice(-30);
-  for (const msg of recentMessages) {
-    if (msg.isSystem) continue;
+  // Phase 8.1: Author's Note for group chats
+  const { currentChatFile: groupChatFile } = useChatStore.getState();
+  const groupAuthorNote = groupChatFile
+    ? useChatStore.getState().getAuthorNote(groupChatFile)
+    : null;
+
+  const recentMessages = messages.slice(-30).filter((m) => !m.isSystem);
+  for (let i = 0; i < recentMessages.length; i++) {
+    const msg = recentMessages[i];
+    const depthFromEnd = recentMessages.length - i;
+
+    // Inject author's note at the configured depth
+    if (groupAuthorNote && depthFromEnd === groupAuthorNote.depth) {
+      context.push({
+        role: groupAuthorNote.role,
+        content: groupAuthorNote.content,
+      });
+    }
+
     const contentWithName = msg.isUser
       ? msg.content
       : `[${msg.name}]: ${msg.content}`;
     context.push({
       role: msg.isUser ? 'user' : 'assistant',
       content: contentWithName,
+    });
+  }
+
+  // If depth exceeds history, prepend
+  if (groupAuthorNote && groupAuthorNote.depth > recentMessages.length) {
+    // Insert after the system prompt (index 1)
+    context.splice(1, 0, {
+      role: groupAuthorNote.role,
+      content: groupAuthorNote.content,
     });
   }
 
@@ -1014,6 +1090,11 @@ async function saveChatToBackend(
 ) {
   if (!currentChatFile) return;
 
+  // Phase 8.1: include author's note in chat header metadata
+  const authorNote = currentChatFile
+    ? useChatStore.getState().getAuthorNote(currentChatFile)
+    : null;
+
   const chatData = [
     {
       user_name: 'You',
@@ -1022,6 +1103,13 @@ async function saveChatToBackend(
         : character.name,
       create_date: new Date().toISOString(),
       ...(isGroupChat ? { is_group_chat: true } : {}),
+      ...(authorNote ? {
+        author_note: {
+          content: authorNote.content,
+          depth: authorNote.depth,
+          role: authorNote.role,
+        },
+      } : {}),
     },
     ...messages.map((msg) => ({
       name: msg.name,
@@ -1180,6 +1268,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   abortController: null,
   currentSpeakerName: null,
+
+  // Phase 8.1: Author's Note
+  authorNotes: loadAuthorNotesFromStorage(),
+
+  getAuthorNote: (fileName: string) => {
+    const note = get().authorNotes[fileName];
+    if (!note || !note.content?.trim()) return null;
+    return note;
+  },
+
+  setAuthorNote: (fileName: string, partial: Partial<AuthorNote>) => {
+    const { authorNotes } = get();
+    const existing = authorNotes[fileName] || { content: '', depth: 4, role: 'system' as const };
+    const updated = {
+      ...authorNotes,
+      [fileName]: {
+        content: partial.content ?? existing.content,
+        depth: partial.depth ?? existing.depth,
+        role: partial.role ?? existing.role,
+      },
+    };
+    saveAuthorNotesToStorage(updated);
+    set({ authorNotes: updated });
+  },
 
   refreshGroupChats: () => {
     set({ groupChats: loadGroupChatsFromStorage() });
@@ -1423,7 +1535,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadGroupChat: async (groupChat: GroupChatInfo) => {
     set({ isLoading: true, error: null, currentChatFile: groupChat.fileName });
     try {
-      // Use the first character's avatar to fetch the chat file
       const avatarUrl = groupChat.characterAvatars[0];
       const rawMessages = await api.getChatMessages(avatarUrl, groupChat.fileName);
       const messages = rawMessages.map(normalizeMessage);
