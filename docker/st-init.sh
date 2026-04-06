@@ -12,12 +12,10 @@ if [ ! -f "$CONFIG" ]; then
 # SillyTavern will add remaining defaults on startup.
 
 # whitelistMode: true satisfies ST's startup security check.
-# enableForwardedWhitelist: true makes ST use X-Forwarded-For for
-# whitelist checks instead of the direct connection IP. nginx always
-# sets X-Forwarded-For: 127.0.0.1 so all proxied traffic is allowed.
-# Port 8000 is not exposed externally so this cannot be spoofed.
+# ST runs in the frontend container's network namespace, so nginx
+# connects to localhost:8000 — ST always sees 127.0.0.1, which is
+# whitelisted. Port 8000 is never exposed externally.
 whitelistMode: true
-enableForwardedWhitelist: true
 enableUserAccounts: true
 listen: true
 whitelist:

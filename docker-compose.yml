@@ -3,14 +3,15 @@ services:
     build: .
     ports:
       - "${PORT:-80}:80"
-    depends_on:
-      sillytavern:
-        condition: service_started
     restart: unless-stopped
 
   sillytavern:
     image: ghcr.io/sillytavern/sillytavern:latest
     entrypoint: ["/bin/sh", "/st-init.sh"]
+    # Share frontend's network namespace: nginx connects to localhost:8000,
+    # so ST always sees 127.0.0.1 — permanently whitelisted, no tricks needed.
+    # Docker Compose infers the startup dependency automatically.
+    network_mode: "service:frontend"
     environment:
       - ST_PORT=8000
     volumes:
@@ -21,8 +22,8 @@ services:
 
   seed-owner:
     image: alpine:latest
-    # Share ST's network namespace so seed calls localhost — always whitelisted
-    network_mode: "service:sillytavern"
+    # frontend's namespace = ST's namespace (ST uses service:frontend)
+    network_mode: "service:frontend"
     volumes:
       - ./docker/seed-owner.sh:/seed-owner.sh:ro
       - st-config:/config
