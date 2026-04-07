@@ -605,6 +605,59 @@ interface ChatMessage {
   character_avatar?: string; // For group chats
 }
 
+// Invitation types
+export interface Invitation {
+  id: string;
+  token: string;
+  role: import('../types').UserRole;
+  label: string;
+  createdBy: string;
+  createdAt: number;
+  expiresAt: number | null;
+  usedBy: string | null;
+  usedAt: number | null;
+  status: 'pending' | 'accepted' | 'revoked';
+}
+
+export const invitationsApi = {
+  async create(role: string, label?: string, expiresIn?: number): Promise<Invitation> {
+    return apiRequest('/api/invitations/create', {
+      method: 'POST',
+      body: JSON.stringify({ role, label: label ?? '', expiresIn }),
+    });
+  },
+
+  async list(): Promise<Invitation[]> {
+    return apiRequest('/api/invitations/list', { method: 'POST' });
+  },
+
+  async revoke(id: string): Promise<Invitation> {
+    return apiRequest('/api/invitations/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  },
+
+  async validate(token: string): Promise<{ valid: boolean; role?: string; label?: string; error?: string }> {
+    return apiRequest(`/api/invitations/validate/${encodeURIComponent(token)}`);
+  },
+
+  async accept(token: string, handle: string, name: string, password?: string): Promise<{ handle: string }> {
+    // /accept is a public endpoint — no session required, so we skip the CSRF
+    // token fetch (which would fail if not logged in) and call fetch directly.
+    const response = await fetch('/api/invitations/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, handle, name, password }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+};
+
 // Settings types
 export interface SecretState {
   id: string;

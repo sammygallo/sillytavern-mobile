@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Volume2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -369,6 +369,27 @@ export function SettingsPage() {
                   </h3>
                   <p className="text-xs text-[var(--color-text-secondary)]">
                     Find/replace patterns for message processing
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Invitations */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/invitations')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <UserPlus size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Invitations
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    Create invite links for new users
                   </p>
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
