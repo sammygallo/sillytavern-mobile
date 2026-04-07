@@ -24,9 +24,15 @@ if [ -z "$OWNER_HANDLE" ] || [ -z "$OWNER_PASSWORD" ]; then
   exit 0
 fi
 
+# seed-owner connects directly to ST on localhost:8000 (same network namespace),
+# bypassing nginx. If enableForwardedWhitelist is true in a stale config, ST
+# checks X-Forwarded-For instead of the direct TCP IP — so we send it explicitly.
+# This header cannot be spoofed since ST's port is never exposed externally.
+WGET="wget -q --header=X-Forwarded-For:127.0.0.1"
+
 echo "[seed-owner] Waiting for SillyTavern to be ready..."
 for i in $(seq 1 60); do
-  if wget -qO /dev/null "$ST/csrf-token" 2>/dev/null; then
+  if $WGET -O /dev/null "$ST/csrf-token" 2>/dev/null; then
     break
   fi
   if [ "$i" -eq 60 ]; then
@@ -37,14 +43,14 @@ for i in $(seq 1 60); do
 done
 
 # Grab CSRF token
-CSRF=$(wget -qO- "$ST/csrf-token" | sed 's/.*"token":"\([^"]*\)".*/\1/')
+CSRF=$($WGET -O- "$ST/csrf-token" | sed 's/.*"token":"\([^"]*\)".*/\1/')
 if [ -z "$CSRF" ]; then
   echo "[seed-owner] Could not get CSRF token"
   exit 1
 fi
 
 # Login as default-user (auto-created admin, no password)
-LOGIN=$(wget -qO- \
+LOGIN=$($WGET -O- \
   --header="Content-Type: application/json" \
   --header="X-CSRF-Token: $CSRF" \
   --post-data='{"handle":"default-user","password":""}' \
@@ -58,14 +64,14 @@ if ! echo "$LOGIN" | grep -q '"handle"'; then
 fi
 
 # Refresh CSRF token after login
-CSRF=$(wget -qO- \
+CSRF=$($WGET -O- \
   --load-cookies=/tmp/st-cookies.txt \
   "$ST/csrf-token" | sed 's/.*"token":"\([^"]*\)".*/\1/')
 
 OWNER_NAME="${OWNER_NAME:-$OWNER_HANDLE}"
 
 # Create the owner account
-CREATE=$(wget -qO- \
+CREATE=$($WGET -O- \
   --header="Content-Type: application/json" \
   --header="X-CSRF-Token: $CSRF" \
   --post-data="{\"handle\":\"$OWNER_HANDLE\",\"name\":\"$OWNER_NAME\",\"password\":\"$OWNER_PASSWORD\",\"admin\":true,\"role\":\"owner\"}" \
@@ -81,7 +87,7 @@ else
 fi
 
 # Logout default-user
-wget -qO /dev/null \
+$WGET -O /dev/null \
   --header="Content-Type: application/json" \
   --header="X-CSRF-Token: $CSRF" \
   --post-data='{}' \
