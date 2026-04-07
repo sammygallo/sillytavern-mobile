@@ -179,17 +179,38 @@ export const api = {
     await apiRequest('/api/users/logout', { method: 'POST' });
   },
 
-  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole } | null> {
+  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole; avatar?: string } | null> {
     try {
-      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string }>('/api/users/me');
+      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string; avatar?: string }>('/api/users/me');
       // Derive role: backend may return role directly (Phase 1 backend),
       // or fall back to admin boolean for older servers.
       const role = (user.role as import('../types').UserRole) ||
         (user.admin ? 'admin' : 'end_user');
-      return { handle: user.handle, name: user.name, role };
+      return { handle: user.handle, name: user.name, role, avatar: user.avatar };
     } catch {
       return null;
     }
+  },
+
+  async changeName(handle: string, name: string): Promise<void> {
+    await apiRequest('/api/users/change-name', {
+      method: 'POST',
+      body: JSON.stringify({ handle, name }),
+    });
+  },
+
+  async changePassword(handle: string, oldPassword: string, newPassword: string): Promise<void> {
+    await apiRequest('/api/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ handle, oldPassword, newPassword }),
+    });
+  },
+
+  async changeAvatar(handle: string, avatar: string): Promise<void> {
+    await apiRequest('/api/users/change-avatar', {
+      method: 'POST',
+      body: JSON.stringify({ handle, avatar }),
+    });
   },
 
   async register(handle: string, name: string, password?: string): Promise<{ handle: string }> {

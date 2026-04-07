@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Menu, Settings, LogOut, Pencil, History } from 'lucide-react';
+import { Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCharacterStore } from '../../stores/characterStore';
@@ -109,6 +109,15 @@ export function Header({ onMenuClick }: HeaderProps) {
             <Settings size={20} />
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/profile')}
+          className="p-2"
+          aria-label="Profile"
+        >
+          <UserCircle size={20} />
+        </Button>
         <Button
           variant="ghost"
           size="sm"
