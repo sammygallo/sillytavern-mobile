@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type UserInfo } from '../api/client';
+import { api, clearCsrfToken, type UserInfo } from '../api/client';
 import { useCharacterStore } from './characterStore';
 import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
@@ -91,10 +91,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (handle: string, password?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await api.login(handle, password);
+      await api.login(handle, password);
+      // Fetch real user data so role and display name are correct.
+      const user = await api.getCurrentUser();
       set({
         isAuthenticated: true,
-        currentUser: { handle: result.handle, name: result.handle, role: 'end_user' },
+        currentUser: user
+          ? { handle: user.handle, name: user.name, role: user.role }
+          : { handle, name: handle, role: 'end_user' },
         isLoading: false,
       });
       return true;
@@ -111,6 +115,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await api.logout();
     } finally {
+      // Invalidate the cached CSRF token — it's tied to the session that was
+      // just destroyed. Without this, the next login attempt uses the stale
+      // token, ST rejects it, and the login silently fails.
+      clearCsrfToken();
       set({ isAuthenticated: false, currentUser: null });
 
       // Clear all stores to prevent data leakage between users

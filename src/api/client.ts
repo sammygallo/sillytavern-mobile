@@ -11,6 +11,11 @@ async function getCsrfToken(): Promise<string> {
   return csrfToken!;
 }
 
+/** Call after logout so the next request fetches a fresh token from the new session. */
+export function clearCsrfToken(): void {
+  csrfToken = null;
+}
+
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
