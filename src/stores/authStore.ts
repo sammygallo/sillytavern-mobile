@@ -8,7 +8,7 @@ import type { UserRole } from '../types';
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  currentUser: { handle: string; name: string; role: UserRole } | null;
+  currentUser: { handle: string; name: string; role: UserRole; avatar?: string } | null;
   availableUsers: UserInfo[];
   error: string | null;
   canSelfRegister: boolean;
@@ -20,6 +20,7 @@ interface AuthState {
   register: (handle: string, name: string, password?: string) => Promise<boolean>;
   login: (handle: string, password?: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  updateCurrentUser: (updates: { name?: string; avatar?: string }) => void;
   clearError: () => void;
 }
 
@@ -38,7 +39,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (user) {
         set({
           isAuthenticated: true,
-          currentUser: { handle: user.handle, name: user.name, role: user.role },
+          currentUser: { handle: user.handle, name: user.name, role: user.role, avatar: user.avatar },
           isLoading: false,
         });
       } else {
@@ -97,7 +98,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         isAuthenticated: true,
         currentUser: user
-          ? { handle: user.handle, name: user.name, role: user.role }
+          ? { handle: user.handle, name: user.name, role: user.role, avatar: user.avatar }
           : { handle, name: handle, role: 'end_user' },
         isLoading: false,
       });
@@ -152,6 +153,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.removeItem('sillytavern_author_notes');
     }
   },
+
+  updateCurrentUser: (updates) => set(state => ({
+    currentUser: state.currentUser ? { ...state.currentUser, ...updates } : null,
+  })),
 
   clearError: () => set({ error: null }),
 }));

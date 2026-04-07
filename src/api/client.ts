@@ -179,17 +179,38 @@ export const api = {
     await apiRequest('/api/users/logout', { method: 'POST' });
   },
 
-  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole } | null> {
+  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole; avatar?: string } | null> {
     try {
-      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string }>('/api/users/me');
+      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string; avatar?: string }>('/api/users/me');
       // Derive role: backend may return role directly (Phase 1 backend),
       // or fall back to admin boolean for older servers.
       const role = (user.role as import('../types').UserRole) ||
         (user.admin ? 'admin' : 'end_user');
-      return { handle: user.handle, name: user.name, role };
+      return { handle: user.handle, name: user.name, role, avatar: user.avatar };
     } catch {
       return null;
     }
+  },
+
+  async changeName(handle: string, name: string): Promise<void> {
+    await apiRequest('/api/users/change-name', {
+      method: 'POST',
+      body: JSON.stringify({ handle, name }),
+    });
+  },
+
+  async changePassword(handle: string, oldPassword: string, newPassword: string): Promise<void> {
+    await apiRequest('/api/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ handle, oldPassword, newPassword }),
+    });
+  },
+
+  async changeAvatar(handle: string, avatar: string): Promise<void> {
+    await apiRequest('/api/users/change-avatar', {
+      method: 'POST',
+      body: JSON.stringify({ handle, avatar }),
+    });
   },
 
   async register(handle: string, name: string, password?: string): Promise<{ handle: string }> {
@@ -583,6 +604,59 @@ interface ChatMessage {
   send_date: number;
   character_avatar?: string; // For group chats
 }
+
+// Invitation types
+export interface Invitation {
+  id: string;
+  token: string;
+  role: import('../types').UserRole;
+  label: string;
+  createdBy: string;
+  createdAt: number;
+  expiresAt: number | null;
+  usedBy: string | null;
+  usedAt: number | null;
+  status: 'pending' | 'accepted' | 'revoked';
+}
+
+export const invitationsApi = {
+  async create(role: string, label?: string, expiresIn?: number): Promise<Invitation> {
+    return apiRequest('/api/invitations/create', {
+      method: 'POST',
+      body: JSON.stringify({ role, label: label ?? '', expiresIn }),
+    });
+  },
+
+  async list(): Promise<Invitation[]> {
+    return apiRequest('/api/invitations/list', { method: 'POST' });
+  },
+
+  async revoke(id: string): Promise<Invitation> {
+    return apiRequest('/api/invitations/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  },
+
+  async validate(token: string): Promise<{ valid: boolean; role?: string; label?: string; error?: string }> {
+    return apiRequest(`/api/invitations/validate/${encodeURIComponent(token)}`);
+  },
+
+  async accept(token: string, handle: string, name: string, password?: string): Promise<{ handle: string }> {
+    // /accept is a public endpoint — no session required, so we skip the CSRF
+    // token fetch (which would fail if not logged in) and call fetch directly.
+    const response = await fetch('/api/invitations/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, handle, name, password }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+};
 
 // Settings types
 export interface SecretState {
