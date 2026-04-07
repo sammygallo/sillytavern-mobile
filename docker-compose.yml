@@ -6,8 +6,7 @@ services:
     restart: unless-stopped
 
   sillytavern:
-    build:
-      context: https://github.com/sammygallo/SillyTavern.git#feat/role-based-permissions
+    image: ghcr.io/sammygallo/sillytavern:feat-role-based-permissions
     entrypoint: ["/bin/sh", "/st-init.sh"]
     # Share frontend's network namespace: nginx connects to localhost:8000,
     # so ST always sees 127.0.0.1 — permanently whitelisted, no tricks needed.
