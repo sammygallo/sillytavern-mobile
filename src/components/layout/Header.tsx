@@ -127,9 +127,6 @@ export function Header({ onMenuClick }: HeaderProps) {
         >
           <LogOut size={20} />
         </Button>
-        {currentUser && (
-          <Avatar size="sm" alt={currentUser.name} className="hidden lg:flex" />
-        )}
       </div>
 
       {/* Character Edit Modal */}
