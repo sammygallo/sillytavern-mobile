@@ -493,6 +493,27 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                                   {character.description}
                                 </p>
                               )}
+                              {(() => {
+                                const tags = character.tags || character.data?.tags || [];
+                                if (tags.length === 0) return null;
+                                return (
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {tags.slice(0, 3).map((tag) => (
+                                      <span
+                                        key={tag}
+                                        className="text-[10px] px-1.5 py-0 leading-4 bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] rounded-full border border-[var(--color-border)]"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                    {tags.length > 3 && (
+                                      <span className="text-[10px] text-[var(--color-text-secondary)] leading-4">
+                                        +{tags.length - 3}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </button>
                           {!isGroupSelectMode && (
