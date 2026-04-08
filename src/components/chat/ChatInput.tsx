@@ -22,6 +22,8 @@ interface ChatInputProps {
    *  the effect. Passing an empty array with a new nonce is a no-op. */
   droppedImages?: string[];
   droppedImagesNonce?: number;
+  /** Called when the user presses ArrowUp in an empty input — edit last message. */
+  onEditLast?: () => void;
 }
 
 /** How long a mic button press must be held before it flips from
@@ -47,6 +49,7 @@ export function ChatInput({
   prefillNonce,
   droppedImages,
   droppedImagesNonce,
+  onEditLast,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -289,6 +292,10 @@ export function ChatInput({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
+    }
+    if (e.key === 'ArrowUp' && !message.trim() && onEditLast) {
+      e.preventDefault();
+      onEditLast();
     }
   };
 

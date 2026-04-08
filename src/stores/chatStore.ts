@@ -378,6 +378,8 @@ interface ChatState {
   continueMessage: (character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   impersonate: (character: CharacterInfo, availableEmotions?: string[]) => Promise<string>;
   deleteChat: (avatarUrl: string, fileName: string) => Promise<void>;
+  renameChat: (avatarUrl: string, fileName: string, newName: string) => Promise<void>;
+  importChat: (avatarUrl: string, characterName: string, file: File) => Promise<void>;
 }
 
 let messageIdCounter = 0;
@@ -1705,6 +1707,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { ...msg, swipeId: newSwipeId, content: msg.swipes[newSwipeId] };
       }),
     }));
+    // Persist swipe position
+    const { currentChatFile } = get();
+    const character = useCharacterStore.getState().selectedCharacter;
+    if (character) {
+      saveChatToBackend(get().messages, character, currentChatFile);
+    }
   },
 
   // ---- Swipe Right (next swipe, or generate new if at end) ----
@@ -1722,6 +1730,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { ...m, swipeId: newSwipeId, content: m.swipes[newSwipeId] };
         }),
       }));
+      // Persist swipe position
+      const { currentChatFile } = get();
+      saveChatToBackend(get().messages, character, currentChatFile);
       return;
     }
 
@@ -1918,13 +1929,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ---- Delete Chat File ----
   deleteChat: async (avatarUrl: string, fileName: string) => {
     try {
-      // Save an empty chat to effectively delete it
-      await api.saveChat(avatarUrl, fileName, []);
-      // Refresh chat list
+      await api.deleteChat(avatarUrl, fileName);
       const { fetchChatFiles } = get();
       await fetchChatFiles(avatarUrl);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete chat' });
+    }
+  },
+
+  // ---- Rename Chat File ----
+  renameChat: async (avatarUrl: string, fileName: string, newName: string) => {
+    try {
+      const sanitized = await api.renameChat(avatarUrl, fileName, newName);
+      const { currentChatFile, fetchChatFiles } = get();
+      if (currentChatFile === fileName) {
+        set({ currentChatFile: sanitized });
+      }
+      await fetchChatFiles(avatarUrl);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to rename chat' });
+    }
+  },
+
+  // ---- Import Chat File ----
+  importChat: async (avatarUrl: string, characterName: string, file: File) => {
+    try {
+      await api.importChat(avatarUrl, characterName, file);
+      const { fetchChatFiles } = get();
+      await fetchChatFiles(avatarUrl);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to import chat' });
     }
   },
 
