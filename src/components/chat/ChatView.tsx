@@ -7,9 +7,12 @@ import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
+import { SummaryPanel } from './SummaryPanel';
 import { TypingIndicator } from './TypingIndicator';
 import { ImageGenModal } from './ImageGenModal';
 import { QuickReplyBar } from './QuickReplyBar';
+import { useExtensionStore } from '../../stores/extensionStore';
+import { useSummarizeStore } from '../../stores/summarizeStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -274,6 +277,32 @@ export function ChatView() {
       }
     }
   }, [isStreaming, messages]);
+
+  // Phase 7.5: Auto-summarize — trigger after AI response if enabled and threshold reached.
+  const wasSendingRef = useRef(false);
+  useEffect(() => {
+    if (isSending) {
+      wasSendingRef.current = true;
+      return;
+    }
+    if (!wasSendingRef.current) return;
+    wasSendingRef.current = false;
+
+    const sumStore = useSummarizeStore.getState();
+    if (!sumStore.autoSummarize) return;
+    if (!currentChatFile || !selectedCharacter) return;
+
+    const nonSystemCount = messages.filter((m) => !m.isSystem).length;
+    const existing = sumStore.getSummary(currentChatFile);
+    const lastCount = existing?.messageCount ?? 0;
+    if (nonSystemCount - lastCount >= sumStore.autoTriggerEvery) {
+      sumStore.generateSummary(messages, currentChatFile, selectedCharacter.name);
+    }
+  }, [isSending, messages, currentChatFile, selectedCharacter]);
+
+  // Phase 7.1/7.5: extension-gated features
+  const imageGenEnabled = useExtensionStore((s) => s.enabled.imageGen);
+  const summarizeEnabled = useExtensionStore((s) => s.enabled.summarize);
 
   const handleSend = (content: string, images?: string[]) => {
     if (isGroupChatMode && groupChatCharacters.length >= 2) {
@@ -753,6 +782,11 @@ export function ChatView() {
       {/* Phase 8.1: Author's Note — collapsible panel for per-chat instructions */}
       {currentChatFile && <AuthorNote fileName={currentChatFile} />}
 
+      {/* Phase 7.5: Summary panel — shown when summarize extension is enabled */}
+      {summarizeEnabled && currentChatFile && selectedCharacter && (
+        <SummaryPanel chatFile={currentChatFile} characterName={selectedCharacter.name} />
+      )}
+
       {/* Phase 10.2: Quick Reply Bar */}
       <QuickReplyBar
         onPrefill={(text) => { setPrefillText(text); setPrefillNonce((n) => n + 1); }}
@@ -770,7 +804,7 @@ export function ChatView() {
         droppedImages={droppedImages}
         droppedImagesNonce={droppedImagesNonce}
         onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
-        onImageGen={!isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
+        onImageGen={imageGenEnabled && !isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
       />
 
       {/* Phase 7.1: Image generation modal */}
