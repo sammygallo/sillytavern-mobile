@@ -1,0 +1,193 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { api } from '../api/client';
+import { useSettingsStore } from './settingsStore';
+
+export interface ChatSummary {
+  text: string;
+  generatedAt: number;
+  /** Number of non-system messages when this summary was generated. */
+  messageCount: number;
+}
+
+interface SummarizeState {
+  // --- persisted settings ---
+  autoSummarize: boolean;
+  /** Trigger a new summary every N non-system messages since the last summary. */
+  autoTriggerEvery: number;
+  /** Depth from the END of history to inject the summary (999 = before all history). */
+  injectionDepth: number;
+  injectionRole: 'system' | 'user';
+
+  // --- persisted data ---
+  /** Keyed by chat file name (e.g. "character_2024-01-01@12:00:00.jsonl"). */
+  summaries: Record<string, ChatSummary>;
+
+  // --- session state ---
+  isGenerating: boolean;
+  error: string | null;
+
+  // --- actions ---
+  setAutoSummarize: (on: boolean) => void;
+  setAutoTriggerEvery: (n: number) => void;
+  setInjectionDepth: (d: number) => void;
+  setInjectionRole: (r: 'system' | 'user') => void;
+  getSummary: (chatFile: string) => ChatSummary | null;
+  clearSummary: (chatFile: string) => void;
+  clearError: () => void;
+  generateSummary: (
+    chatMessages: { name: string; isUser: boolean; isSystem: boolean; content: string }[],
+    chatFile: string,
+    characterName: string
+  ) => Promise<void>;
+}
+
+async function* parseSSEStream(
+  stream: ReadableStream<Uint8Array>
+): AsyncGenerator<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === 'data: [DONE]') continue;
+        if (trimmed.startsWith('data: ')) {
+          const data = trimmed.slice(6);
+          if (!data || data === '[DONE]') continue;
+          try {
+            const json = JSON.parse(data);
+            const content =
+              json.choices?.[0]?.delta?.content ||
+              json.choices?.[0]?.text ||
+              json.delta?.text ||
+              (json.type === 'content_block_delta' ? json.delta?.text : null) ||
+              json.content ||
+              json.message?.content?.[0]?.text ||
+              '';
+            if (content) yield content;
+          } catch {
+            if (data.length > 0 && data !== 'undefined') yield data;
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export const useSummarizeStore = create<SummarizeState>()(
+  persist(
+    (set, get) => ({
+      autoSummarize: false,
+      autoTriggerEvery: 20,
+      injectionDepth: 999,
+      injectionRole: 'system',
+      summaries: {},
+      isGenerating: false,
+      error: null,
+
+      setAutoSummarize: (on) => set({ autoSummarize: on }),
+      setAutoTriggerEvery: (n) =>
+        set({ autoTriggerEvery: Math.max(5, Math.min(100, Math.round(n))) }),
+      setInjectionDepth: (d) => set({ injectionDepth: Math.max(0, Math.round(d)) }),
+      setInjectionRole: (r) => set({ injectionRole: r }),
+
+      getSummary: (chatFile) => get().summaries[chatFile] ?? null,
+
+      clearSummary: (chatFile) =>
+        set((s) => {
+          const { [chatFile]: _removed, ...rest } = s.summaries;
+          return { summaries: rest };
+        }),
+
+      clearError: () => set({ error: null }),
+
+      generateSummary: async (chatMessages, chatFile, characterName) => {
+        if (get().isGenerating) return;
+        set({ isGenerating: true, error: null });
+
+        try {
+          const { activeProvider, activeModel } = useSettingsStore.getState();
+
+          // Use the last 40 non-system messages for the transcript
+          const sample = chatMessages
+            .filter((m) => !m.isSystem)
+            .slice(-40);
+
+          if (sample.length === 0) {
+            set({ isGenerating: false });
+            return;
+          }
+
+          const transcript = sample
+            .map((m) => `${m.isUser ? 'User' : characterName}: ${m.content}`)
+            .join('\n');
+
+          const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [
+            {
+              role: 'system',
+              content: `You are a concise summarizer. Produce a 2-4 sentence summary of the following roleplay/chat conversation between the user and ${characterName}. Focus on key events, emotional beats, and story progression. Write in third person, past tense. Do not add commentary or analysis beyond the summary itself.`,
+            },
+            {
+              role: 'user',
+              content: `Summarize this conversation:\n\n${transcript}`,
+            },
+          ];
+
+          const stream = await api.generateMessage(
+            context,
+            characterName,
+            activeProvider,
+            activeModel,
+          );
+
+          if (!stream) {
+            set({ isGenerating: false, error: 'No response from API' });
+            return;
+          }
+
+          let text = '';
+          for await (const token of parseSSEStream(stream)) {
+            text += token;
+          }
+          text = text.trim();
+
+          if (text) {
+            const messageCount = chatMessages.filter((m) => !m.isSystem).length;
+            set((s) => ({
+              summaries: {
+                ...s.summaries,
+                [chatFile]: { text, generatedAt: Date.now(), messageCount },
+              },
+            }));
+          }
+        } catch (err) {
+          set({ error: err instanceof Error ? err.message : 'Summarization failed' });
+        } finally {
+          set({ isGenerating: false });
+        }
+      },
+    }),
+    {
+      name: 'st-mobile-summarize',
+      partialize: (s) => ({
+        autoSummarize: s.autoSummarize,
+        autoTriggerEvery: s.autoTriggerEvery,
+        injectionDepth: s.injectionDepth,
+        injectionRole: s.injectionRole,
+        summaries: s.summaries,
+      }),
+    }
+  )
+);

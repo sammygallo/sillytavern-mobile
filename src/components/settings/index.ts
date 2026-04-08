@@ -3,3 +3,4 @@ export { GenerationSettingsPage } from './GenerationSettingsPage';
 export { InvitationManager } from './InvitationManager';
 export { UserManagementPage } from './UserManagementPage';
 export { QuickReplyPage } from './QuickReplyPage';
+export { ExtensionsPage } from './ExtensionsPage';

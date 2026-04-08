@@ -26,6 +26,7 @@ import {
 import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemplates';
 import { useRegexScriptStore } from './regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
+import { useSummarizeStore } from './summarizeStore';
 
 export interface ChatMessage {
   id: string;
@@ -703,6 +704,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     ? useChatStore.getState().getAuthorNote(currentChatFile)
     : null;
 
+  // Phase 7.5: Chat Summary — inject at configurable depth (default 999 = before all history)
+  const summarizeState = useSummarizeStore.getState();
+  const chatSummary = currentChatFile ? summarizeState.getSummary(currentChatFile) : null;
+  const summaryDepth = summarizeState.injectionDepth;
+  const summaryRole = summarizeState.injectionRole;
+
   // Persona @ depth
   const personaAtDepth =
     persona && persona.descriptionPosition === 'at_depth' && personaDescription
@@ -745,6 +752,13 @@ Choose the emotion that best matches how ${character.name} would feel based on t
         content: sub(authorNote.content),
       });
     }
+    // Phase 7.5: Chat Summary injection at depth
+    if (chatSummary && depthFromEnd === summaryDepth) {
+      historyWithInsertions.push({
+        role: summaryRole,
+        content: `[Summary of earlier conversation: ${chatSummary.text}]`,
+      });
+    }
     if (personaAtDepth && depthFromEnd === personaAtDepth.depth) {
       historyWithInsertions.push({
         role: personaAtDepth.role,
@@ -781,6 +795,13 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     historyWithInsertions.unshift({
       role: authorNote.role,
       content: sub(authorNote.content),
+    });
+  }
+  // Phase 7.5: summary fallback — prepend before all history if depth exceeds history length
+  if (chatSummary && summaryDepth > recentMessages.length) {
+    historyWithInsertions.unshift({
+      role: summaryRole,
+      content: `[Summary of earlier conversation: ${chatSummary.text}]`,
     });
   }
   if (personaAtDepth && personaAtDepth.depth > recentMessages.length) {

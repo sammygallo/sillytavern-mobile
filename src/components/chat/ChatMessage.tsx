@@ -9,6 +9,7 @@ import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences
 import { useRegexScriptStore } from '../../stores/regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 import { useTranslateStore } from '../../stores/translateStore';
+import { useExtensionStore } from '../../stores/extensionStore';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -157,12 +158,16 @@ export function ChatMessage({
     return scripts.length > 0 ? applyRegexScripts(content, scripts) : content;
   }, [content, regexScripts, characterAvatar, isUser]);
 
+  // Phase 7.1: Extension gates
+  const ttsEnabled = useExtensionStore((s) => s.enabled.tts);
+  const translateEnabled = useExtensionStore((s) => s.enabled.translate);
+
   // Phase 6.3: TTS — only wired for non-user, non-system messages.
   const { isSupported: ttsSupported, isSpeaking, speak, stop } = useSpeechSynthesis();
-  const showTtsButton = ttsSupported && !isUser && !isSystem && content.length > 0;
+  const showTtsButton = ttsEnabled && ttsSupported && !isUser && !isSystem && content.length > 0;
 
   // Phase 7.2: Translation
-  const showTranslateButton = !isUser && !isSystem && content.length > 0;
+  const showTranslateButton = translateEnabled && !isUser && !isSystem && content.length > 0;
   const translatedText = useTranslateStore((s) => s.cache.get(messageId));
   const isTranslating = useTranslateStore((s) => s.pending.has(messageId));
   const showTranslation = useTranslateStore((s) => s.visible.has(messageId));

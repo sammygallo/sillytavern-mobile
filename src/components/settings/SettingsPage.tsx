@@ -519,6 +519,25 @@ export function SettingsPage() {
               </button>
             </section>
 
+            {/* Extensions (Phase 7.1) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/extensions')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <MessageSquare size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">Extensions</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    TTS, image gen, translation, summarization
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
             {/* Appearance (Phase 7.4) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
