@@ -82,6 +82,7 @@ export function ChatView() {
   // attachment set, re-triggered by the nonce so identical payloads fire.
   const [droppedImages, setDroppedImages] = useState<string[]>([]);
   const [droppedImagesNonce, setDroppedImagesNonce] = useState(0);
+  const [editLastNonce, setEditLastNonce] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
@@ -97,6 +98,11 @@ export function ChatView() {
   const lastAiMessageId = useMemo(() => {
     const aiMessages = messages.filter((m) => !m.isUser && !m.isSystem);
     return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].id : null;
+  }, [messages]);
+
+  const lastUserMessageId = useMemo(() => {
+    const userMessages = messages.filter((m) => m.isUser);
+    return userMessages.length > 0 ? userMessages[userMessages.length - 1].id : null;
   }, [messages]);
 
   const hasAiMessage = useMemo(
@@ -463,8 +469,12 @@ export function ChatView() {
                     : undefined;
 
               const isLastAiMessage = message.id === lastAiMessageId;
+              const isAiMessage = !message.isUser && !message.isSystem;
+              // Show swipe controls on the last AI message always, and on any AI
+              // message that already has multiple swipes (e.g. alternate greetings).
               const showSwipeControl =
-                !isGroupChatMode && isLastAiMessage && !message.isUser && !message.isSystem;
+                !isGroupChatMode && isAiMessage &&
+                (isLastAiMessage || message.swipes.length > 1);
 
               return (
                 <ChatMessage
@@ -487,6 +497,7 @@ export function ChatView() {
                   swipes={message.swipes}
                   swipeId={message.swipeId}
                   showSwipeControl={showSwipeControl}
+                  canGenerateSwipe={isLastAiMessage}
                   onSwipeLeft={() => handleSwipeLeft(message.id)}
                   onSwipeRight={() => handleSwipeRight(message.id)}
                   onEdit={(newContent) => editMessage(message.id, newContent)}
@@ -505,6 +516,7 @@ export function ChatView() {
                   onRegenerate={
                     isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
                   }
+                  triggerEditNonce={message.id === lastUserMessageId ? editLastNonce : undefined}
                 />
               );
             })}
@@ -562,6 +574,7 @@ export function ChatView() {
         prefillNonce={prefillNonce}
         droppedImages={droppedImages}
         droppedImagesNonce={droppedImagesNonce}
+        onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
       />
 
       {/* Manual-strategy hint: auto-pick is disabled, so user has to force-talk. */}

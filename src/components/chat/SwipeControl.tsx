@@ -6,6 +6,8 @@ interface SwipeControlProps {
   onSwipeLeft: () => void;
   onSwipeRight: () => void;
   disabled?: boolean;
+  /** When false, the right button is disabled at the last swipe (no generation). */
+  canGenerate?: boolean;
 }
 
 export function SwipeControl({
@@ -14,8 +16,11 @@ export function SwipeControl({
   onSwipeLeft,
   onSwipeRight,
   disabled,
+  canGenerate = true,
 }: SwipeControlProps) {
   const canSwipeLeft = swipeId > 0 && !disabled;
+  const atLastSwipe = swipeId === swipesCount - 1;
+  const canSwipeRight = !disabled && (!atLastSwipe || canGenerate);
   const current = swipeId + 1;
 
   return (
@@ -33,10 +38,10 @@ export function SwipeControl({
       </span>
       <button
         onClick={onSwipeRight}
-        disabled={disabled}
+        disabled={!canSwipeRight}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        aria-label={swipeId === swipesCount - 1 ? 'Generate new response' : 'Next response'}
-        title={swipeId === swipesCount - 1 ? 'Generate new response' : 'Next response'}
+        aria-label={atLastSwipe ? 'Generate new response' : 'Next response'}
+        title={atLastSwipe ? 'Generate new response' : 'Next response'}
       >
         <ChevronRight size={16} />
       </button>

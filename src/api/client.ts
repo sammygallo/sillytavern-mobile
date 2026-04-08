@@ -594,6 +594,49 @@ export const api = {
     const fileName = `${characterName} - ${new Date(timestamp).toISOString().split('T')[0]}@${timestamp}`;
     return fileName;
   },
+
+  async deleteChat(avatarUrl: string, fileName: string): Promise<void> {
+    await apiRequest('/api/chats/delete', {
+      method: 'POST',
+      body: JSON.stringify({ avatar_url: avatarUrl, chatfile: fileName }),
+    });
+  },
+
+  async renameChat(avatarUrl: string, originalFile: string, renamedFile: string): Promise<string> {
+    const result = await apiRequest<{ ok: boolean; sanitizedFileName: string }>('/api/chats/rename', {
+      method: 'POST',
+      body: JSON.stringify({
+        avatar_url: avatarUrl,
+        original_file: originalFile,
+        renamed_file: renamedFile,
+      }),
+    });
+    return result.sanitizedFileName;
+  },
+
+  async importChat(
+    avatarUrl: string,
+    characterName: string,
+    file: File,
+    userName = 'User'
+  ): Promise<string[]> {
+    const formData = new FormData();
+    formData.append('avatar_url', avatarUrl);
+    formData.append('character_name', characterName);
+    formData.append('user_name', userName);
+    formData.append('file_type', file.name.endsWith('.json') ? 'json' : 'jsonl');
+    formData.append('file', file);
+
+    const response = await fetch('/api/chats/import', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!response.ok) throw new Error('Import failed');
+    const data = await response.json();
+    if (data.error) throw new Error('Import failed: invalid format');
+    return data.fileNames ?? [];
+  },
 };
 
 interface ChatMessage {

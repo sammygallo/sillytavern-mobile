@@ -34,6 +34,7 @@ interface ChatMessageProps {
   swipes?: string[];
   swipeId?: number;
   showSwipeControl?: boolean;
+  canGenerateSwipe?: boolean;
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
   // Actions
@@ -41,6 +42,8 @@ interface ChatMessageProps {
   onEditAndRegenerate?: (newContent: string) => void;
   onDelete?: () => void;
   onRegenerate?: () => void;
+  /** Increment this to programmatically trigger edit mode (e.g. up-arrow shortcut). */
+  triggerEditNonce?: number;
 }
 
 interface TextSegment {
@@ -122,6 +125,7 @@ export function ChatMessage({
   swipes,
   swipeId,
   showSwipeControl,
+  canGenerateSwipe,
   onSwipeLeft,
   onSwipeRight,
   isStreaming: isStreamingMsg,
@@ -133,6 +137,7 @@ export function ChatMessage({
   onEditAndRegenerate,
   onDelete,
   onRegenerate,
+  triggerEditNonce,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
@@ -161,6 +166,15 @@ export function ChatMessage({
       textareaRef.current.select();
     }
   }, [isEditing]);
+
+  // Programmatic edit trigger (e.g. up-arrow shortcut from ChatInput)
+  useEffect(() => {
+    if (triggerEditNonce && onEdit) {
+      setEditContent(content);
+      setIsEditing(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerEditNonce]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -391,6 +405,7 @@ export function ChatMessage({
       onSwipeLeft={onSwipeLeft}
       onSwipeRight={onSwipeRight}
       disabled={disabled}
+      canGenerate={canGenerateSwipe}
     />
   ) : null;
 
@@ -420,7 +435,9 @@ export function ChatMessage({
                   ? 'bg-[var(--color-primary)] text-white rounded-br-md'
                   : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-bl-md'}
                 ${isEditing ? 'w-full' : ''}
+                ${!isEditing && onEdit ? 'cursor-text select-text' : ''}
               `}
+              onDoubleClick={!isEditing && onEdit ? handleStartEdit : undefined}
             >
               {imageGrid}
               {editingUI}
@@ -457,7 +474,10 @@ export function ChatMessage({
         </div>
 
         {/* Content area */}
-        <div className="text-[var(--color-text-primary)]">
+        <div
+          className="text-[var(--color-text-primary)]"
+          onDoubleClick={!isEditing && onEdit ? handleStartEdit : undefined}
+        >
           {imageGrid}
           {isEditing ? (
             <div className="p-2 rounded-lg bg-[var(--color-bg-tertiary)]">
@@ -493,7 +513,12 @@ export function ChatMessage({
               {editingUI}
             </div>
           ) : messageContent ? (
-            <div className="mt-0.5">{messageContent}</div>
+            <div
+              className="mt-0.5"
+              onDoubleClick={!isEditing && onEdit ? handleStartEdit : undefined}
+            >
+              {messageContent}
+            </div>
           ) : null}
         </div>
 
