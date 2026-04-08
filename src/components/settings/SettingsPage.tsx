@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Globe, Key, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -42,6 +42,8 @@ import {
 } from '../../hooks/themePreferences';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
+import { useTranslateStore } from '../../stores/translateStore';
+import { TRANSLATE_PROVIDERS, TRANSLATE_LANGUAGES, type TranslateProvider } from '../../api/translateApi';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -89,6 +91,12 @@ export function SettingsPage() {
   const [ttsRate, setTtsRateState] = useState<number>(() => getTtsRate());
   const [ttsPitch, setTtsPitchState] = useState<number>(() => getTtsPitch());
   const [ttsAutoReadOn, setTtsAutoReadState] = useState<boolean>(() => getTtsAutoRead());
+
+  // Phase 7.2: Translation settings
+  const translateProvider = useTranslateStore((s) => s.provider);
+  const translateLang = useTranslateStore((s) => s.targetLang);
+  const setTranslateProvider = useTranslateStore((s) => s.setProvider);
+  const setTranslateLang = useTranslateStore((s) => s.setTargetLang);
 
   useEffect(() => {
     fetchSecrets();
@@ -471,6 +479,46 @@ export function SettingsPage() {
               </button>
             </section>
 
+            {/* Users (Phase 3.1) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/users')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Users size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Users
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    Manage accounts, roles, and access
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Quick Replies (Phase 10.2) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/quickreplies')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Zap size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">Quick Replies</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    Saved prompt shortcuts
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
             {/* Appearance (Phase 7.4) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -775,6 +823,49 @@ export function SettingsPage() {
                 </div>
               </section>
             )}
+
+            {/* Translation (Phase 7.2) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Languages size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Translation
+                </h2>
+              </div>
+              <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+                Per-message translate button on AI messages. Google and Bing work without extra config.
+              </p>
+
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Provider
+              </label>
+              <select
+                value={translateProvider}
+                onChange={(e) => setTranslateProvider(e.target.value as TranslateProvider)}
+                className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] mb-4"
+              >
+                {TRANSLATE_PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.free ? '' : ' (requires config)'}
+                  </option>
+                ))}
+              </select>
+
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Target Language
+              </label>
+              <select
+                value={translateLang}
+                onChange={(e) => setTranslateLang(e.target.value)}
+                className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              >
+                {TRANSLATE_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </section>
 
             {/* Help Text */}
             <section className="text-center py-4">

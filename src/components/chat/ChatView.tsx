@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { MessageSquare, Users, Settings2, Pencil, Square } from 'lucide-react';
+import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
@@ -8,6 +8,8 @@ import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
 import { TypingIndicator } from './TypingIndicator';
+import { ImageGenModal } from './ImageGenModal';
+import { QuickReplyBar } from './QuickReplyBar';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -50,6 +52,7 @@ export function ChatView() {
     continueMessage,
     impersonate,
     stopGeneration,
+    insertImageMessage,
     currentChatFile,
     currentSpeakerName,
     setGroupTitle,
@@ -84,7 +87,18 @@ export function ChatView() {
   const [droppedImagesNonce, setDroppedImagesNonce] = useState(0);
   const [editLastNonce, setEditLastNonce] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  // Phase 7.1: image generation modal
+  const [isImageGenOpen, setIsImageGenOpen] = useState(false);
   const dragCounter = useRef(0);
+
+  // Phase 9.1: in-chat message search
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const messageRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
@@ -109,6 +123,22 @@ export function ChatView() {
     () => messages.some((m) => !m.isUser && !m.isSystem),
     [messages]
   );
+
+  // Phase 9.1: IDs of messages matching the search query (excludes system messages)
+  const searchMatchIds = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return messages
+      .filter((m) => !m.isSystem && m.content.toLowerCase().includes(q))
+      .map((m) => m.id);
+  }, [messages, searchQuery]);
+
+  // Messages to actually render — filtered when search is active
+  const displayedMessages = useMemo(() => {
+    if (!isSearchOpen || !searchQuery.trim()) return messages;
+    const matchSet = new Set(searchMatchIds);
+    return messages.filter((m) => matchSet.has(m.id));
+  }, [isSearchOpen, searchQuery, messages, searchMatchIds]);
 
   const getAvatarUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
@@ -136,6 +166,56 @@ export function ChatView() {
     },
     [getSpritePath, failedExpressions]
   );
+
+  // Phase 9.1: focus the search input when the bar opens
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const t = setTimeout(() => searchInputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [isSearchOpen]);
+
+  // Phase 9.1: auto-navigate to first match when query changes
+  useEffect(() => {
+    setSearchMatchIndex(0);
+    if (searchMatchIds.length > 0) {
+      const messageId = searchMatchIds[0];
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightedMessageId(messageId);
+      highlightTimerRef.current = setTimeout(() => setHighlightedMessageId(null), 1200);
+      // Delay scroll slightly to allow filtered list to render
+      setTimeout(() => {
+        messageRefsMap.current.get(messageId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 60);
+    } else {
+      setHighlightedMessageId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  const navigateToMatch = useCallback(
+    (direction: 1 | -1) => {
+      if (searchMatchIds.length === 0) return;
+      const nextIdx = (searchMatchIndex + direction + searchMatchIds.length) % searchMatchIds.length;
+      setSearchMatchIndex(nextIdx);
+      const messageId = searchMatchIds[nextIdx];
+      messageRefsMap.current.get(messageId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightedMessageId(messageId);
+      highlightTimerRef.current = setTimeout(() => setHighlightedMessageId(null), 1200);
+    },
+    [searchMatchIds, searchMatchIndex]
+  );
+
+  const openSearch = useCallback(() => setIsSearchOpen(true), []);
+
+  const closeSearch = useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchMatchIndex(0);
+    setHighlightedMessageId(null);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+  }, []);
 
   useEffect(() => {
     if (!selectedCharacter) return;
@@ -170,10 +250,12 @@ export function ChatView() {
 
   // Auto-scroll: always scroll on new user messages or when streaming starts,
   // but during ongoing streaming only scroll if the user hasn't scrolled up.
+  // Suppressed while search is open (navigation controls scroll instead).
   useEffect(() => {
+    if (isSearchOpen) return;
     if (!isNearBottomRef.current && isStreaming) return;
     messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' });
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, isSearchOpen]);
 
   // Phase 6.3: Auto-read — speak the last AI message when streaming completes.
   const wasStreamingRef = useRef(false);
@@ -363,6 +445,14 @@ export function ChatView() {
                 </p>
               </div>
               <button
+                onClick={openSearch}
+                className="p-1.5 rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                aria-label="Search messages"
+                title="Search messages"
+              >
+                <Search size={18} />
+              </button>
+              <button
                 onClick={() => setShowGroupControls((v) => !v)}
                 className={`p-1.5 rounded-full transition-colors ${
                   showGroupControls
@@ -392,32 +482,118 @@ export function ChatView() {
           )}
         </>
       ) : selectedCharacter ? (
-        <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
-          <img
-            key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-            src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-            alt={selectedCharacter.name}
-            className="w-full h-full object-cover object-top transition-opacity duration-300"
-            onError={() => {
-              if (latestEmotion) {
-                const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
-                setFailedExpressions((prev) => new Set(prev).add(expressionKey));
-              }
-            }}
-          />
-          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
-          <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
+        <>
+          {/* Mobile: character portrait */}
+          <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
+            <img
+              key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+              src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+              alt={selectedCharacter.name}
+              className="w-full h-full object-cover object-top transition-opacity duration-300"
+              onError={() => {
+                if (latestEmotion) {
+                  const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
+                  setFailedExpressions((prev) => new Set(prev).add(expressionKey));
+                }
+              }}
+            />
+            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
+            <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
+                {selectedCharacter.name}
+              </h2>
+              <div className="flex items-center gap-2">
+                {latestEmotion && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
+                    {latestEmotion}
+                  </span>
+                )}
+                <button
+                  onClick={openSearch}
+                  className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
+                  aria-label="Search messages"
+                  title="Search messages"
+                >
+                  <Search size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Desktop: compact header bar */}
+          <div className="hidden lg:flex items-center gap-3 px-4 h-12 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-bg-secondary)]">
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)] flex-1 truncate">
               {selectedCharacter.name}
             </h2>
-            {latestEmotion && (
-              <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
-                {latestEmotion}
-              </span>
-            )}
+            <button
+              onClick={openSearch}
+              className="p-1.5 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+              aria-label="Search messages"
+              title="Search messages"
+            >
+              <Search size={18} />
+            </button>
           </div>
-        </div>
+        </>
       ) : null}
+
+      {/* Phase 9.1: Search bar — slides in below the header */}
+      <div
+        className={`overflow-hidden transition-[max-height] duration-200 ease-in-out flex-shrink-0 ${
+          isSearchOpen ? 'max-h-14' : 'max-h-0'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
+          <Search size={15} className="text-[var(--color-text-secondary)] flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') closeSearch();
+              else if (e.key === 'Enter' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateToMatch(1);
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateToMatch(-1);
+              }
+            }}
+            placeholder="Search messages…"
+            className="flex-1 min-w-0 bg-transparent text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none"
+          />
+          {searchQuery.trim() && (
+            <span className="text-xs text-[var(--color-text-secondary)] whitespace-nowrap flex-shrink-0">
+              {searchMatchIds.length > 0
+                ? `${searchMatchIndex + 1} of ${searchMatchIds.length}`
+                : 'No results'}
+            </span>
+          )}
+          <button
+            onClick={() => navigateToMatch(-1)}
+            disabled={searchMatchIds.length === 0}
+            className="p-1 text-[var(--color-text-secondary)] disabled:opacity-30 hover:text-[var(--color-text-primary)] transition-colors"
+            aria-label="Previous match"
+          >
+            <ChevronUp size={16} />
+          </button>
+          <button
+            onClick={() => navigateToMatch(1)}
+            disabled={searchMatchIds.length === 0}
+            className="p-1 text-[var(--color-text-secondary)] disabled:opacity-30 hover:text-[var(--color-text-primary)] transition-colors"
+            aria-label="Next match"
+          >
+            <ChevronDown size={16} />
+          </button>
+          <button
+            onClick={closeSearch}
+            className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+            aria-label="Close search"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
 
       {/* Messages Area */}
       <div
@@ -459,7 +635,7 @@ export function ChatView() {
           </div>
         ) : (
           <div className="py-4">
-            {messages.map((message) => {
+            {displayedMessages.map((message) => {
               const messageAvatar = message.isUser
                 ? undefined
                 : isGroupChatMode && message.characterAvatar
@@ -477,47 +653,59 @@ export function ChatView() {
                 (isLastAiMessage || message.swipes.length > 1);
 
               return (
-                <ChatMessage
+                <div
                   key={message.id}
-                  messageId={message.id}
-                  name={message.name}
-                  content={message.content}
-                  isUser={message.isUser}
-                  isSystem={message.isSystem}
-                  avatar={messageAvatar}
-                  timestamp={message.timestamp}
-                  disabled={isSending}
-                  images={message.images}
-                  characterAvatar={message.isUser ? selectedCharacter?.avatar : (message.characterAvatar || selectedCharacter?.avatar)}
-                  isStreaming={isLastAiMessage && isStreaming}
-                  layoutMode={chatLayoutMode}
-                  avatarShape={avatarShapePref}
-                  fontSize={chatFontSize}
-                  chatMaxWidth={chatMaxWidth}
-                  swipes={message.swipes}
-                  swipeId={message.swipeId}
-                  showSwipeControl={showSwipeControl}
-                  canGenerateSwipe={isLastAiMessage}
-                  onSwipeLeft={() => handleSwipeLeft(message.id)}
-                  onSwipeRight={() => handleSwipeRight(message.id)}
-                  onEdit={(newContent) => editMessage(message.id, newContent)}
-                  onEditAndRegenerate={
-                    message.isUser && selectedCharacter && !isGroupChatMode
-                      ? (newContent) =>
-                          editMessageAndRegenerate(
-                            message.id,
-                            newContent,
-                            selectedCharacter,
-                            availableEmotions
-                          )
-                      : undefined
-                  }
-                  onDelete={() => deleteMessage(message.id)}
-                  onRegenerate={
-                    isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
-                  }
-                  triggerEditNonce={message.id === lastUserMessageId ? editLastNonce : undefined}
-                />
+                  ref={(el) => {
+                    if (el) messageRefsMap.current.set(message.id, el);
+                    else messageRefsMap.current.delete(message.id);
+                  }}
+                  className={`transition-colors duration-500 ${
+                    message.id === highlightedMessageId
+                      ? 'bg-[var(--color-primary)]/10'
+                      : ''
+                  }`}
+                >
+                  <ChatMessage
+                    messageId={message.id}
+                    name={message.name}
+                    content={message.content}
+                    isUser={message.isUser}
+                    isSystem={message.isSystem}
+                    avatar={messageAvatar}
+                    timestamp={message.timestamp}
+                    disabled={isSending}
+                    images={message.images}
+                    characterAvatar={message.isUser ? selectedCharacter?.avatar : (message.characterAvatar || selectedCharacter?.avatar)}
+                    isStreaming={isLastAiMessage && isStreaming}
+                    layoutMode={chatLayoutMode}
+                    avatarShape={avatarShapePref}
+                    fontSize={chatFontSize}
+                    chatMaxWidth={chatMaxWidth}
+                    swipes={message.swipes}
+                    swipeId={message.swipeId}
+                    showSwipeControl={showSwipeControl}
+                    canGenerateSwipe={isLastAiMessage}
+                    onSwipeLeft={() => handleSwipeLeft(message.id)}
+                    onSwipeRight={() => handleSwipeRight(message.id)}
+                    onEdit={(newContent) => editMessage(message.id, newContent)}
+                    onEditAndRegenerate={
+                      message.isUser && selectedCharacter && !isGroupChatMode
+                        ? (newContent) =>
+                            editMessageAndRegenerate(
+                              message.id,
+                              newContent,
+                              selectedCharacter,
+                              availableEmotions
+                            )
+                        : undefined
+                    }
+                    onDelete={() => deleteMessage(message.id)}
+                    onRegenerate={
+                      isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
+                    }
+                    triggerEditNonce={message.id === lastUserMessageId ? editLastNonce : undefined}
+                  />
+                </div>
               );
             })}
 
@@ -565,6 +753,13 @@ export function ChatView() {
       {/* Phase 8.1: Author's Note — collapsible panel for per-chat instructions */}
       {currentChatFile && <AuthorNote fileName={currentChatFile} />}
 
+      {/* Phase 10.2: Quick Reply Bar */}
+      <QuickReplyBar
+        onPrefill={(text) => { setPrefillText(text); setPrefillNonce((n) => n + 1); }}
+        onSend={handleSend}
+        disabled={isSending}
+      />
+
       {/* Input Area */}
       <ChatInput
         onSend={handleSend}
@@ -575,7 +770,26 @@ export function ChatView() {
         droppedImages={droppedImages}
         droppedImagesNonce={droppedImagesNonce}
         onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
+        onImageGen={!isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
       />
+
+      {/* Phase 7.1: Image generation modal */}
+      {selectedCharacter && (
+        <ImageGenModal
+          isOpen={isImageGenOpen}
+          onClose={() => setIsImageGenOpen(false)}
+          initialPrompt={selectedCharacter.name}
+          onInsert={async (dataUrl, prompt) => {
+            await insertImageMessage(
+              dataUrl,
+              prompt,
+              selectedCharacter.name,
+              selectedCharacter.avatar,
+              selectedCharacter
+            );
+          }}
+        />
+      )}
 
       {/* Manual-strategy hint: auto-pick is disabled, so user has to force-talk. */}
       {isGroupChatMode &&

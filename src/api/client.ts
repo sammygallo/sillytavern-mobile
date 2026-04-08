@@ -50,6 +50,25 @@ export async function apiRequest<T>(
   }
 }
 
+/** Like apiRequest but returns the raw response body as a string (for plain-text endpoints). */
+export async function apiRequestText(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<string> {
+  const token = await getCsrfToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': token,
+    ...options.headers,
+  };
+  const response = await fetch(endpoint, { ...options, headers, credentials: 'include' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || error.message || `HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
 export interface UserInfo {
   handle: string;
   name: string;
@@ -647,6 +666,52 @@ interface ChatMessage {
   send_date: number;
   character_avatar?: string; // For group chats
 }
+
+// Admin user management types
+export interface AdminUserInfo {
+  handle: string;
+  name: string;
+  avatar: string;
+  admin: boolean;
+  role: import('../types').UserRole;
+  enabled: boolean;
+  created?: number;
+  password: boolean;
+}
+
+export const adminApi = {
+  async getUsers(): Promise<AdminUserInfo[]> {
+    return apiRequest('/api/users/get', { method: 'POST' });
+  },
+
+  async setRole(handle: string, role: import('../types').UserRole): Promise<void> {
+    await apiRequest('/api/users/set-role', {
+      method: 'POST',
+      body: JSON.stringify({ handle, role }),
+    });
+  },
+
+  async enableUser(handle: string): Promise<void> {
+    await apiRequest('/api/users/enable', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  },
+
+  async disableUser(handle: string): Promise<void> {
+    await apiRequest('/api/users/disable', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  },
+
+  async deleteUser(handle: string, purge = false): Promise<void> {
+    await apiRequest('/api/users/delete', {
+      method: 'POST',
+      body: JSON.stringify({ handle, purge }),
+    });
+  },
+};
 
 // Invitation types
 export interface Invitation {

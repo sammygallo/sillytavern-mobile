@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Mic, Paperclip, Square, X } from 'lucide-react';
+import { Send, Mic, Paperclip, Square, X, Image } from 'lucide-react';
 import { Button } from '../ui';
 import {
   compressImageFiles,
@@ -24,6 +24,8 @@ interface ChatInputProps {
   droppedImagesNonce?: number;
   /** Called when the user presses ArrowUp in an empty input — edit last message. */
   onEditLast?: () => void;
+  /** Phase 7.1: open the image generation modal. */
+  onImageGen?: () => void;
 }
 
 /** How long a mic button press must be held before it flips from
@@ -50,6 +52,7 @@ export function ChatInput({
   droppedImages,
   droppedImagesNonce,
   onEditLast,
+  onImageGen,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -440,6 +443,22 @@ export function ChatInput({
         >
           <Paperclip size={20} />
         </Button>
+
+        {/* Image Generation Button */}
+        {onImageGen && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="p-2 flex-shrink-0"
+            aria-label="Generate image"
+            title="Generate image with AI"
+            onClick={onImageGen}
+            disabled={disabled || isListening}
+          >
+            <Image size={20} />
+          </Button>
+        )}
 
         {/* Input Area */}
         <div className="flex-1 flex items-end bg-[var(--color-bg-tertiary)] rounded-2xl px-4 py-2">
