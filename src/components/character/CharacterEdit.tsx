@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Download, FileImage, FileJson, Copy, UserCircle } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { spritesApi, type CharacterInfo } from '../../api/client';
-import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload } from '../ui';
+import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { CharacterLorebookSection } from './CharacterLorebookSection';
 
@@ -35,13 +35,24 @@ export function CharacterEdit({
     exportCharacterAsJSON,
     getLinkedBookIds,
     setLinkedBookIds,
+    getAllTags,
   } = useCharacterStore();
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
   const [isUploadingExpressions, setIsUploadingExpressions] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    description: string;
+    personality: string;
+    firstMessage: string;
+    scenario: string;
+    exampleMessages: string;
+    creatorNotes: string;
+    creator: string;
+    tags: string[];
+  }>({
     name: '',
     description: '',
     personality: '',
@@ -50,7 +61,7 @@ export function CharacterEdit({
     exampleMessages: '',
     creatorNotes: '',
     creator: '',
-    tags: '',
+    tags: [],
   });
 
   // Phase 2: Advanced character fields
@@ -81,7 +92,7 @@ export function CharacterEdit({
         exampleMessages: character.mes_example || character.data?.mes_example || '',
         creatorNotes: character.creator_notes || character.data?.creator_notes || '',
         creator: character.creator || character.data?.creator || '',
-        tags: (character.tags || character.data?.tags || []).join(', '),
+        tags: character.tags || character.data?.tags || [],
       });
 
       // Populate advanced fields
@@ -148,7 +159,7 @@ export function CharacterEdit({
         mes_example: formData.exampleMessages.trim(),
         creator_notes: formData.creatorNotes.trim(),
         creator: formData.creator.trim(),
-        tags: formData.tags.trim(),
+        tags: formData.tags.join(', '),
         chat: character.create_date, // Preserve existing
         create_date: character.create_date, // Preserve existing
         // Advanced fields
@@ -486,11 +497,11 @@ export function CharacterEdit({
             />
 
             {/* Tags */}
-            <Input
+            <TagInput
               label="Tags"
-              placeholder="Comma-separated tags (e.g., fantasy, friendly, assistant)"
               value={formData.tags}
-              onChange={handleChange('tags')}
+              onChange={(tags) => setFormData((prev) => ({ ...prev, tags }))}
+              suggestions={getAllTags()}
             />
           </div>
         </details>

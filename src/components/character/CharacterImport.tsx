@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Upload, FileImage, FileJson, X, BookOpen } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
-import { Modal, Button, Input, TextArea, ImageUpload } from '../ui';
+import { Modal, Button, Input, TextArea, ImageUpload, TagInput } from '../ui';
 import type { CharacterInfo } from '../../api/client';
 import type { CharacterBookV2 } from '../../utils/characterCard';
 
@@ -20,6 +20,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     isCreating,
     error,
     clearError,
+    getAllTags,
   } = useCharacterStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,7 +28,17 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [importedBook, setImportedBook] = useState<CharacterBookV2 | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    description: string;
+    personality: string;
+    firstMessage: string;
+    scenario: string;
+    exampleMessages: string;
+    creatorNotes: string;
+    creator: string;
+    tags: string[];
+  }>({
     name: '',
     description: '',
     personality: '',
@@ -36,7 +47,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     exampleMessages: '',
     creatorNotes: '',
     creator: '',
-    tags: '',
+    tags: [],
   });
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,7 +77,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         exampleMessages: result.data.mes_example || '',
         creatorNotes: result.data.data?.creator_notes || '',
         creator: result.data.data?.creator || '',
-        tags: result.data.tags?.join(', ') || '',
+        tags: result.data.tags || result.data.data?.tags || [],
       });
     }
 
@@ -110,7 +121,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         mes_example: formData.exampleMessages.trim(),
         creator_notes: formData.creatorNotes.trim(),
         creator: formData.creator.trim(),
-        tags: formData.tags.trim(),
+        tags: formData.tags.join(', '),
       },
       avatarFile || undefined
     );
@@ -148,7 +159,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       exampleMessages: '',
       creatorNotes: '',
       creator: '',
-      tags: '',
+      tags: [],
     });
     clearError();
     onClose();
@@ -195,7 +206,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         exampleMessages: result.data.mes_example || '',
         creatorNotes: result.data.data?.creator_notes || '',
         creator: result.data.data?.creator || '',
-        tags: result.data.tags?.join(', ') || '',
+        tags: result.data.tags || result.data.data?.tags || [],
       });
     }
   };
@@ -389,11 +400,11 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
               />
 
               {/* Tags */}
-              <Input
+              <TagInput
                 label="Tags"
-                placeholder="Comma-separated tags (e.g., fantasy, friendly, assistant)"
                 value={formData.tags}
-                onChange={handleChange('tags')}
+                onChange={(tags) => setFormData((prev) => ({ ...prev, tags }))}
+                suggestions={getAllTags()}
               />
             </div>
           </details>

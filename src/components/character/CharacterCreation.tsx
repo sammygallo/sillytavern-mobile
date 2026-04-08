@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useCharacterStore } from '../../stores/characterStore';
-import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload } from '../ui';
+import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { spritesApi } from '../../api/client';
 
@@ -17,17 +17,27 @@ interface CharacterCreationProps {
     exampleMessages: string;
     creatorNotes: string;
     creator: string;
-    tags: string;
+    tags: string[];
   }>;
 }
 
 export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: CharacterCreationProps) {
-  const { createCharacter, isCreating, error, clearError } = useCharacterStore();
+  const { createCharacter, isCreating, error, clearError, getAllTags } = useCharacterStore();
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
   const [isUploadingExpressions, setIsUploadingExpressions] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    description: string;
+    personality: string;
+    firstMessage: string;
+    scenario: string;
+    exampleMessages: string;
+    creatorNotes: string;
+    creator: string;
+    tags: string[];
+  }>({
     name: initialData?.name || '',
     description: initialData?.description || '',
     personality: initialData?.personality || '',
@@ -36,7 +46,7 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
     exampleMessages: initialData?.exampleMessages || '',
     creatorNotes: initialData?.creatorNotes || '',
     creator: initialData?.creator || '',
-    tags: initialData?.tags || '',
+    tags: initialData?.tags || [],
   });
 
   // Phase 2: Advanced character fields
@@ -73,7 +83,7 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         mes_example: formData.exampleMessages.trim(),
         creator_notes: formData.creatorNotes.trim(),
         creator: formData.creator.trim(),
-        tags: formData.tags.trim(),
+        tags: formData.tags.join(', '),
         // Advanced fields
         alternate_greetings: alternateGreetings.filter((g) => g.trim()),
         system_prompt: systemPromptOverride.trim() || undefined,
@@ -123,7 +133,7 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         exampleMessages: '',
         creatorNotes: '',
         creator: '',
-        tags: '',
+        tags: [],
       });
       setAlternateGreetings([]);
       setCharacterVersion('');
@@ -330,11 +340,11 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
             />
 
             {/* Tags */}
-            <Input
+            <TagInput
               label="Tags"
-              placeholder="Comma-separated tags (e.g., fantasy, friendly, assistant)"
               value={formData.tags}
-              onChange={handleChange('tags')}
+              onChange={(tags) => setFormData((prev) => ({ ...prev, tags }))}
+              suggestions={getAllTags()}
             />
           </div>
         </details>
