@@ -730,6 +730,8 @@ export const PROVIDERS = [
   { id: 'mistralai', name: 'Mistral AI', secretKey: SECRET_KEYS.MISTRAL, models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'] },
   { id: 'groq', name: 'Groq', secretKey: SECRET_KEYS.GROQ, models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
   { id: 'openrouter', name: 'OpenRouter', secretKey: SECRET_KEYS.OPENROUTER, models: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-pro-1.5'] },
+  // Custom / local: no secret key required; URL and model are stored directly in oai_settings.
+  { id: 'custom', name: 'Custom / Local', secretKey: '', models: [] as readonly string[] },
 ] as const;
 
 export const settingsApi = {
