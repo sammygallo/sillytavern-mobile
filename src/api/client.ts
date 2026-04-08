@@ -50,6 +50,25 @@ export async function apiRequest<T>(
   }
 }
 
+/** Like apiRequest but returns the raw response body as a string (for plain-text endpoints). */
+export async function apiRequestText(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<string> {
+  const token = await getCsrfToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': token,
+    ...options.headers,
+  };
+  const response = await fetch(endpoint, { ...options, headers, credentials: 'include' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || error.message || `HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
 export interface UserInfo {
   handle: string;
   name: string;
@@ -648,6 +667,52 @@ interface ChatMessage {
   character_avatar?: string; // For group chats
 }
 
+// Admin user management types
+export interface AdminUserInfo {
+  handle: string;
+  name: string;
+  avatar: string;
+  admin: boolean;
+  role: import('../types').UserRole;
+  enabled: boolean;
+  created?: number;
+  password: boolean;
+}
+
+export const adminApi = {
+  async getUsers(): Promise<AdminUserInfo[]> {
+    return apiRequest('/api/users/get', { method: 'POST' });
+  },
+
+  async setRole(handle: string, role: import('../types').UserRole): Promise<void> {
+    await apiRequest('/api/users/set-role', {
+      method: 'POST',
+      body: JSON.stringify({ handle, role }),
+    });
+  },
+
+  async enableUser(handle: string): Promise<void> {
+    await apiRequest('/api/users/enable', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  },
+
+  async disableUser(handle: string): Promise<void> {
+    await apiRequest('/api/users/disable', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  },
+
+  async deleteUser(handle: string, purge = false): Promise<void> {
+    await apiRequest('/api/users/delete', {
+      method: 'POST',
+      body: JSON.stringify({ handle, purge }),
+    });
+  },
+};
+
 // Invitation types
 export interface Invitation {
   id: string;
@@ -730,6 +795,8 @@ export const PROVIDERS = [
   { id: 'mistralai', name: 'Mistral AI', secretKey: SECRET_KEYS.MISTRAL, models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'] },
   { id: 'groq', name: 'Groq', secretKey: SECRET_KEYS.GROQ, models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
   { id: 'openrouter', name: 'OpenRouter', secretKey: SECRET_KEYS.OPENROUTER, models: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-pro-1.5'] },
+  // Custom / local: no secret key required; URL and model are stored directly in oai_settings.
+  { id: 'custom', name: 'Custom / Local', secretKey: '', models: [] as readonly string[] },
 ] as const;
 
 export const settingsApi = {

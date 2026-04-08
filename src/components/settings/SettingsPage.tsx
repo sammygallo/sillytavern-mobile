@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Key, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -42,6 +42,8 @@ import {
 } from '../../hooks/themePreferences';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
+import { useTranslateStore } from '../../stores/translateStore';
+import { TRANSLATE_PROVIDERS, TRANSLATE_LANGUAGES, type TranslateProvider } from '../../api/translateApi';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -49,6 +51,7 @@ export function SettingsPage() {
     secrets,
     activeProvider,
     activeModel,
+    customUrl,
     isLoading,
     isSaving,
     error,
@@ -59,11 +62,16 @@ export function SettingsPage() {
     deleteApiKey,
     setActiveProvider,
     setActiveModel,
+    setCustomUrl,
     clearMessages,
   } = useSettingsStore();
 
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
+
+  // Custom endpoint fields — kept as local state and only persisted on Save/blur.
+  const [customUrlInput, setCustomUrlInput] = useState('');
+  const [customModelInput, setCustomModelInput] = useState('');
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
 
@@ -84,6 +92,12 @@ export function SettingsPage() {
   const [ttsPitch, setTtsPitchState] = useState<number>(() => getTtsPitch());
   const [ttsAutoReadOn, setTtsAutoReadState] = useState<boolean>(() => getTtsAutoRead());
 
+  // Phase 7.2: Translation settings
+  const translateProvider = useTranslateStore((s) => s.provider);
+  const translateLang = useTranslateStore((s) => s.targetLang);
+  const setTranslateProvider = useTranslateStore((s) => s.setProvider);
+  const setTranslateLang = useTranslateStore((s) => s.setTargetLang);
+
   useEffect(() => {
     fetchSecrets();
     fetchSettings();
@@ -95,6 +109,10 @@ export function SettingsPage() {
       return () => clearTimeout(timer);
     }
   }, [successMessage, error, clearMessages]);
+
+  // Sync local custom-endpoint inputs from store after fetchSettings resolves.
+  useEffect(() => { setCustomUrlInput(customUrl); }, [customUrl]);
+  useEffect(() => { setCustomModelInput(activeModel); }, [activeModel]);
 
   const handleSaveApiKey = async (providerId: string) => {
     const key = apiKeyInputs[providerId];
@@ -121,6 +139,10 @@ export function SettingsPage() {
   };
 
   const currentProvider = PROVIDERS.find((p) => p.id === activeProvider);
+
+  // Custom provider is "configured" when a URL is set, not by API key.
+  const isProviderConfigured = (provider: typeof PROVIDERS[number]) =>
+    provider.id === 'custom' ? !!customUrl : hasApiKey(provider.secretKey);
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
@@ -166,7 +188,7 @@ export function SettingsPage() {
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {PROVIDERS.map((provider) => {
-                  const configured = hasApiKey(provider.secretKey);
+                  const configured = isProviderConfigured(provider);
                   const isActive = activeProvider === provider.id;
 
                   return (
@@ -195,15 +217,76 @@ export function SettingsPage() {
                   );
                 })}
               </div>
-              {!hasApiKey(currentProvider?.secretKey || '') && (
+              {activeProvider !== 'custom' && !hasApiKey(currentProvider?.secretKey || '') && (
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
                   Configure an API key below to use this provider
                 </p>
               )}
+              {activeProvider === 'custom' && !customUrl && (
+                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                  Enter the endpoint URL below to use a local or custom model server
+                </p>
+              )}
             </section>
 
+            {/* Custom Endpoint Configuration */}
+            {activeProvider === 'custom' && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Globe size={16} className="text-[var(--color-text-secondary)]" />
+                  <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Custom Endpoint
+                  </h2>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                    Base URL
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="url"
+                      value={customUrlInput}
+                      onChange={(e) => setCustomUrlInput(e.target.value)}
+                      placeholder="http://localhost:11434/v1"
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => setCustomUrl(customUrlInput.trim())}
+                      disabled={isSaving || !customUrlInput.trim() || customUrlInput.trim() === customUrl}
+                      className="shrink-0"
+                    >
+                      {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                    OpenAI-compatible base URL. Examples: Ollama → <code>http://localhost:11434/v1</code>, LM Studio → <code>http://localhost:1234/v1</code>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                    Model name
+                  </label>
+                  <Input
+                    value={customModelInput}
+                    onChange={(e) => setCustomModelInput(e.target.value)}
+                    onBlur={() => {
+                      if (customModelInput !== activeModel) {
+                        setActiveModel(customModelInput);
+                      }
+                    }}
+                    placeholder="e.g. llama3, mistral, codellama"
+                  />
+                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                    Exact model identifier your endpoint expects. Changes are saved on blur.
+                  </p>
+                </div>
+              </section>
+            )}
+
             {/* Model Selection */}
-            {currentProvider && (
+            {currentProvider && activeProvider !== 'custom' && (
               <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
                   Model
@@ -229,7 +312,7 @@ export function SettingsPage() {
                 API Keys
               </h2>
               <div className="space-y-4">
-                {PROVIDERS.map((provider) => {
+                {PROVIDERS.filter((p) => p.id !== 'custom').map((provider) => {
                   const secretInfo = getSecretInfo(provider.secretKey);
                   const configured = !!secretInfo;
                   const inputValue = apiKeyInputs[provider.id] || '';
@@ -390,6 +473,46 @@ export function SettingsPage() {
                   </h3>
                   <p className="text-xs text-[var(--color-text-secondary)]">
                     Create invite links for new users
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Users (Phase 3.1) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/users')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Users size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Users
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    Manage accounts, roles, and access
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Quick Replies (Phase 10.2) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/quickreplies')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Zap size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">Quick Replies</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    Saved prompt shortcuts
                   </p>
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
@@ -700,6 +823,49 @@ export function SettingsPage() {
                 </div>
               </section>
             )}
+
+            {/* Translation (Phase 7.2) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Languages size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Translation
+                </h2>
+              </div>
+              <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+                Per-message translate button on AI messages. Google and Bing work without extra config.
+              </p>
+
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Provider
+              </label>
+              <select
+                value={translateProvider}
+                onChange={(e) => setTranslateProvider(e.target.value as TranslateProvider)}
+                className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] mb-4"
+              >
+                {TRANSLATE_PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.free ? '' : ' (requires config)'}
+                  </option>
+                ))}
+              </select>
+
+              <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
+                Target Language
+              </label>
+              <select
+                value={translateLang}
+                onChange={(e) => setTranslateLang(e.target.value)}
+                className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              >
+                {TRANSLATE_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </section>
 
             {/* Help Text */}
             <section className="text-center py-4">

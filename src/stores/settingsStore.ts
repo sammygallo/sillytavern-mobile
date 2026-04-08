@@ -5,6 +5,8 @@ interface SettingsState {
   secrets: SecretsResponse;
   activeProvider: string;
   activeModel: string;
+  /** Base URL for the custom OpenAI-compatible endpoint (e.g. http://localhost:11434/v1). */
+  customUrl: string;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -17,6 +19,7 @@ interface SettingsState {
   deleteApiKey: (secretKey: string) => Promise<void>;
   setActiveProvider: (provider: string) => Promise<void>;
   setActiveModel: (model: string) => Promise<void>;
+  setCustomUrl: (url: string) => Promise<void>;
   clearMessages: () => void;
 }
 
@@ -24,6 +27,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   secrets: {},
   activeProvider: 'openai',
   activeModel: 'gpt-4o',
+  customUrl: '',
   isLoading: false,
   isSaving: false,
   error: null,
@@ -71,13 +75,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         model = (oaiSettings.claude_model as string) || 'claude-3-5-sonnet-20241022';
       } else if (chatCompletionSource === 'makersuite') {
         model = (oaiSettings.google_model as string) || 'gemini-1.5-pro';
+      } else if (chatCompletionSource === 'custom') {
+        model = (oaiSettings.custom_model as string) || '';
       }
+
+      const customUrl = (oaiSettings.custom_url as string) || '';
 
       console.log('[Settings] Loaded provider:', chatCompletionSource, 'model:', model);
 
       set({
         activeProvider: chatCompletionSource,
         activeModel: model,
+        customUrl,
         isLoading: false,
       });
     } catch (error) {
@@ -149,7 +158,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ isSaving: true, error: null });
     try {
       const providerInfo = PROVIDERS.find((p) => p.id === provider);
-      const defaultModel = providerInfo?.models[0] || 'gpt-4o';
+      // For custom, there's no preset model list — preserve whatever is in custom_model.
+      const defaultModel = provider === 'custom' ? get().activeModel : (providerInfo?.models[0] || 'gpt-4o');
 
       // Get current settings first to merge properly
       const response = await settingsApi.getSettings();
@@ -174,6 +184,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       } else if (provider === 'makersuite') {
         oaiSettings.google_model = defaultModel;
       }
+      // 'custom': custom_url / custom_model are managed by setCustomUrl / setActiveModel separately.
 
       settings.oai_settings = oaiSettings;
 
@@ -219,6 +230,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         oaiSettings.claude_model = model;
       } else if (activeProvider === 'makersuite') {
         oaiSettings.google_model = model;
+      } else if (activeProvider === 'custom') {
+        oaiSettings.custom_model = model;
       }
 
       settings.oai_settings = oaiSettings;
@@ -230,6 +243,31 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({
         isSaving: false,
         error: error instanceof Error ? error.message : 'Failed to save model',
+      });
+    }
+  },
+
+  setCustomUrl: async (url: string) => {
+    set({ isSaving: true, error: null });
+    try {
+      const response = await settingsApi.getSettings();
+      let settings: Record<string, unknown> = {};
+      if (typeof response.settings === 'string') {
+        try {
+          settings = JSON.parse(response.settings);
+        } catch {
+          settings = {};
+        }
+      }
+      const oaiSettings = (settings.oai_settings as Record<string, unknown>) || {};
+      oaiSettings.custom_url = url;
+      settings.oai_settings = oaiSettings;
+      await settingsApi.saveSettings(settings);
+      set({ customUrl: url, isSaving: false, successMessage: 'Endpoint URL saved' });
+    } catch (error) {
+      set({
+        isSaving: false,
+        error: error instanceof Error ? error.message : 'Failed to save endpoint URL',
       });
     }
   },

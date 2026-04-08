@@ -380,6 +380,16 @@ interface ChatState {
   deleteChat: (avatarUrl: string, fileName: string) => Promise<void>;
   renameChat: (avatarUrl: string, fileName: string, newName: string) => Promise<void>;
   importChat: (avatarUrl: string, characterName: string, file: File) => Promise<void>;
+  /** Phase 7.1: append a generated image as a standalone chat message and
+   *  persist it to the backend. `speakerName`/`speakerAvatar` identify who
+   *  "sent" it (usually the current character). */
+  insertImageMessage: (
+    dataUrl: string,
+    prompt: string,
+    speakerName: string,
+    speakerAvatar?: string,
+    character?: CharacterInfo
+  ) => Promise<void>;
 }
 
 let messageIdCounter = 0;
@@ -1959,6 +1969,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await fetchChatFiles(avatarUrl);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to import chat' });
+    }
+  },
+
+  // ---- Phase 7.1: Insert Generated Image as Chat Message ----
+  insertImageMessage: async (
+    dataUrl: string,
+    _prompt: string,
+    speakerName: string,
+    speakerAvatar?: string,
+    character?: CharacterInfo
+  ) => {
+    const msg = createMessage({
+      name: speakerName,
+      isUser: false,
+      isSystem: false,
+      content: '',
+      timestamp: Date.now(),
+      images: [dataUrl],
+      characterAvatar: speakerAvatar,
+    });
+    set((state) => ({ messages: [...state.messages, msg] }));
+
+    const { currentChatFile } = get();
+    if (currentChatFile && character) {
+      await saveChatToBackend(get().messages, character, currentChatFile);
     }
   },
 

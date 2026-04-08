@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { MoreHorizontal, Check, X, Volume2, Square } from 'lucide-react';
+import { MoreHorizontal, Check, X, Volume2, Square, Globe } from 'lucide-react';
 import { Avatar } from '../ui';
 import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
@@ -8,6 +8,7 @@ import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences';
 import { useRegexScriptStore } from '../../stores/regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
+import { useTranslateStore } from '../../stores/translateStore';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -160,6 +161,14 @@ export function ChatMessage({
   const { isSupported: ttsSupported, isSpeaking, speak, stop } = useSpeechSynthesis();
   const showTtsButton = ttsSupported && !isUser && !isSystem && content.length > 0;
 
+  // Phase 7.2: Translation
+  const showTranslateButton = !isUser && !isSystem && content.length > 0;
+  const translatedText = useTranslateStore((s) => s.cache.get(messageId));
+  const isTranslating = useTranslateStore((s) => s.pending.has(messageId));
+  const showTranslation = useTranslateStore((s) => s.visible.has(messageId));
+  const targetLang = useTranslateStore((s) => s.targetLang);
+  const toggleTranslation = useTranslateStore((s) => s.toggleTranslation);
+
   useEffect(() => {
     if (isEditing && textareaRef.current) {
       textareaRef.current.focus();
@@ -284,6 +293,37 @@ export function ChatMessage({
         >
           {isSpeaking ? <Square size={14} /> : <Volume2 size={14} />}
         </button>
+      )}
+      {showTranslateButton && (
+        <button
+          onClick={() => toggleTranslation(messageId, content)}
+          className={`p-1.5 rounded-lg transition-all ${
+            showTranslation
+              ? 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 opacity-100'
+              : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100'
+          }`}
+          aria-label={showTranslation ? 'Hide translation' : 'Translate'}
+          title={showTranslation ? 'Hide translation' : 'Translate'}
+        >
+          <Globe size={14} />
+        </button>
+      )}
+    </div>
+  ) : null;
+
+  const translationPanel = showTranslation && !isEditing ? (
+    <div className="mt-2 pt-2 border-t border-[var(--color-border)]/30">
+      <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-secondary)] mb-0.5 select-none">
+        Translated · {targetLang}
+      </p>
+      {isTranslating ? (
+        <p className="text-sm italic text-[var(--color-text-secondary)] animate-pulse">
+          Translating…
+        </p>
+      ) : (
+        <p className="text-sm italic text-[var(--color-text-secondary)] break-words whitespace-pre-wrap">
+          {translatedText}
+        </p>
       )}
     </div>
   ) : null;
@@ -442,6 +482,7 @@ export function ChatMessage({
               {imageGrid}
               {editingUI}
               {messageContent}
+              {translationPanel}
             </div>
           </div>
 
@@ -485,6 +526,7 @@ export function ChatMessage({
             </div>
           ) : messageContent}
         </div>
+        {translationPanel}
 
         {swipeControl}
       </div>
@@ -520,6 +562,7 @@ export function ChatMessage({
               {messageContent}
             </div>
           ) : null}
+          {translationPanel}
         </div>
 
         {actionButtons}
