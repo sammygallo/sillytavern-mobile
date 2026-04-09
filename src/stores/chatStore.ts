@@ -380,6 +380,15 @@ interface ChatState {
   continueMessage: (character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   impersonate: (character: CharacterInfo, availableEmotions?: string[]) => Promise<string>;
   deleteChat: (avatarUrl: string, fileName: string) => Promise<void>;
+  renameChat: (avatarUrl: string, originalFile: string, renamedFile: string) => Promise<void>;
+  importChat: (avatarUrl: string, characterName: string, file: File) => Promise<void>;
+  insertImageMessage: (
+    dataUrl: string,
+    prompt: string,
+    characterName: string,
+    characterAvatar: string,
+    character: CharacterInfo
+  ) => Promise<void>;
 }
 
 let messageIdCounter = 0;
@@ -1939,6 +1948,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete chat' });
     }
+  },
+
+  // ---- Rename Chat File ----
+  renameChat: async (avatarUrl: string, originalFile: string, renamedFile: string) => {
+    try {
+      await api.renameChat(avatarUrl, originalFile, renamedFile);
+      const { fetchChatFiles } = get();
+      await fetchChatFiles(avatarUrl);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to rename chat' });
+    }
+  },
+
+  // ---- Import Chat File ----
+  importChat: async (avatarUrl: string, characterName: string, file: File) => {
+    try {
+      await api.importChat(avatarUrl, characterName, file);
+      const { fetchChatFiles } = get();
+      await fetchChatFiles(avatarUrl);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to import chat' });
+    }
+  },
+
+  // ---- Insert Image Message (image gen result inline) ----
+  insertImageMessage: async (
+    dataUrl: string,
+    prompt: string,
+    characterName: string,
+    characterAvatar: string,
+    character: CharacterInfo
+  ) => {
+    const { addMessage, currentChatFile } = get();
+    addMessage({
+      name: characterName,
+      isUser: false,
+      isSystem: false,
+      content: prompt ? `*${prompt}*` : '',
+      timestamp: Date.now(),
+      characterAvatar,
+      images: [dataUrl],
+    });
+    // Persist to backend (non-fatal if it fails)
+    await saveChatToBackend(get().messages, character, currentChatFile);
   },
 
   // ---- Send Message (updated with abort support) ----

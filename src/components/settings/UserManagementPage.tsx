@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { adminApi, type AdminUserInfo } from '../../api/client';
 import { useAuthStore } from '../../stores/authStore';
 import { Avatar, Button } from '../ui';
-import { hasMinRole } from '../../utils/permissions';
 import type { UserRole } from '../../types';
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
