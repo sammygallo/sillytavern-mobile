@@ -237,10 +237,9 @@ Features are grouped into **phases** ordered by user impact and dependency. Each
 - **ST Feature:** Configurable single-click responses, automation triggers, STscript integration.
 - **Work:** Quick reply preset system. Button bar above chat input. Support text macros in quick replies. Auto-execute triggers (on AI message, on chat load).
 
-### 8.4 Connection Profiles
-- **Gap:** Single active provider/model. No saved configurations.
-- **ST Feature:** Save/switch between complete API configurations.
-- **Work:** Profile store. Save current config as profile. Switch profiles from dropdown. Profile includes: provider, model, API key reference, sampler settings.
+### 8.4 Connection Profiles ✅
+- `src/stores/connectionProfileStore.ts`: localStorage-backed profile store (`stm:connection-profiles`). Each profile captures provider, model, optional customUrl, and full sampler params. CRUD: save current config, delete, rename.
+- Settings → Connection Profiles section: saved profiles listed with one-tap apply (writes to settingsStore + generationStore simultaneously), inline rename, delete. Name input + Save button to snapshot current config.
 
 ### 8.5 Data Bank / RAG
 - **Gap:** No RAG/vector storage.
