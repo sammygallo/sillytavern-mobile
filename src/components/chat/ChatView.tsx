@@ -606,10 +606,10 @@ export function ChatView() {
       {/* Group Chat Header (always visible when in group mode) */}
       {isGroupChatMode ? (
         <>
-          <div className="h-20 relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden px-4 py-3">
+          <div className={`h-20 relative overflow-hidden px-4 py-3 ${isVnMode ? 'bg-black/30 backdrop-blur-sm' : 'bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)]'}`}>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
-                <Users size={24} className="text-[var(--color-primary)]" />
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isVnMode ? 'bg-white/10' : 'bg-[var(--color-primary)]/20'}`}>
+                <Users size={24} className={isVnMode ? 'text-white/80' : 'text-[var(--color-primary)]'} />
               </div>
               <div className="flex-1 min-w-0">
                 {isEditingTitle ? (
@@ -628,7 +628,7 @@ export function ChatView() {
                       }
                     }}
                     placeholder={membersLabel}
-                    className="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] border-b border-[var(--color-primary)] focus:outline-none"
+                    className={`w-full bg-transparent text-lg font-semibold border-b focus:outline-none ${isVnMode ? 'text-white border-white/50' : 'text-[var(--color-text-primary)] border-[var(--color-primary)]'}`}
                     autoFocus
                     aria-label="Edit group chat title"
                   />
@@ -642,22 +642,22 @@ export function ChatView() {
                     className="flex items-center gap-1.5 group max-w-full"
                     title="Edit title"
                   >
-                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
+                    <h2 className={`text-lg font-semibold truncate ${isVnMode ? 'text-white drop-shadow-lg' : 'text-[var(--color-text-primary)]'}`}>
                       {groupTitle || 'Group Chat'}
                     </h2>
                     <Pencil
                       size={12}
-                      className="text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity"
+                      className={`opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity ${isVnMode ? 'text-white/70' : 'text-[var(--color-text-secondary)]'}`}
                     />
                   </button>
                 )}
-                <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                <p className={`text-xs truncate ${isVnMode ? 'text-white/60' : 'text-[var(--color-text-secondary)]'}`}>
                   {membersLabel}
                 </p>
               </div>
               <button
                 onClick={openSearch}
-                className="p-1.5 rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                className={`p-1.5 rounded-full transition-colors ${isVnMode ? 'text-white/80 hover:bg-white/10' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'}`}
                 aria-label="Search messages"
                 title="Search messages"
               >
@@ -668,7 +668,9 @@ export function ChatView() {
                 className={`p-1.5 rounded-full transition-colors ${
                   showGroupControls
                     ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                    : isVnMode
+                      ? 'text-white/80 hover:bg-white/10'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
                 }`}
                 aria-label="Group chat settings"
                 aria-expanded={showGroupControls}
@@ -680,7 +682,7 @@ export function ChatView() {
                 <>
                   <button
                     onClick={() => bgInputRef.current?.click()}
-                    className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                    className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
                     title="Set VN background image"
                   >
                     Set BG
@@ -688,7 +690,7 @@ export function ChatView() {
                   {vnBg && (
                     <button
                       onClick={handleClearBg}
-                      className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                      className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
                       title="Clear background"
                     >
                       ✕ BG
@@ -698,7 +700,7 @@ export function ChatView() {
               )}
               <button
                 onClick={exitGroupChat}
-                className="text-xs px-3 py-1.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]"
+                className={`text-xs px-3 py-1.5 rounded-full transition-colors ${isVnMode ? 'bg-black/30 text-white/70 hover:bg-black/50' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]'}`}
               >
                 Exit
               </button>
