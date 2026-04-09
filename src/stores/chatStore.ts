@@ -920,15 +920,21 @@ function buildGroupConversationContext(
       currentCharacter.scenario || currentCharacter.data?.scenario || '';
   }
 
+  // Include the current speaker's example dialogue if available — mirrors what
+  // buildConversationContext does for solo chat. This gives the model concrete
+  // examples of how to format RP-style responses (asterisk actions, etc.).
+  const mesExample = getCharacterField(currentCharacter, 'mes_example');
+
   const systemPrompt = `This is a group chat with multiple characters. You are playing ${currentCharacter.name}.
 
 Characters in this conversation:
 ${characterDescriptions}
 
-${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}
-IMPORTANT:
+${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}${mesExample ? `Example dialogue for ${currentCharacter.name}:\n${mesExample}\n\n` : ''}IMPORTANT:
 - Stay in character as ${currentCharacter.name}
 - React naturally to what other characters and the user say
+- Use *asterisks* around action and narration text (e.g. *He glances toward the door*)
+- Use regular text or "quotes" for spoken dialogue
 - Begin your response with an emotion tag: [emotion:TAG]
 - Available emotions: neutral, joy, sadness, anger, surprise, fear, love, excitement, confusion, embarrassment, curiosity, amusement
 - You may interact with or respond to other characters, not just the user`;
