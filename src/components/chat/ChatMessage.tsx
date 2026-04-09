@@ -86,14 +86,15 @@ export function ChatMessage({
   const [showEditOptions, setShowEditOptions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Phase 8.2: apply display-only regex scripts for rendering
+  // Phase 8.2: apply regex scripts for rendering.
+  // Display-only scripts are always applied at render time.
+  // Permanent scripts are also applied at render time so that streaming
+  // content looks the same as finalized content (avoids a flash where
+  // formatting appears during streaming then disappears on completion).
   const regexScripts = useRegexScriptStore((s) => s.scripts);
   const displayContent = useMemo(() => {
-    const scripts = getActiveScripts(
-      regexScripts,
-      characterAvatar,
-      isUser ? 'user_input' : 'ai_output'
-    ).filter((s) => s.displayOnly);
+    const scope = isUser ? 'user_input' : 'ai_output';
+    const scripts = getActiveScripts(regexScripts, characterAvatar, scope);
     return scripts.length > 0 ? applyRegexScripts(content, scripts) : content;
   }, [content, regexScripts, characterAvatar, isUser]);
 
