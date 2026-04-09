@@ -3,6 +3,7 @@ import { MoreHorizontal, Check, X, Volume2, Square, Globe } from 'lucide-react';
 import { Avatar } from '../ui';
 import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
+import { stripEmotionTag } from '../../utils/emotions';
 import { MarkdownContent } from './MarkdownContent';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences';
@@ -44,74 +45,12 @@ interface ChatMessageProps {
   onEditAndRegenerate?: (newContent: string) => void;
   onDelete?: () => void;
   onRegenerate?: () => void;
+  /** Phase 8.6: create a checkpoint at this message. */
+  onCheckpoint?: () => void;
   /** Increment this to programmatically trigger edit mode (e.g. up-arrow shortcut). */
   triggerEditNonce?: number;
 }
 
-interface TextSegment {
-  type: 'dialogue' | 'action' | 'thought';
-  content: string;
-}
-
-function parseMessageContent(text: string): TextSegment[] {
-  const segments: TextSegment[] = [];
-  const regex = /(\*[^*]+\*|_[^_]+_|\{\{[^}]+\}\})/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      const dialogueText = text.slice(lastIndex, match.index);
-      if (dialogueText) segments.push({ type: 'dialogue', content: dialogueText });
-    }
-    const matchedText = match[0];
-    if (matchedText.startsWith('{{') && matchedText.endsWith('}}')) {
-      segments.push({ type: 'thought', content: matchedText.slice(2, -2) });
-    } else {
-      segments.push({ type: 'action', content: matchedText.slice(1, -1) });
-    }
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ type: 'dialogue', content: text.slice(lastIndex) });
-  }
-  if (segments.length === 0) {
-    segments.push({ type: 'dialogue', content: text });
-  }
-  return segments;
-}
-
-function FormattedContent({ content, isUser }: { content: string; isUser: boolean }) {
-  const segments = useMemo(() => parseMessageContent(content), [content]);
-  return (
-    <>
-      {segments.map((segment, index) => {
-        if (segment.type === 'action') {
-          return (
-            <span
-              key={index}
-              className={`italic ${isUser ? 'text-white/70' : 'text-amber-400/90'}`}
-            >
-              {segment.content}
-            </span>
-          );
-        }
-        if (segment.type === 'thought') {
-          return (
-            <span
-              key={index}
-              className={`italic ${isUser ? 'text-white/60' : 'text-purple-400/80'}`}
-            >
-              {segment.content}
-            </span>
-          );
-        }
-        return <span key={index}>{segment.content}</span>;
-      })}
-    </>
-  );
-}
 
 export function ChatMessage({
   messageId,
@@ -139,6 +78,7 @@ export function ChatMessage({
   onEditAndRegenerate,
   onDelete,
   onRegenerate,
+  onCheckpoint,
   triggerEditNonce,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -147,16 +87,26 @@ export function ChatMessage({
   const [showEditOptions, setShowEditOptions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Phase 8.2: apply display-only regex scripts for rendering
+  // Phase 8.2: apply display-only regex scripts for rendering.
+  // Only display-only scripts run at render time; permanent scripts run at
+  // finalization in the store so stored content already reflects them.
+  // For AI messages, also strip emotion tags and [Name]: prefixes that the
+  // model echoes from group-chat history formatting.
   const regexScripts = useRegexScriptStore((s) => s.scripts);
   const displayContent = useMemo(() => {
-    const scripts = getActiveScripts(
-      regexScripts,
-      characterAvatar,
-      isUser ? 'user_input' : 'ai_output'
-    ).filter((s) => s.displayOnly);
-    return scripts.length > 0 ? applyRegexScripts(content, scripts) : content;
-  }, [content, regexScripts, characterAvatar, isUser]);
+    const scope = isUser ? 'user_input' : 'ai_output';
+    let text = content;
+    if (!isUser) {
+      text = stripEmotionTag(text)
+        .replace(new RegExp(`^\\[${name}\\]:\\s*`, 'i'), '')
+        .trim();
+      // Truncate at first [OtherCharacter]: mid-response marker
+      const otherTurn = text.match(/\n\[[^\]]+\]:\s*/);
+      if (otherTurn?.index !== undefined) text = text.slice(0, otherTurn.index).trim();
+    }
+    const scripts = getActiveScripts(regexScripts, characterAvatar, scope).filter(s => s.displayOnly);
+    return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
+  }, [content, name, regexScripts, characterAvatar, isUser]);
 
   // Phase 7.1: Extension gates
   const ttsEnabled = useExtensionStore((s) => s.enabled.tts);
@@ -283,6 +233,7 @@ export function ChatMessage({
         onDelete={() => onDelete?.()}
         onRegenerate={onRegenerate}
         showRegenerate={!isUser && !!onRegenerate}
+        onCheckpoint={onCheckpoint}
         anchorRight={layoutMode === 'bubbles' && isUser}
       />
       {showTtsButton && (
@@ -432,15 +383,9 @@ export function ChatMessage({
   ) : null;
 
   const messageContent = !isEditing && content.length > 0 ? (
-    isUser ? (
-      <div className="whitespace-pre-wrap break-words" style={fontStyle}>
-        <FormattedContent content={content} isUser={isUser} />
-      </div>
-    ) : (
-      <div className="break-words" style={fontStyle}>
-        <MarkdownContent content={displayContent} isUser={false} isStreaming={isStreamingMsg} />
-      </div>
-    )
+    <div className={`break-words${isUser ? ' whitespace-pre-wrap' : ''}`} style={fontStyle}>
+      <MarkdownContent content={isUser ? content : displayContent} isUser={isUser} isStreaming={isStreamingMsg} />
+    </div>
   ) : null;
 
   const swipeControl = showSwipeControl && !isEditing && swipes && swipeId !== undefined && onSwipeLeft && onSwipeRight && swipes.length >= 1 ? (

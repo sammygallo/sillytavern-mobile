@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState, useCallback, type CSSProperties } from 'react';
-import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X, Check } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
@@ -8,6 +8,8 @@ import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
 import { SummaryPanel } from './SummaryPanel';
+import { BranchPanel } from './BranchPanel';
+import { useBranchStore } from '../../stores/branchStore';
 import { TypingIndicator } from './TypingIndicator';
 import { ImageGenModal } from './ImageGenModal';
 import { QuickReplyBar } from './QuickReplyBar';
@@ -112,6 +114,13 @@ export function ChatView() {
   const [costumeInputVisible, setCostumeInputVisible] = useState(false);
   const [costumeDraft, setCostumeDraft] = useState('');
   const bgInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 8.6: checkpoint creation dialog
+  const [checkpointMessageId, setCheckpointMessageId] = useState<string | null>(null);
+  const [checkpointName, setCheckpointName] = useState('');
+  const checkpointInputRef = useRef<HTMLInputElement>(null);
+  const createBranch = useBranchStore((s) => s.createBranch);
+  const loadBranchesForChat = useBranchStore((s) => s.loadBranchesForChat);
 
   // Phase 9.1: in-chat message search
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -287,6 +296,11 @@ export function ChatView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatFiles]);
 
+  // Phase 8.6: reload branches whenever the active chat file changes.
+  useEffect(() => {
+    if (currentChatFile) loadBranchesForChat(currentChatFile);
+  }, [currentChatFile, loadBranchesForChat]);
+
   // Track scroll position to decide whether auto-scroll should fire.
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -452,6 +466,25 @@ export function ChatView() {
     }
   };
 
+  // Phase 8.6: open the checkpoint naming dialog for a given message.
+  const handleCheckpoint = useCallback((messageId: string) => {
+    setCheckpointMessageId(messageId);
+    setCheckpointName('');
+    // Focus input after render
+    setTimeout(() => checkpointInputRef.current?.focus(), 60);
+  }, []);
+
+  const commitCheckpoint = useCallback(() => {
+    if (!checkpointMessageId || !currentChatFile) return;
+    createBranch({
+      chatFile: currentChatFile,
+      messageId: checkpointMessageId,
+      name: checkpointName,
+      messages,
+    });
+    setCheckpointMessageId(null);
+  }, [checkpointMessageId, currentChatFile, checkpointName, messages, createBranch]);
+
   const handleImpersonate = async () => {
     if (!selectedCharacter || isGroupChatMode) return;
     const text = await impersonate(selectedCharacter, availableEmotions);
@@ -568,15 +601,17 @@ export function ChatView() {
         );
       })}
 
-      {/* All chat content — raised to z-[2] so it sits above VN layers */}
-      <div className={`flex flex-col flex-1 min-h-0 ${isVnMode ? 'relative' : ''}`} style={isVnMode ? { zIndex: 2 } : undefined}>
+      {/* All chat content — raised above VN sprite layers.
+          Single-char sprite = z-1; group sprites = z-(2..4) for up to 3 speakers,
+          so content needs to sit at z-10 to always be on top regardless of group size. */}
+      <div className={`flex flex-col flex-1 min-h-0 ${isVnMode ? 'relative' : ''}`} style={isVnMode ? { zIndex: 10 } : undefined}>
       {/* Group Chat Header (always visible when in group mode) */}
       {isGroupChatMode ? (
         <>
-          <div className="h-20 relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden px-4 py-3">
+          <div className={`h-20 relative overflow-hidden px-4 py-3 ${isVnMode ? 'bg-black/30 backdrop-blur-sm' : 'bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)]'}`}>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center">
-                <Users size={24} className="text-[var(--color-primary)]" />
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isVnMode ? 'bg-white/10' : 'bg-[var(--color-primary)]/20'}`}>
+                <Users size={24} className={isVnMode ? 'text-white/80' : 'text-[var(--color-primary)]'} />
               </div>
               <div className="flex-1 min-w-0">
                 {isEditingTitle ? (
@@ -595,7 +630,7 @@ export function ChatView() {
                       }
                     }}
                     placeholder={membersLabel}
-                    className="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] border-b border-[var(--color-primary)] focus:outline-none"
+                    className={`w-full bg-transparent text-lg font-semibold border-b focus:outline-none ${isVnMode ? 'text-white border-white/50' : 'text-[var(--color-text-primary)] border-[var(--color-primary)]'}`}
                     autoFocus
                     aria-label="Edit group chat title"
                   />
@@ -609,22 +644,22 @@ export function ChatView() {
                     className="flex items-center gap-1.5 group max-w-full"
                     title="Edit title"
                   >
-                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">
+                    <h2 className={`text-lg font-semibold truncate ${isVnMode ? 'text-white drop-shadow-lg' : 'text-[var(--color-text-primary)]'}`}>
                       {groupTitle || 'Group Chat'}
                     </h2>
                     <Pencil
                       size={12}
-                      className="text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity"
+                      className={`opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity ${isVnMode ? 'text-white/70' : 'text-[var(--color-text-secondary)]'}`}
                     />
                   </button>
                 )}
-                <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                <p className={`text-xs truncate ${isVnMode ? 'text-white/60' : 'text-[var(--color-text-secondary)]'}`}>
                   {membersLabel}
                 </p>
               </div>
               <button
                 onClick={openSearch}
-                className="p-1.5 rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                className={`p-1.5 rounded-full transition-colors ${isVnMode ? 'text-white/80 hover:bg-white/10' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'}`}
                 aria-label="Search messages"
                 title="Search messages"
               >
@@ -635,7 +670,9 @@ export function ChatView() {
                 className={`p-1.5 rounded-full transition-colors ${
                   showGroupControls
                     ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]'
-                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                    : isVnMode
+                      ? 'text-white/80 hover:bg-white/10'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
                 }`}
                 aria-label="Group chat settings"
                 aria-expanded={showGroupControls}
@@ -647,7 +684,7 @@ export function ChatView() {
                 <>
                   <button
                     onClick={() => bgInputRef.current?.click()}
-                    className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                    className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
                     title="Set VN background image"
                   >
                     Set BG
@@ -655,7 +692,7 @@ export function ChatView() {
                   {vnBg && (
                     <button
                       onClick={handleClearBg}
-                      className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                      className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
                       title="Clear background"
                     >
                       ✕ BG
@@ -665,7 +702,7 @@ export function ChatView() {
               )}
               <button
                 onClick={exitGroupChat}
-                className="text-xs px-3 py-1.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]"
+                className={`text-xs px-3 py-1.5 rounded-full transition-colors ${isVnMode ? 'bg-black/30 text-white/70 hover:bg-black/50' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]'}`}
               >
                 Exit
               </button>
@@ -1060,6 +1097,7 @@ export function ChatView() {
                     onRegenerate={
                       isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
                     }
+                    onCheckpoint={currentChatFile ? () => handleCheckpoint(message.id) : undefined}
                     triggerEditNonce={message.id === lastUserMessageId ? editLastNonce : undefined}
                   />
                 </div>
@@ -1113,6 +1151,44 @@ export function ChatView() {
       {/* Phase 7.5: Summary panel — shown when summarize extension is enabled */}
       {summarizeEnabled && currentChatFile && selectedCharacter && (
         <SummaryPanel chatFile={currentChatFile} characterName={selectedCharacter.name} />
+      )}
+
+      {/* Phase 8.6: Branch panel — always shown when a chat file is open */}
+      {currentChatFile && <BranchPanel chatFile={currentChatFile} />}
+
+      {/* Phase 8.6: Checkpoint naming dialog — slides in above the input */}
+      {checkpointMessageId && (
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 flex items-center gap-2">
+          <span className="text-sm text-[var(--color-text-secondary)] whitespace-nowrap">
+            Checkpoint name:
+          </span>
+          <input
+            ref={checkpointInputRef}
+            type="text"
+            value={checkpointName}
+            onChange={(e) => setCheckpointName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitCheckpoint();
+              else if (e.key === 'Escape') setCheckpointMessageId(null);
+            }}
+            placeholder="e.g. Before the battle"
+            className="flex-1 min-w-0 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-primary)]"
+          />
+          <button
+            onClick={commitCheckpoint}
+            className="p-1.5 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary)]/90 transition-colors"
+            title="Save checkpoint"
+          >
+            <Check size={16} />
+          </button>
+          <button
+            onClick={() => setCheckpointMessageId(null)}
+            className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+            title="Cancel"
+          >
+            <X size={16} />
+          </button>
+        </div>
       )}
 
       {/* Phase 10.2: Quick Reply Bar */}

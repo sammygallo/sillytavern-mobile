@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Database, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -46,6 +46,8 @@ import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import { useTranslateStore } from '../../stores/translateStore';
 import { TRANSLATE_PROVIDERS, TRANSLATE_LANGUAGES, type TranslateProvider } from '../../api/translateApi';
+import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
+import { useGenerationStore } from '../../stores/generationStore';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -70,6 +72,14 @@ export function SettingsPage() {
 
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
+
+  // Phase 8.4: Connection profiles
+  const { profiles, activeProfileId, saveProfile, deleteProfile, renameProfile, setActiveProfileId } = useConnectionProfileStore();
+  const generationSampler = useGenerationStore((s) => s.sampler);
+  const loadGenerationPreset = useGenerationStore((s) => s.setSampler);
+  const [profileNameInput, setProfileNameInput] = useState('');
+  const [renamingProfileId, setRenamingProfileId] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState('');
 
   // Custom endpoint fields — kept as local state and only persisted on Save/blur.
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -310,6 +320,115 @@ export function SettingsPage() {
               </section>
             )}
 
+            {/* Phase 8.4: Connection Profiles */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Plug size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Connection Profiles
+                </h2>
+              </div>
+              <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+                Save the current provider, model, and sampler settings as a named profile to switch between quickly.
+              </p>
+
+              {/* Saved profiles list */}
+              {profiles.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {profiles.map((profile) => (
+                    <div
+                      key={profile.id}
+                      className={`flex items-center gap-2 p-2.5 rounded-lg border transition-colors ${
+                        activeProfileId === profile.id
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
+                          : 'border-[var(--color-border)] bg-[var(--color-bg-tertiary)]'
+                      }`}
+                    >
+                      {renamingProfileId === profile.id ? (
+                        <input
+                          type="text"
+                          value={renameInput}
+                          onChange={(e) => setRenameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { renameProfile(profile.id, renameInput); setRenamingProfileId(null); }
+                            else if (e.key === 'Escape') setRenamingProfileId(null);
+                          }}
+                          onBlur={() => { renameProfile(profile.id, renameInput); setRenamingProfileId(null); }}
+                          className="flex-1 min-w-0 bg-transparent text-sm text-[var(--color-text-primary)] border-b border-[var(--color-primary)] focus:outline-none"
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => {
+                            const p = profile;
+                            setActiveProfileId(p.id);
+                            // Apply provider + model
+                            setActiveProvider(p.provider);
+                            setActiveModel(p.model);
+                            if (p.provider === 'custom' && p.customUrl) setCustomUrl(p.customUrl);
+                            // Apply sampler
+                            loadGenerationPreset(p.sampler);
+                          }}
+                        >
+                          <span className="text-sm font-medium text-[var(--color-text-primary)] truncate block">
+                            {profile.name}
+                          </span>
+                          <span className="text-[10px] text-[var(--color-text-secondary)]">
+                            {profile.provider} · {profile.model || 'custom'}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setRenamingProfileId(profile.id); setRenameInput(profile.name); }}
+                        className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex-shrink-0"
+                        title="Rename"
+                        aria-label="Rename profile"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button
+                        onClick={() => { deleteProfile(profile.id); if (activeProfileId === profile.id) setActiveProfileId(null); }}
+                        className="p-1 text-[var(--color-text-secondary)] hover:text-red-400 transition-colors flex-shrink-0"
+                        title="Delete profile"
+                        aria-label="Delete profile"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Save current config as new profile */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profileNameInput}
+                  onChange={(e) => setProfileNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && profileNameInput.trim()) {
+                      saveProfile(profileNameInput, activeProvider, activeModel, customUrl, generationSampler);
+                      setProfileNameInput('');
+                    }
+                  }}
+                  placeholder="Profile name…"
+                  className="flex-1 min-w-0 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+                <button
+                  onClick={() => {
+                    if (!profileNameInput.trim()) return;
+                    saveProfile(profileNameInput, activeProvider, activeModel, customUrl, generationSampler);
+                    setProfileNameInput('');
+                  }}
+                  disabled={!profileNameInput.trim()}
+                  className="px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:bg-[var(--color-primary-hover)] disabled:opacity-40 transition-colors whitespace-nowrap"
+                >
+                  Save
+                </button>
+              </div>
+            </section>
+
             {/* API Keys Configuration */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
               <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
@@ -536,6 +655,25 @@ export function SettingsPage() {
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">Extensions</p>
                   <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
                     TTS, image gen, translation, summarization
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Data Bank (Phase 8.5) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/databank')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Database size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">Data Bank</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    RAG — upload documents and inject relevant chunks into context
                   </p>
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
