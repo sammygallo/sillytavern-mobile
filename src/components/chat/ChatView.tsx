@@ -601,8 +601,10 @@ export function ChatView() {
         );
       })}
 
-      {/* All chat content — raised to z-[2] so it sits above VN layers */}
-      <div className={`flex flex-col flex-1 min-h-0 ${isVnMode ? 'relative' : ''}`} style={isVnMode ? { zIndex: 2 } : undefined}>
+      {/* All chat content — raised above VN sprite layers.
+          Single-char sprite = z-1; group sprites = z-(2..4) for up to 3 speakers,
+          so content needs to sit at z-10 to always be on top regardless of group size. */}
+      <div className={`flex flex-col flex-1 min-h-0 ${isVnMode ? 'relative' : ''}`} style={isVnMode ? { zIndex: 10 } : undefined}>
       {/* Group Chat Header (always visible when in group mode) */}
       {isGroupChatMode ? (
         <>
