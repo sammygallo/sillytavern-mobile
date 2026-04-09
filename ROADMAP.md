@@ -181,10 +181,11 @@ Features are grouped into **phases** ordered by user impact and dependency. Each
 - **ST Feature:** Full visual novel mode with central sprite display, backgrounds, multi-character layout.
 - **Work:** VN mode toggle. Full-screen sprite display behind chat. Background image support. Multi-character sprite positioning in group chats. Sprite costume system (`/costume` command equivalent).
 
-### 6.5 Message Formatting & Markdown
-- **Gap:** Basic `*action*` and `{{thought}}` formatting.
-- **ST Feature:** Full Markdown/HTML rendering, bold/italic/underline/strikethrough/code, quote blocks, inline images/embeds.
-- **Work:** Add Markdown renderer (react-markdown or similar). Support bold, italic, underline, strikethrough, code blocks, blockquotes. Preserve existing action/thought formatting.
+### 6.5 Message Formatting & Markdown ✅
+- `src/components/chat/MarkdownContent.tsx`: `marked` (GFM + breaks) → DOMPurify → dangerouslySetInnerHTML pipeline. `highlight.js/lib/common` for fenced code syntax highlighting with copy button. RP segment parser shelters `*action*` / `{{thought}}` from the markdown pass so they render as italic/tinted spans rather than markdown emphasis.
+- Both user and AI messages now route through `MarkdownContent` — bold, italic, strikethrough, code, blockquotes, tables, headings all work in both directions.
+- Streaming: unclosed code fences auto-closed before parse; blinking cursor appended to last segment.
+- CSS in `index.css`: paragraph spacing, headers, blockquotes, lists, inline/fenced code, GitHub-Dark hljs theme, streaming cursor animation.
 
 ---
 
