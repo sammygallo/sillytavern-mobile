@@ -138,10 +138,10 @@ function loadBooks(): WorldInfoBook[] {
           ? b.ownerCharacterAvatar
           : null,
       entries: b.entries.map((e) => ({
-        sticky: 0,
-        cooldown: 0,
-        delay: 0,
         ...e,
+        sticky: e.sticky ?? 0,
+        cooldown: e.cooldown ?? 0,
+        delay: e.delay ?? 0,
       })),
     }));
   } catch {
