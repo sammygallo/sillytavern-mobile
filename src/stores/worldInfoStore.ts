@@ -61,6 +61,12 @@ export interface WorldInfoEntry {
   preventRecursion: boolean;
   /** When true, this entry is NOT matched during recursive passes. */
   excludeRecursion: boolean;
+  /** Turns to remain active after being triggered (0 = disabled). */
+  sticky: number;
+  /** Turns to wait before allowing re-activation (0 = disabled). */
+  cooldown: number;
+  /** Turns to wait before first activation (0 = disabled). */
+  delay: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -85,6 +91,7 @@ const ACTIVE_BOOKS_KEY = 'sillytavern_worldinfo_active_books_v1';
 const SCAN_DEPTH_KEY = 'sillytavern_worldinfo_scan_depth_v1';
 const MAX_RECURSION_KEY = 'sillytavern_worldinfo_max_recursion_v1';
 const TOKEN_BUDGET_KEY = 'sillytavern_worldinfo_token_budget_v1';
+const WI_TIMERS_KEY = 'sillytavern_wi_timers_v1';
 
 const DEFAULT_SCAN_DEPTH = 4;
 const DEFAULT_MAX_RECURSION = 3;
@@ -114,19 +121,28 @@ export const DEFAULT_ENTRY: Omit<
   groupWeight: 100,
   preventRecursion: false,
   excludeRecursion: false,
+  sticky: 0,
+  cooldown: 0,
+  delay: 0,
 };
 
 function loadBooks(): WorldInfoBook[] {
   try {
     const raw = localStorage.getItem(BOOKS_KEY);
     const list = raw ? (JSON.parse(raw) as WorldInfoBook[]) : [];
-    // Backfill `ownerCharacterAvatar` for books saved before it existed.
+    // Backfill fields added after initial release so old stored data works.
     return list.map((b) => ({
       ...b,
       ownerCharacterAvatar:
         typeof b.ownerCharacterAvatar === 'string'
           ? b.ownerCharacterAvatar
           : null,
+      entries: b.entries.map((e) => ({
+        sticky: 0,
+        cooldown: 0,
+        delay: 0,
+        ...e,
+      })),
     }));
   } catch {
     return [];
@@ -264,6 +280,9 @@ interface StEntry {
   groupWeight?: number;
   preventRecursion?: boolean;
   excludeRecursion?: boolean;
+  sticky?: number;
+  cooldown?: number;
+  delay?: number;
   displayIndex?: number;
   caseSensitive?: boolean | null;
   addMemo?: boolean;
@@ -340,6 +359,9 @@ export function entryFromStFormat(raw: StEntry): WorldInfoEntry {
         : 100,
     preventRecursion: raw.preventRecursion === true,
     excludeRecursion: raw.excludeRecursion === true,
+    sticky: typeof raw.sticky === 'number' && raw.sticky > 0 ? Math.floor(raw.sticky) : 0,
+    cooldown: typeof raw.cooldown === 'number' && raw.cooldown > 0 ? Math.floor(raw.cooldown) : 0,
+    delay: typeof raw.delay === 'number' && raw.delay > 0 ? Math.floor(raw.delay) : 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -371,6 +393,9 @@ export function entryToStFormat(
     groupWeight: entry.groupWeight,
     preventRecursion: entry.preventRecursion,
     excludeRecursion: entry.excludeRecursion,
+    sticky: entry.sticky,
+    cooldown: entry.cooldown,
+    delay: entry.delay,
     displayIndex: uid,
     caseSensitive: entry.caseSensitive,
     addMemo: !!entry.comment,
@@ -427,6 +452,9 @@ interface CharacterBookExtensions {
   group_weight?: number;
   prevent_recursion?: boolean;
   exclude_recursion?: boolean;
+  sticky?: number;
+  cooldown?: number;
+  delay?: number;
 }
 
 function positionFromString(
@@ -497,6 +525,9 @@ export function entryFromCharacterBookV2(
         : 100,
     preventRecursion: ext.prevent_recursion === true,
     excludeRecursion: ext.exclude_recursion === true,
+    sticky: typeof ext.sticky === 'number' && ext.sticky > 0 ? Math.floor(ext.sticky) : 0,
+    cooldown: typeof ext.cooldown === 'number' && ext.cooldown > 0 ? Math.floor(ext.cooldown) : 0,
+    delay: typeof ext.delay === 'number' && ext.delay > 0 ? Math.floor(ext.delay) : 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -518,6 +549,9 @@ export function entryToCharacterBookV2(
     group_weight: entry.groupWeight,
     prevent_recursion: entry.preventRecursion,
     exclude_recursion: entry.excludeRecursion,
+    sticky: entry.sticky,
+    cooldown: entry.cooldown,
+    delay: entry.delay,
   };
   return {
     id,
@@ -569,6 +603,60 @@ export interface MatchedEntry {
   bookName: string;
 }
 
+// ---- WI timer helpers (timed effects: sticky / cooldown / delay) ----------
+//
+// Timers are persisted per-chat: Record<chatFile, Record<entryId, lastActivatedTurn>>
+// where "turn" = number of AI (non-user, non-system) messages before this generation.
+
+/** Load the WI timer state for a given chat file. Returns {} when absent. */
+export function loadWiTimers(chatFile: string): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(WI_TIMERS_KEY);
+    if (!raw) return {};
+    const all = JSON.parse(raw) as Record<string, Record<string, number>>;
+    return all[chatFile] ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Persist timer state for a set of freshly activated entry IDs at the given turn.
+ * Merges into existing timer state (does not overwrite unrelated entries).
+ */
+export function saveWiTimers(
+  chatFile: string,
+  activatedIds: Set<string>,
+  currentTurn: number
+): void {
+  if (activatedIds.size === 0) return;
+  try {
+    const raw = localStorage.getItem(WI_TIMERS_KEY);
+    const all: Record<string, Record<string, number>> = raw ? JSON.parse(raw) : {};
+    const existing = all[chatFile] ?? {};
+    for (const id of activatedIds) {
+      existing[id] = currentTurn;
+    }
+    all[chatFile] = existing;
+    localStorage.setItem(WI_TIMERS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore quota/security errors
+  }
+}
+
+/** Remove all WI timer state for a given chat (e.g. when loading a new chat). */
+export function clearWiTimers(chatFile: string): void {
+  try {
+    const raw = localStorage.getItem(WI_TIMERS_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw) as Record<string, Record<string, number>>;
+    delete all[chatFile];
+    localStorage.setItem(WI_TIMERS_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
 export interface WorldInfoScanOptions {
   /** Global scan depth – number of trailing non-system messages to scan. */
   scanDepth: number;
@@ -578,6 +666,17 @@ export interface WorldInfoScanOptions {
   tokenBudget: number;
   /** Tokenizer profile used when estimating entry content length. */
   profile: TokenizerProfile;
+  /**
+   * Current AI turn index = count of AI (non-user, non-system) messages before
+   * this generation. Used by delay, cooldown, and sticky timed effects.
+   * Defaults to 0 when omitted (all timed effects effectively disabled).
+   */
+  currentTurn?: number;
+  /**
+   * Per-entry timer state for the active chat: entry.id → last-activated turn.
+   * When omitted, timed effects that depend on prior activations are skipped.
+   */
+  wiTimers?: Record<string, number>;
 }
 
 function buildHaystack(
@@ -722,16 +821,26 @@ function applyTokenBudget(
 /**
  * Scan active books for matching entries. Supports primary/secondary keys,
  * regex keys, per-entry scan depth override, probability activation,
- * inclusion groups, recursive scanning, and token budgeting.
+ * inclusion groups, recursive scanning, token budgeting, and timed effects
+ * (sticky / cooldown / delay).
+ *
+ * @param outActivatedIds - Optional Set that will be populated with the IDs of
+ *   entries that were *freshly* activated this turn (excluding sticky carry-overs).
+ *   Callers should persist this set via saveWiTimers() after a successful
+ *   generation to update the timed-effects state for the next turn.
  */
 export function scanMessagesForEntries(
   books: WorldInfoBook[],
   activeBookIds: string[],
   messages: { content: string; isSystem?: boolean }[],
-  options: WorldInfoScanOptions
+  options: WorldInfoScanOptions,
+  outActivatedIds?: Set<string>
 ): MatchedEntry[] {
   const activeBooks = books.filter((b) => activeBookIds.includes(b.id));
   if (activeBooks.length === 0) return [];
+
+  const currentTurn = options.currentTurn ?? 0;
+  const wiTimers = options.wiTimers ?? {};
 
   // Flatten all candidate entries, pairing each with its book for citations.
   interface Candidate {
@@ -748,10 +857,25 @@ export function scanMessagesForEntries(
     }
   }
 
+  /**
+   * Returns true when timed-effect constraints allow the entry to activate:
+   * - delay: entry won't trigger until currentTurn >= delay
+   * - cooldown: entry can't re-trigger within `cooldown` turns of lastActivated
+   */
+  function timedEffectsAllow(entry: WorldInfoEntry): boolean {
+    if (entry.delay > 0 && currentTurn < entry.delay) return false;
+    if (entry.cooldown > 0) {
+      const last = wiTimers[entry.id];
+      if (last !== undefined && currentTurn <= last + entry.cooldown) return false;
+    }
+    return true;
+  }
+
   const wonGroups = new Set<string>();
   const matchedIds = new Set<string>();
   const initial: MatchedEntry[] = [];
   for (const c of candidates) {
+    if (!timedEffectsAllow(c.entry)) continue;
     // Constant entries fire unconditionally, still subject to probability.
     if (c.entry.constant) {
       if (!rollProbability(c.entry)) continue;
@@ -790,6 +914,7 @@ export function scanMessagesForEntries(
       if (c.entry.constant) continue; // constants were decided in initial pass
       if (c.entry.keys.length === 0) continue;
       if (c.entry.group && wonGroups.has(c.entry.group)) continue;
+      if (!timedEffectsAllow(c.entry)) continue;
       if (!entryActivates(c.entry, recursionHaystack)) continue;
       if (!rollProbability(c.entry)) continue;
       newMatches.push(c);
@@ -806,9 +931,31 @@ export function scanMessagesForEntries(
     lastAdded = resolved;
   }
 
-  matched = applyTokenBudget(matched, options.tokenBudget, options.profile);
-  matched.sort((a, b) => a.entry.order - b.entry.order);
-  return matched;
+  // Sticky carry-overs: entries that were recently activated (within their
+  // sticky window) and should remain injected even if keywords no longer match.
+  // These do NOT reset their timer — only fresh activations do.
+  const stickyMatches: MatchedEntry[] = [];
+  for (const c of candidates) {
+    if (matchedIds.has(c.entry.id)) continue;
+    if (c.entry.sticky <= 0) continue;
+    const last = wiTimers[c.entry.id];
+    if (last === undefined) continue;
+    if (currentTurn <= last + c.entry.sticky) {
+      stickyMatches.push(c);
+    }
+  }
+
+  // Report freshly activated IDs to the caller (excludes sticky carry-overs).
+  if (outActivatedIds) {
+    for (const id of matchedIds) {
+      outActivatedIds.add(id);
+    }
+  }
+
+  const allMatched = matched.concat(stickyMatches);
+  const result = applyTokenBudget(allMatched, options.tokenBudget, options.profile);
+  result.sort((a, b) => a.entry.order - b.entry.order);
+  return result;
 }
 
 // ---- Store ---------------------------------------------------------------

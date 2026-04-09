@@ -80,3 +80,55 @@ export function setChatMaxWidth(pct: number): void {
   const clamped = Math.max(60, Math.min(100, Math.round(pct)));
   try { localStorage.setItem(CHAT_WIDTH_KEY, String(clamped)); } catch { /* ignore */ }
 }
+
+// ---- Visual Novel Mode ----------------------------------------------
+
+const VN_MODE_KEY = 'stm:vn-mode';
+
+export function getVnMode(): boolean {
+  try { return localStorage.getItem(VN_MODE_KEY) === 'true'; } catch { return false; }
+}
+
+export function setVnMode(on: boolean): void {
+  try { localStorage.setItem(VN_MODE_KEY, on ? 'true' : 'false'); } catch { /* ignore */ }
+}
+
+// ---- VN Background Image --------------------------------------------
+
+export function getVnBgForCharacter(avatar: string): string | null {
+  try { return localStorage.getItem(`stm:vn-bg-${avatar}`); } catch { return null; }
+}
+
+export function setVnBgForCharacter(avatar: string, dataUrl: string): void {
+  try { localStorage.setItem(`stm:vn-bg-${avatar}`, dataUrl); } catch { /* ignore */ }
+}
+
+export function clearVnBgForCharacter(avatar: string): void {
+  try { localStorage.removeItem(`stm:vn-bg-${avatar}`); } catch { /* ignore */ }
+}
+
+export function getVnBgGlobal(): string | null {
+  try { return localStorage.getItem('stm:vn-bg-global'); } catch { return null; }
+}
+
+export function setVnBgGlobal(dataUrl: string): void {
+  try { localStorage.setItem('stm:vn-bg-global', dataUrl); } catch { /* ignore */ }
+}
+
+export function clearVnBgGlobal(): void {
+  try { localStorage.removeItem('stm:vn-bg-global'); } catch { /* ignore */ }
+}
+
+// ---- Sprite Costume -------------------------------------------------
+
+export function getCostume(avatar: string): string | null {
+  try { return localStorage.getItem(`stm:costume-${avatar}`); } catch { return null; }
+}
+
+export function setCostume(avatar: string, name: string): void {
+  try { localStorage.setItem(`stm:costume-${avatar}`, name); } catch { /* ignore */ }
+}
+
+export function clearCostume(avatar: string): void {
+  try { localStorage.removeItem(`stm:costume-${avatar}`); } catch { /* ignore */ }
+}
