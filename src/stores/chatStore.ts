@@ -12,6 +12,8 @@ import { useCharacterStore } from './characterStore';
 import {
   useWorldInfoStore,
   scanMessagesForEntries,
+  loadWiTimers,
+  saveWiTimers,
   type WorldInfoPosition,
   type MatchedEntry,
 } from './worldInfoStore';
@@ -26,7 +28,6 @@ import {
 import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemplates';
 import { useRegexScriptStore } from './regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
-import { useSummarizeStore } from './summarizeStore';
 
 export interface ChatMessage {
   id: string;
@@ -379,18 +380,6 @@ interface ChatState {
   continueMessage: (character: CharacterInfo, availableEmotions?: string[]) => Promise<void>;
   impersonate: (character: CharacterInfo, availableEmotions?: string[]) => Promise<string>;
   deleteChat: (avatarUrl: string, fileName: string) => Promise<void>;
-  renameChat: (avatarUrl: string, fileName: string, newName: string) => Promise<void>;
-  importChat: (avatarUrl: string, characterName: string, file: File) => Promise<void>;
-  /** Phase 7.1: append a generated image as a standalone chat message and
-   *  persist it to the backend. `speakerName`/`speakerAvatar` identify who
-   *  "sent" it (usually the current character). */
-  insertImageMessage: (
-    dataUrl: string,
-    prompt: string,
-    speakerName: string,
-    speakerAvatar?: string,
-    character?: CharacterInfo
-  ) => Promise<void>;
 }
 
 let messageIdCounter = 0;
@@ -531,7 +520,8 @@ function buildMacroContext(
 function buildConversationContext(
   messages: ChatMessage[],
   character: CharacterInfo,
-  availableEmotions?: string[]
+  availableEmotions?: string[],
+  wiTimerOut?: { currentTurn: number; timers: Record<string, number>; activated: Set<string> }
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
@@ -576,7 +566,10 @@ function buildConversationContext(
       maxRecursionSteps: wiState.maxRecursionSteps,
       tokenBudget: wiState.tokenBudget,
       profile: tokenProfile,
-    }
+      currentTurn: wiTimerOut?.currentTurn,
+      wiTimers: wiTimerOut?.timers,
+    },
+    wiTimerOut?.activated
   );
   const wiByPosition: Record<WorldInfoPosition, MatchedEntry[]> = {
     before_char: [],
@@ -704,12 +697,6 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     ? useChatStore.getState().getAuthorNote(currentChatFile)
     : null;
 
-  // Phase 7.5: Chat Summary — inject at configurable depth (default 999 = before all history)
-  const summarizeState = useSummarizeStore.getState();
-  const chatSummary = currentChatFile ? summarizeState.getSummary(currentChatFile) : null;
-  const summaryDepth = summarizeState.injectionDepth;
-  const summaryRole = summarizeState.injectionRole;
-
   // Persona @ depth
   const personaAtDepth =
     persona && persona.descriptionPosition === 'at_depth' && personaDescription
@@ -752,13 +739,6 @@ Choose the emotion that best matches how ${character.name} would feel based on t
         content: sub(authorNote.content),
       });
     }
-    // Phase 7.5: Chat Summary injection at depth
-    if (chatSummary && depthFromEnd === summaryDepth) {
-      historyWithInsertions.push({
-        role: summaryRole,
-        content: `[Summary of earlier conversation: ${chatSummary.text}]`,
-      });
-    }
     if (personaAtDepth && depthFromEnd === personaAtDepth.depth) {
       historyWithInsertions.push({
         role: personaAtDepth.role,
@@ -795,13 +775,6 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     historyWithInsertions.unshift({
       role: authorNote.role,
       content: sub(authorNote.content),
-    });
-  }
-  // Phase 7.5: summary fallback — prepend before all history if depth exceeds history length
-  if (chatSummary && summaryDepth > recentMessages.length) {
-    historyWithInsertions.unshift({
-      role: summaryRole,
-      content: `[Summary of earlier conversation: ${chatSummary.text}]`,
     });
   }
   if (personaAtDepth && personaAtDepth.depth > recentMessages.length) {
@@ -1738,12 +1711,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { ...msg, swipeId: newSwipeId, content: msg.swipes[newSwipeId] };
       }),
     }));
-    // Persist swipe position
-    const { currentChatFile } = get();
-    const character = useCharacterStore.getState().selectedCharacter;
-    if (character) {
-      saveChatToBackend(get().messages, character, currentChatFile);
-    }
   },
 
   // ---- Swipe Right (next swipe, or generate new if at end) ----
@@ -1761,9 +1728,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return { ...m, swipeId: newSwipeId, content: m.swipes[newSwipeId] };
         }),
       }));
-      // Persist swipe position
-      const { currentChatFile } = get();
-      saveChatToBackend(get().messages, character, currentChatFile);
       return;
     }
 
@@ -1775,7 +1739,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Build context from messages up to (but not including) this AI message
       const msgIndex = messages.findIndex((m) => m.id === messageId);
       const contextMessages = messages.slice(0, msgIndex);
-      const context = buildConversationContext(contextMessages, character, availableEmotions);
+      const { currentChatFile } = get();
+      const currentTurn = contextMessages.filter((m) => !m.isUser && !m.isSystem).length;
+      const wiTimerActivated = new Set<string>();
+      const context = buildConversationContext(contextMessages, character, availableEmotions, {
+        currentTurn,
+        timers: loadWiTimers(currentChatFile || ''),
+        activated: wiTimerActivated,
+      });
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
@@ -1827,7 +1798,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
 
       // Save
-      const { currentChatFile } = get();
+      saveWiTimers(currentChatFile || '', wiTimerActivated, currentTurn);
       await saveChatToBackend(get().messages, character, currentChatFile);
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
@@ -1960,61 +1931,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ---- Delete Chat File ----
   deleteChat: async (avatarUrl: string, fileName: string) => {
     try {
-      await api.deleteChat(avatarUrl, fileName);
+      // Save an empty chat to effectively delete it
+      await api.saveChat(avatarUrl, fileName, []);
+      // Refresh chat list
       const { fetchChatFiles } = get();
       await fetchChatFiles(avatarUrl);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete chat' });
-    }
-  },
-
-  // ---- Rename Chat File ----
-  renameChat: async (avatarUrl: string, fileName: string, newName: string) => {
-    try {
-      const sanitized = await api.renameChat(avatarUrl, fileName, newName);
-      const { currentChatFile, fetchChatFiles } = get();
-      if (currentChatFile === fileName) {
-        set({ currentChatFile: sanitized });
-      }
-      await fetchChatFiles(avatarUrl);
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to rename chat' });
-    }
-  },
-
-  // ---- Import Chat File ----
-  importChat: async (avatarUrl: string, characterName: string, file: File) => {
-    try {
-      await api.importChat(avatarUrl, characterName, file);
-      const { fetchChatFiles } = get();
-      await fetchChatFiles(avatarUrl);
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to import chat' });
-    }
-  },
-
-  // ---- Phase 7.1: Insert Generated Image as Chat Message ----
-  insertImageMessage: async (
-    dataUrl: string,
-    _prompt: string,
-    speakerName: string,
-    speakerAvatar?: string,
-    character?: CharacterInfo
-  ) => {
-    const msg = createMessage({
-      name: speakerName,
-      isUser: false,
-      isSystem: false,
-      content: '',
-      timestamp: Date.now(),
-      images: [dataUrl],
-      characterAvatar: speakerAvatar,
-    });
-    set((state) => ({ messages: [...state.messages, msg] }));
-
-    const { currentChatFile } = get();
-    if (currentChatFile && character) {
-      await saveChatToBackend(get().messages, character, currentChatFile);
     }
   },
 
@@ -2056,7 +1979,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const updatedMessages = get().messages;
-      const context = buildConversationContext(updatedMessages, character, availableEmotions);
+      const { currentChatFile } = get();
+      const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
+      const wiTimerActivated = new Set<string>();
+      const context = buildConversationContext(updatedMessages, character, availableEmotions, {
+        currentTurn,
+        timers: loadWiTimers(currentChatFile || ''),
+        activated: wiTimerActivated,
+      });
 
       const finalContext = maybeApplyInstructMode(context);
       const stream = await api.generateMessage(
@@ -2110,7 +2040,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         }));
 
-        const { currentChatFile } = get();
+        saveWiTimers(currentChatFile || '', wiTimerActivated, currentTurn);
         await saveChatToBackend(get().messages, character, currentChatFile);
       }
     } catch (error) {
@@ -2368,7 +2298,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ messages: updatedMessages, isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      const context = buildConversationContext(updatedMessages, character, availableEmotions);
+      const { currentChatFile } = get();
+      const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
+      const wiTimerActivated = new Set<string>();
+      const context = buildConversationContext(updatedMessages, character, availableEmotions, {
+        currentTurn,
+        timers: loadWiTimers(currentChatFile || ''),
+        activated: wiTimerActivated,
+      });
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
@@ -2423,7 +2360,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         }));
 
-        const { currentChatFile } = get();
+        saveWiTimers(currentChatFile || '', wiTimerActivated, currentTurn);
         await saveChatToBackend(get().messages, character, currentChatFile);
       }
     } catch (error) {

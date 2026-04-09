@@ -63,6 +63,11 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
   const [preventRecursion, setPreventRecursion] = useState(false);
   const [excludeRecursion, setExcludeRecursion] = useState(false);
 
+  // Timed effects
+  const [sticky, setSticky] = useState(0);
+  const [cooldown, setCooldown] = useState(0);
+  const [delay, setDelay] = useState(0);
+
   useEffect(() => {
     if (entry) {
       setKeys(entry.keys.join(', '));
@@ -86,6 +91,9 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       setGroupWeight(entry.groupWeight);
       setPreventRecursion(entry.preventRecursion);
       setExcludeRecursion(entry.excludeRecursion);
+      setSticky(entry.sticky);
+      setCooldown(entry.cooldown);
+      setDelay(entry.delay);
     } else {
       setKeys('');
       setContent('');
@@ -108,6 +116,9 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       setGroupWeight(100);
       setPreventRecursion(false);
       setExcludeRecursion(false);
+      setSticky(0);
+      setCooldown(0);
+      setDelay(0);
     }
   }, [entry]);
 
@@ -147,6 +158,9 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
       groupWeight,
       preventRecursion,
       excludeRecursion,
+      sticky,
+      cooldown,
+      delay,
     };
 
     if (entry) {
@@ -449,6 +463,59 @@ export function WorldInfoEntryForm({ bookId, entry, onClose }: WorldInfoEntryFor
           />
           Exclude from recursion (other entries can't trigger this one)
         </label>
+      </div>
+
+      {/* Timed Effects */}
+      <div className="space-y-3 pt-3 border-t border-[var(--color-border)]">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+          Timed Effects
+        </h3>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+              Sticky
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={sticky}
+              onChange={(e) => setSticky(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+              Cooldown
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={cooldown}
+              onChange={(e) => setCooldown(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+              Delay
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={delay}
+              onChange={(e) => setDelay(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          <span className="font-medium">Sticky:</span> turns to stay active after trigger.{' '}
+          <span className="font-medium">Cooldown:</span> turns to wait before re-triggering.{' '}
+          <span className="font-medium">Delay:</span> turns to wait before first activation. 0 = off.
+        </p>
       </div>
 
       <div className="flex gap-3 pt-4 border-t border-[var(--color-border)]">
