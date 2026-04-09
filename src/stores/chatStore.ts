@@ -1055,7 +1055,12 @@ async function generateGroupTurn(
   }
 
   const emotion = parseEmotion(responseText);
-  const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
+  // Strip emotion tags (all occurrences), strip the leading [CharacterName]: prefix that the
+  // model echoes from conversation-history format, then truncate at the first
+  // [AnyName]: marker in the middle — this happens when the model writes multiple
+  // characters' turns in one response.
+  const strippedText = stripGroupArtifacts(stripEmotionTag(responseText), character.name);
+  const cleanedContent = applyAiOutputRegex(strippedText, character.avatar);
 
   set((state) => ({
     messages: state.messages.map((msg) =>
@@ -1240,6 +1245,22 @@ function imagesFromLastUserMessage(
     return resolveImagesForSend(m.images);
   }
   return undefined;
+}
+
+/**
+ * Strip group-chat formatting artifacts the model echoes from conversation history:
+ * 1. Leading `[CharacterName]: ` prefix (model echoes its own label)
+ * 2. Everything from the first `\n[AnyName]: ` onwards (model wrote another character's turn)
+ */
+function stripGroupArtifacts(text: string, characterName: string): string {
+  // Remove leading own-name prefix
+  let result = text.replace(new RegExp(`^\\[${characterName}\\]:\\s*`, 'i'), '').trim();
+  // Truncate at the first mid-response [Name]: marker (another character's turn bled in)
+  const otherTurnMatch = result.match(/\n\[[^\]]+\]:\s*/);
+  if (otherTurnMatch && otherTurnMatch.index !== undefined) {
+    result = result.slice(0, otherTurnMatch.index).trim();
+  }
+  return result;
 }
 
 /** Phase 8.2: apply permanent (non-display-only) regex scripts to AI output text. */

@@ -3,6 +3,7 @@ import { MoreHorizontal, Check, X, Volume2, Square, Globe } from 'lucide-react';
 import { Avatar } from '../ui';
 import { MessageActionMenu } from './MessageActionMenu';
 import { SwipeControl } from './SwipeControl';
+import { stripEmotionTag } from '../../utils/emotions';
 import { MarkdownContent } from './MarkdownContent';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import type { ChatLayoutMode, AvatarShape } from '../../hooks/displayPreferences';
@@ -87,16 +88,25 @@ export function ChatMessage({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Phase 8.2: apply regex scripts for rendering.
-  // Display-only scripts are always applied at render time.
-  // Permanent scripts are also applied at render time so that streaming
-  // content looks the same as finalized content (avoids a flash where
-  // formatting appears during streaming then disappears on completion).
+  // All scripts (display-only and permanent) run at render time so streaming
+  // content looks identical to the finalized content — no flash.
+  // For AI messages, also strip emotion tags and [Name]: prefixes that the
+  // model echoes from group-chat history formatting.
   const regexScripts = useRegexScriptStore((s) => s.scripts);
   const displayContent = useMemo(() => {
     const scope = isUser ? 'user_input' : 'ai_output';
+    let text = content;
+    if (!isUser) {
+      text = stripEmotionTag(text)
+        .replace(new RegExp(`^\\[${name}\\]:\\s*`, 'i'), '')
+        .trim();
+      // Truncate at first [OtherCharacter]: mid-response marker
+      const otherTurn = text.match(/\n\[[^\]]+\]:\s*/);
+      if (otherTurn?.index !== undefined) text = text.slice(0, otherTurn.index).trim();
+    }
     const scripts = getActiveScripts(regexScripts, characterAvatar, scope);
-    return scripts.length > 0 ? applyRegexScripts(content, scripts) : content;
-  }, [content, regexScripts, characterAvatar, isUser]);
+    return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
+  }, [content, name, regexScripts, characterAvatar, isUser]);
 
   // Phase 7.1: Extension gates
   const ttsEnabled = useExtensionStore((s) => s.enabled.tts);

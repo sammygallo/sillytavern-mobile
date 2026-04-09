@@ -20,8 +20,8 @@ export const DEFAULT_EMOTIONS = [
 // Emotion is now any string - characters can have any emotions they want
 export type Emotion = string;
 
-// Regex to match emotion tags like [emotion:happy] or [mood:sad]
-const EMOTION_TAG_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/i;
+// Regex to match emotion tags like [emotion:happy] or [mood:sad] — global to strip all occurrences
+const EMOTION_TAG_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/gi;
 
 /**
  * Parse emotion tag from message content
