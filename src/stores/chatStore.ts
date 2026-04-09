@@ -925,19 +925,21 @@ function buildGroupConversationContext(
   // examples of how to format RP-style responses (asterisk actions, etc.).
   const mesExample = getCharacterField(currentCharacter, 'mes_example');
 
-  const systemPrompt = `This is a group chat with multiple characters. You are playing ${currentCharacter.name}.
+  const systemPrompt = `This is a roleplay group chat. You are playing ${currentCharacter.name} — write ONLY ${currentCharacter.name}'s turn.
 
 Characters in this conversation:
 ${characterDescriptions}
 
-${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}${mesExample ? `Example dialogue for ${currentCharacter.name}:\n${mesExample}\n\n` : ''}IMPORTANT:
-- Stay in character as ${currentCharacter.name}
-- React naturally to what other characters and the user say
-- Use *asterisks* around action and narration text (e.g. *He glances toward the door*)
-- Use regular text or "quotes" for spoken dialogue
+${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}${mesExample ? `Example dialogue for ${currentCharacter.name}:\n${mesExample}\n\n` : ''}FORMATTING RULES (follow exactly):
+- Wrap ALL actions, movements, and narration in *single asterisks*: *He glances toward the door*
+- Write spoken dialogue as plain text or in "quotes": "Hello there!"
+- Alternate freely between *action* and "dialogue" throughout your response
 - Begin your response with an emotion tag: [emotion:TAG]
 - Available emotions: neutral, joy, sadness, anger, surprise, fear, love, excitement, confusion, embarrassment, curiosity, amusement
-- You may interact with or respond to other characters, not just the user`;
+
+CONTENT RULES:
+- Stay in character as ${currentCharacter.name} only — do NOT write lines for other characters
+- React naturally to what other characters and the user say`;
 
   context.push({ role: 'system', content: systemPrompt });
 
@@ -1060,12 +1062,11 @@ async function generateGroupTurn(
   // [AnyName]: marker in the middle — this happens when the model writes multiple
   // characters' turns in one response.
   const strippedText = stripGroupArtifacts(stripEmotionTag(responseText), character.name);
-  const cleanedContent = applyAiOutputRegex(strippedText, character.avatar);
 
   set((state) => ({
     messages: state.messages.map((msg) =>
       msg.id === aiMessageId
-        ? { ...msg, content: cleanedContent, emotion, swipes: [cleanedContent] }
+        ? { ...msg, content: strippedText, emotion, swipes: [strippedText] }
         : msg
     ),
   }));
@@ -1261,16 +1262,6 @@ function stripGroupArtifacts(text: string, characterName: string): string {
     result = result.slice(0, otherTurnMatch.index).trim();
   }
   return result;
-}
-
-/** Phase 8.2: apply permanent (non-display-only) regex scripts to AI output text. */
-function applyAiOutputRegex(text: string, characterAvatar?: string): string {
-  const scripts = getActiveScripts(
-    useRegexScriptStore.getState().scripts,
-    characterAvatar,
-    'ai_output'
-  ).filter((s) => !s.displayOnly);
-  return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
 }
 
 /** Phase 8.2: apply permanent (non-display-only) regex scripts to user input text. */
@@ -1859,7 +1850,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const emotion = parseEmotion(responseText);
-      const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
+      const cleanedContent = stripEmotionTag(responseText);
 
       set((state) => ({
         messages: state.messages.map((m) => {
@@ -1943,7 +1934,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Strip any new emotion tags from the continuation
       const fullText = existingContent + newTokens;
-      const cleanedContent = applyAiOutputRegex(stripEmotionTag(fullText), character.avatar);
+      const cleanedContent = stripEmotionTag(fullText);
 
       set((state) => ({
         messages: state.messages.map((m) => {
@@ -2150,7 +2141,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         const emotion = parseEmotion(responseText);
-        const cleanedContent = applyAiOutputRegex(stripEmotionTag(responseText), character.avatar);
+        const cleanedContent = stripEmotionTag(responseText);
 
         set((state) => ({
           messages: state.messages.map((msg) =>

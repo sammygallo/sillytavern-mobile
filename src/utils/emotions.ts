@@ -20,8 +20,10 @@ export const DEFAULT_EMOTIONS = [
 // Emotion is now any string - characters can have any emotions they want
 export type Emotion = string;
 
-// Regex to match emotion tags like [emotion:happy] or [mood:sad] — global to strip all occurrences
-const EMOTION_TAG_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/gi;
+// Non-global regex for parseEmotion — preserves capture groups in .match() result
+const EMOTION_TAG_PARSE_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/i;
+// Global regex for stripEmotionTag — removes all occurrences
+const EMOTION_TAG_STRIP_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/gi;
 
 /**
  * Parse emotion tag from message content
@@ -29,10 +31,11 @@ const EMOTION_TAG_REGEX = /\[(?:emotion|mood|expression|feeling):\s*(\w+)\]/gi;
  * The caller should check if this emotion exists in the character's sprites
  */
 export function parseEmotion(content: string): string | null {
-  const match = content.match(EMOTION_TAG_REGEX);
+  // Use non-global regex so .match() returns capture groups
+  const match = content.match(EMOTION_TAG_PARSE_REGEX);
   if (!match) return null;
 
-  // Return the raw emotion string, normalized to lowercase
+  // match[1] is the capture group (the emotion word)
   return match[1].toLowerCase();
 }
 
@@ -160,7 +163,7 @@ export function mapEmotionToAvailable(
  * Strip emotion tags from message content for display
  */
 export function stripEmotionTag(content: string): string {
-  return content.replace(EMOTION_TAG_REGEX, '').trim();
+  return content.replace(EMOTION_TAG_STRIP_REGEX, '').trim();
 }
 
 /**

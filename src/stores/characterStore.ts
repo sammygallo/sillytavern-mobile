@@ -195,7 +195,7 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       }
     }
 
-    set({ selectedCharacter: character });
+    set({ selectedCharacter: character, isGroupChatMode: false, groupChatCharacters: [] });
   },
 
   clearSelection: () => set({ selectedCharacter: null }),

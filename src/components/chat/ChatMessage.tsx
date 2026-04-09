@@ -87,9 +87,9 @@ export function ChatMessage({
   const [showEditOptions, setShowEditOptions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Phase 8.2: apply regex scripts for rendering.
-  // All scripts (display-only and permanent) run at render time so streaming
-  // content looks identical to the finalized content — no flash.
+  // Phase 8.2: apply display-only regex scripts for rendering.
+  // Only display-only scripts run at render time; permanent scripts run at
+  // finalization in the store so stored content already reflects them.
   // For AI messages, also strip emotion tags and [Name]: prefixes that the
   // model echoes from group-chat history formatting.
   const regexScripts = useRegexScriptStore((s) => s.scripts);
@@ -104,7 +104,7 @@ export function ChatMessage({
       const otherTurn = text.match(/\n\[[^\]]+\]:\s*/);
       if (otherTurn?.index !== undefined) text = text.slice(0, otherTurn.index).trim();
     }
-    const scripts = getActiveScripts(regexScripts, characterAvatar, scope);
+    const scripts = getActiveScripts(regexScripts, characterAvatar, scope).filter(s => s.displayOnly);
     return scripts.length > 0 ? applyRegexScripts(text, scripts) : text;
   }, [content, name, regexScripts, characterAvatar, isUser]);
 

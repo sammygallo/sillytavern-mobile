@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Database, Eye, EyeOff, Globe, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -655,6 +655,25 @@ export function SettingsPage() {
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">Extensions</p>
                   <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
                     TTS, image gen, translation, summarization
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
+            {/* Data Bank (Phase 8.5) */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+              <button
+                onClick={() => navigate('/settings/databank')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Database size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">Data Bank</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    RAG — upload documents and inject relevant chunks into context
                   </p>
                 </div>
                 <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />

@@ -1,0 +1,232 @@
+/**
+ * Phase 8.5 — Data Bank / RAG
+ *
+ * Stores documents (plain text or .md/.txt uploads), chunks them, and
+ * optionally embeds the chunks via OpenAI's text-embedding-3-small model.
+ *
+ * At generation time the last user message is embedded and the most relevant
+ * chunks from in-scope documents are injected into the system prompt.
+ *
+ * Scope:
+ *   'global'    — available in every chat
+ *   'character' — only available when `characterAvatar` matches
+ *
+ * Persistence: localStorage under `stm:data-bank`.
+ * Embeddings are included in the persisted blob (they're ~6 KB/chunk).
+ */
+
+import { create } from 'zustand';
+import { chunkText } from '../utils/chunker';
+import { getEmbedding, findTopK } from '../utils/embeddings';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface DocumentChunk {
+  id: string;
+  text: string;
+  /** Empty array until the document has been embedded. */
+  embedding: number[];
+}
+
+export interface DataBankDocument {
+  id: string;
+  name: string;
+  scope: 'global' | 'character';
+  /** Set when scope === 'character'. */
+  characterAvatar?: string;
+  /** Raw source text (kept for re-chunking / display). */
+  content: string;
+  chunks: DocumentChunk[];
+  /** True once all chunks have embeddings. */
+  isEmbedded: boolean;
+  createdAt: number;
+}
+
+interface DataBankState {
+  documents: DataBankDocument[];
+  /** IDs of documents currently being embedded (transient, not persisted). */
+  embeddingIds: Set<string>;
+  /**
+   * OpenAI API key used exclusively for embeddings. Stored in localStorage
+   * separately from the chat provider key (which lives on the ST backend).
+   * The user enters it once in the Data Bank settings page.
+   */
+  embeddingsApiKey: string;
+
+  setEmbeddingsApiKey: (key: string) => void;
+
+  /** Add a document and chunk it. Returns the new document's id. */
+  addDocument: (
+    name: string,
+    content: string,
+    scope: 'global' | 'character',
+    characterAvatar?: string
+  ) => string;
+
+  deleteDocument: (id: string) => void;
+
+  /**
+   * Embed all chunks of a document using the OpenAI embeddings API.
+   * Falls back to `embeddingsApiKey` from the store if `apiKey` is omitted.
+   */
+  embedDocument: (id: string, apiKey?: string) => Promise<void>;
+
+  /**
+   * Find the top-K most relevant chunks for `query` across all in-scope
+   * documents (global + those matching `characterAvatar`).
+   *
+   * Returns an array of chunk texts sorted by relevance, or [] if no
+   * embedded documents are in scope or the API call fails.
+   * Falls back to `embeddingsApiKey` from the store if `apiKey` is omitted.
+   */
+  queryRelevantChunks: (
+    query: string,
+    characterAvatar?: string,
+    topK?: number
+  ) => Promise<string[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+const STORAGE_KEY = 'stm:data-bank';
+
+const EMBED_KEY_STORAGE = 'stm:data-bank-embed-key';
+
+interface PersistedShape {
+  documents: DataBankDocument[];
+}
+
+function loadFromStorage(): DataBankDocument[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as PersistedShape;
+      return parsed.documents ?? [];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveToStorage(documents: DataBankDocument[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ documents } satisfies PersistedShape));
+  } catch { /* ignore */ }
+}
+
+function loadEmbedKey(): string {
+  try { return localStorage.getItem(EMBED_KEY_STORAGE) ?? ''; } catch { return ''; }
+}
+function saveEmbedKey(key: string) {
+  try { localStorage.setItem(EMBED_KEY_STORAGE, key); } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
+
+export const useDataBankStore = create<DataBankState>((set, get) => ({
+  documents: loadFromStorage(),
+  embeddingIds: new Set(),
+  embeddingsApiKey: loadEmbedKey(),
+
+  setEmbeddingsApiKey: (key) => {
+    saveEmbedKey(key);
+    set({ embeddingsApiKey: key });
+  },
+
+  addDocument: (name, content, scope, characterAvatar) => {
+    const id = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const rawChunks = chunkText(content);
+    const chunks: DocumentChunk[] = rawChunks.map((text, i) => ({
+      id: `${id}_chunk_${i}`,
+      text,
+      embedding: [],
+    }));
+    const doc: DataBankDocument = {
+      id,
+      name: name.trim() || 'Untitled',
+      scope,
+      characterAvatar: scope === 'character' ? characterAvatar : undefined,
+      content,
+      chunks,
+      isEmbedded: false,
+      createdAt: Date.now(),
+    };
+    const documents = [...get().documents, doc];
+    saveToStorage(documents);
+    set({ documents });
+    return id;
+  },
+
+  deleteDocument: (id) => {
+    const documents = get().documents.filter((d) => d.id !== id);
+    saveToStorage(documents);
+    set({ documents });
+  },
+
+  embedDocument: async (id, apiKey) => {
+    const key = apiKey ?? get().embeddingsApiKey;
+    if (!key) throw new Error('No embeddings API key configured. Set one in Data Bank settings.');
+
+    const doc = get().documents.find((d) => d.id === id);
+    if (!doc) return;
+
+    set((s) => ({ embeddingIds: new Set([...s.embeddingIds, id]) }));
+
+    try {
+      const chunks = await Promise.all(
+        doc.chunks.map(async (chunk) => {
+          // Skip chunks that already have embeddings
+          if (chunk.embedding.length > 0) return chunk;
+          const embedding = await getEmbedding(chunk.text, key);
+          return { ...chunk, embedding };
+        })
+      );
+
+      const updatedDoc: DataBankDocument = { ...doc, chunks, isEmbedded: true };
+      const documents = get().documents.map((d) => (d.id === id ? updatedDoc : d));
+      saveToStorage(documents);
+      set({ documents });
+    } finally {
+      set((s) => {
+        const next = new Set(s.embeddingIds);
+        next.delete(id);
+        return { embeddingIds: next };
+      });
+    }
+  },
+
+  queryRelevantChunks: async (query, characterAvatar, topK = 3) => {
+    const key = get().embeddingsApiKey;
+    if (!key) return [];
+
+    const { documents } = get();
+
+    // Collect all chunks from in-scope, embedded documents
+    const inScope = documents.filter(
+      (d) =>
+        d.isEmbedded &&
+        (d.scope === 'global' ||
+          (d.scope === 'character' && d.characterAvatar === characterAvatar))
+    );
+
+    if (inScope.length === 0) return [];
+
+    const allChunks = inScope.flatMap((d) => d.chunks);
+    if (allChunks.length === 0) return [];
+
+    try {
+      const queryEmbedding = await getEmbedding(query, key);
+      const results = findTopK(queryEmbedding, allChunks, topK);
+      // Only return chunks with at least weak relevance (score > 0.3)
+      return results.filter((r) => r.score > 0.3).map((r) => r.text);
+    } catch {
+      // Fail silently so generation still proceeds without RAG
+      return [];
+    }
+  },
+}));
