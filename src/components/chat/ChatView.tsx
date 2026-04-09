@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState, useCallback, type CSSProperties } from 'react';
-import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X, Check } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
@@ -8,6 +8,8 @@ import { ChatActionBar } from './ChatActionBar';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
 import { SummaryPanel } from './SummaryPanel';
+import { BranchPanel } from './BranchPanel';
+import { useBranchStore } from '../../stores/branchStore';
 import { TypingIndicator } from './TypingIndicator';
 import { ImageGenModal } from './ImageGenModal';
 import { QuickReplyBar } from './QuickReplyBar';
@@ -112,6 +114,13 @@ export function ChatView() {
   const [costumeInputVisible, setCostumeInputVisible] = useState(false);
   const [costumeDraft, setCostumeDraft] = useState('');
   const bgInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 8.6: checkpoint creation dialog
+  const [checkpointMessageId, setCheckpointMessageId] = useState<string | null>(null);
+  const [checkpointName, setCheckpointName] = useState('');
+  const checkpointInputRef = useRef<HTMLInputElement>(null);
+  const createBranch = useBranchStore((s) => s.createBranch);
+  const loadBranchesForChat = useBranchStore((s) => s.loadBranchesForChat);
 
   // Phase 9.1: in-chat message search
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -287,6 +296,11 @@ export function ChatView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatFiles]);
 
+  // Phase 8.6: reload branches whenever the active chat file changes.
+  useEffect(() => {
+    if (currentChatFile) loadBranchesForChat(currentChatFile);
+  }, [currentChatFile, loadBranchesForChat]);
+
   // Track scroll position to decide whether auto-scroll should fire.
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -451,6 +465,25 @@ export function ChatView() {
       continueMessage(selectedCharacter, availableEmotions);
     }
   };
+
+  // Phase 8.6: open the checkpoint naming dialog for a given message.
+  const handleCheckpoint = useCallback((messageId: string) => {
+    setCheckpointMessageId(messageId);
+    setCheckpointName('');
+    // Focus input after render
+    setTimeout(() => checkpointInputRef.current?.focus(), 60);
+  }, []);
+
+  const commitCheckpoint = useCallback(() => {
+    if (!checkpointMessageId || !currentChatFile) return;
+    createBranch({
+      chatFile: currentChatFile,
+      messageId: checkpointMessageId,
+      name: checkpointName,
+      messages,
+    });
+    setCheckpointMessageId(null);
+  }, [checkpointMessageId, currentChatFile, checkpointName, messages, createBranch]);
 
   const handleImpersonate = async () => {
     if (!selectedCharacter || isGroupChatMode) return;
@@ -1060,6 +1093,7 @@ export function ChatView() {
                     onRegenerate={
                       isLastAiMessage && !isGroupChatMode ? handleRegenerate : undefined
                     }
+                    onCheckpoint={currentChatFile ? () => handleCheckpoint(message.id) : undefined}
                     triggerEditNonce={message.id === lastUserMessageId ? editLastNonce : undefined}
                   />
                 </div>
@@ -1113,6 +1147,44 @@ export function ChatView() {
       {/* Phase 7.5: Summary panel — shown when summarize extension is enabled */}
       {summarizeEnabled && currentChatFile && selectedCharacter && (
         <SummaryPanel chatFile={currentChatFile} characterName={selectedCharacter.name} />
+      )}
+
+      {/* Phase 8.6: Branch panel — always shown when a chat file is open */}
+      {currentChatFile && <BranchPanel chatFile={currentChatFile} />}
+
+      {/* Phase 8.6: Checkpoint naming dialog — slides in above the input */}
+      {checkpointMessageId && (
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 flex items-center gap-2">
+          <span className="text-sm text-[var(--color-text-secondary)] whitespace-nowrap">
+            Checkpoint name:
+          </span>
+          <input
+            ref={checkpointInputRef}
+            type="text"
+            value={checkpointName}
+            onChange={(e) => setCheckpointName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitCheckpoint();
+              else if (e.key === 'Escape') setCheckpointMessageId(null);
+            }}
+            placeholder="e.g. Before the battle"
+            className="flex-1 min-w-0 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-primary)]"
+          />
+          <button
+            onClick={commitCheckpoint}
+            className="p-1.5 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary)]/90 transition-colors"
+            title="Save checkpoint"
+          >
+            <Check size={16} />
+          </button>
+          <button
+            onClick={() => setCheckpointMessageId(null)}
+            className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+            title="Cancel"
+          >
+            <X size={16} />
+          </button>
+        </div>
       )}
 
       {/* Phase 10.2: Quick Reply Bar */}

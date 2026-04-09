@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Pencil, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { Pencil, Copy, Trash2, RefreshCw, GitFork } from 'lucide-react';
 
 interface MessageActionMenuProps {
   isOpen: boolean;
@@ -9,6 +9,8 @@ interface MessageActionMenuProps {
   onDelete: () => void;
   onRegenerate?: () => void;
   showRegenerate?: boolean;
+  /** Phase 8.6: create a checkpoint at this message. */
+  onCheckpoint?: () => void;
   anchorRight?: boolean;
 }
 
@@ -20,6 +22,7 @@ export function MessageActionMenu({
   onDelete,
   onRegenerate,
   showRegenerate,
+  onCheckpoint,
   anchorRight,
 }: MessageActionMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -51,6 +54,9 @@ export function MessageActionMenu({
   const actions = [
     { icon: Pencil, label: 'Edit', onClick: onEdit },
     { icon: Copy, label: 'Copy', onClick: onCopy },
+    ...(onCheckpoint
+      ? [{ icon: GitFork, label: 'Checkpoint', onClick: onCheckpoint }]
+      : []),
     ...(showRegenerate && onRegenerate
       ? [{ icon: RefreshCw, label: 'Regenerate', onClick: onRegenerate }]
       : []),

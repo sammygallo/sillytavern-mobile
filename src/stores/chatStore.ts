@@ -28,6 +28,7 @@ import {
 import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemplates';
 import { useRegexScriptStore } from './regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
+import { useDataBankStore } from './dataBankStore';
 
 export interface ChatMessage {
   id: string;
@@ -370,6 +371,9 @@ interface ChatState {
   getAuthorNote: (fileName: string) => AuthorNote | null;
   setAuthorNote: (fileName: string, note: Partial<AuthorNote>) => void;
 
+  // Phase 8.6: load a branch snapshot into memory (does not save to disk)
+  loadBranchMessages: (messages: ChatMessage[]) => void;
+
   // New Phase 1 actions
   stopGeneration: () => void;
   editMessage: (messageId: string, newContent: string) => void;
@@ -525,12 +529,34 @@ function buildMacroContext(
   };
 }
 
+/**
+ * Phase 8.5 — RAG helper.
+ * Extracts the last user message from `messages`, queries the Data Bank for
+ * relevant chunks scoped to `characterAvatar`, and returns a formatted string
+ * to inject into the system prompt. Returns null when RAG is inactive.
+ */
+async function resolveRagContext(
+  messages: ChatMessage[],
+  characterAvatar: string
+): Promise<string | null> {
+  const lastUser = [...messages].reverse().find((m) => m.isUser && !m.isSystem);
+  if (!lastUser?.content.trim()) return null;
+
+  const chunks = await useDataBankStore
+    .getState()
+    .queryRelevantChunks(lastUser.content, characterAvatar);
+
+  if (chunks.length === 0) return null;
+  return chunks.join('\n\n---\n\n');
+}
+
 // Build conversation context for AI
 function buildConversationContext(
   messages: ChatMessage[],
   character: CharacterInfo,
   availableEmotions?: string[],
-  wiTimerOut?: { currentTurn: number; timers: Record<string, number>; activated: Set<string> }
+  wiTimerOut?: { currentTurn: number; timers: Record<string, number>; activated: Set<string> },
+  ragContext?: string
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
@@ -683,6 +709,11 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     systemParts.push(userJailbreak);
   }
   systemParts.push(emotionInstruction);
+
+  // Phase 8.5 — RAG: inject retrieved chunks from the Data Bank
+  if (ragContext) {
+    systemParts.push(`[Relevant background information]\n${ragContext}`);
+  }
 
   context.push({
     role: 'system',
@@ -1704,6 +1735,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
+  // ---- Phase 8.6: Load Branch Messages (in-memory only, no disk write) ----
+  loadBranchMessages: (branchMessages: ChatMessage[]) => {
+    set({ messages: branchMessages });
+  },
+
   // ---- Delete Message ----
   deleteMessage: (messageId: string) => {
     set((state) => ({
@@ -1751,11 +1787,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = contextMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
+      const ragCtx = await resolveRagContext(contextMessages, character.avatar || '');
       const context = buildConversationContext(contextMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),
         activated: wiTimerActivated,
-      });
+      }, ragCtx ?? undefined);
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);
@@ -1838,7 +1875,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       // Build context including the current AI message
-      const context = buildConversationContext(messages, character, availableEmotions);
+      const ragCtx = await resolveRagContext(messages, character.avatar || '');
+      const context = buildConversationContext(messages, character, availableEmotions, undefined, ragCtx ?? undefined);
       // Add a system instruction to continue
       context.push({
         role: 'system',
@@ -1907,7 +1945,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      const context = buildConversationContext(messages, character, availableEmotions);
+      const ragCtx = await resolveRagContext(messages, character.avatar || '');
+      const context = buildConversationContext(messages, character, availableEmotions, undefined, ragCtx ?? undefined);
       // Replace the system prompt's last line to instruct impersonation
       context.push({
         role: 'system',
@@ -2035,11 +2074,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
+      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
       const context = buildConversationContext(updatedMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),
         activated: wiTimerActivated,
-      });
+      }, ragCtx ?? undefined);
 
       const finalContext = maybeApplyInstructMode(context);
       const stream = await api.generateMessage(
@@ -2354,11 +2394,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
+      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
       const context = buildConversationContext(updatedMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),
         activated: wiTimerActivated,
-      });
+      }, ragCtx ?? undefined);
       const { provider, model } = getProviderAndModel();
 
       const finalContext = maybeApplyInstructMode(context);

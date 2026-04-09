@@ -44,6 +44,8 @@ interface ChatMessageProps {
   onEditAndRegenerate?: (newContent: string) => void;
   onDelete?: () => void;
   onRegenerate?: () => void;
+  /** Phase 8.6: create a checkpoint at this message. */
+  onCheckpoint?: () => void;
   /** Increment this to programmatically trigger edit mode (e.g. up-arrow shortcut). */
   triggerEditNonce?: number;
 }
@@ -75,6 +77,7 @@ export function ChatMessage({
   onEditAndRegenerate,
   onDelete,
   onRegenerate,
+  onCheckpoint,
   triggerEditNonce,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -219,6 +222,7 @@ export function ChatMessage({
         onDelete={() => onDelete?.()}
         onRegenerate={onRegenerate}
         showRegenerate={!isUser && !!onRegenerate}
+        onCheckpoint={onCheckpoint}
         anchorRight={layoutMode === 'bubbles' && isUser}
       />
       {showTtsButton && (
