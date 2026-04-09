@@ -26,6 +26,8 @@ import {
   setChatFontSize,
   getChatMaxWidth,
   setChatMaxWidth,
+  getVnMode,
+  setVnMode,
   type ChatLayoutMode,
   type AvatarShape,
 } from '../../hooks/displayPreferences';
@@ -84,6 +86,8 @@ export function SettingsPage() {
   const [avatarShapePref, setAvatarShapeState] = useState<AvatarShape>(() => getAvatarShape());
   const [fontSizePref, setFontSizeState] = useState<number>(() => getChatFontSize());
   const [chatWidthPref, setChatWidthState] = useState<number>(() => getChatMaxWidth());
+  // Phase 6.4: VN mode
+  const [vnModeOn, setVnModeState] = useState<boolean>(() => getVnMode());
 
   // Phase 6.3: TTS settings state
   const { isSupported: isTtsSupported, voices: ttsVoices } = useSpeechSynthesis();
@@ -707,6 +711,34 @@ export function SettingsPage() {
                 }}
                 className="w-full accent-[var(--color-primary)]"
               />
+
+              {/* Visual Novel Mode */}
+              <div className="flex items-center justify-between mt-4">
+                <div>
+                  <p className="text-xs font-medium text-[var(--color-text-primary)]">Visual Novel Mode</p>
+                  <p className="text-[10px] text-[var(--color-text-secondary)] mt-0.5">
+                    Full-screen sprite behind chat with semi-transparent message overlay
+                  </p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={vnModeOn}
+                  onClick={() => {
+                    const next = !vnModeOn;
+                    setVnModeState(next);
+                    setVnMode(next);
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                    vnModeOn ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-bg-tertiary)]'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      vnModeOn ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </section>
 
             {/* Voice Input Language */}

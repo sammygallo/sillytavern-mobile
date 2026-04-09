@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback, type CSSProperties } from 'react';
 import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -30,6 +30,16 @@ import {
   getAvatarShape,
   getChatFontSize,
   getChatMaxWidth,
+  getVnMode,
+  getVnBgForCharacter,
+  setVnBgForCharacter,
+  clearVnBgForCharacter,
+  getVnBgGlobal,
+  setVnBgGlobal,
+  clearVnBgGlobal,
+  getCostume,
+  setCostume,
+  clearCostume,
 } from '../../hooks/displayPreferences';
 
 export function ChatView() {
@@ -77,6 +87,8 @@ export function ChatView() {
   const avatarShapePref = getAvatarShape();
   const chatFontSize = getChatFontSize();
   const chatMaxWidth = getChatMaxWidth();
+  // Phase 6.4: VN mode (re-read on every render so settings changes take effect immediately)
+  const isVnMode = getVnMode();
 
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
@@ -94,6 +106,13 @@ export function ChatView() {
   const [isImageGenOpen, setIsImageGenOpen] = useState(false);
   const dragCounter = useRef(0);
 
+  // Phase 6.4: VN mode — background image and costume
+  const [vnBg, setVnBgState] = useState<string | null>(null);
+  const [activeCostume, setActiveCostumeState] = useState<string | null>(null);
+  const [costumeInputVisible, setCostumeInputVisible] = useState(false);
+  const [costumeDraft, setCostumeDraft] = useState('');
+  const bgInputRef = useRef<HTMLInputElement>(null);
+
   // Phase 9.1: in-chat message search
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,7 +122,7 @@ export function ChatView() {
   const messageRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
+  const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar, activeCostume);
 
   const latestEmotion = useMemo(() => {
     const characterMessages = messages.filter((m) => !m.isUser && !m.isSystem);
@@ -220,6 +239,32 @@ export function ChatView() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
   }, []);
 
+  // Phase 6.4: sync VN bg and costume when character changes
+  useEffect(() => {
+    if (selectedCharacter) {
+      setVnBgState(getVnBgForCharacter(selectedCharacter.avatar) ?? getVnBgGlobal());
+      setActiveCostumeState(getCostume(selectedCharacter.avatar));
+    } else {
+      setVnBgState(getVnBgGlobal());
+      setActiveCostumeState(null);
+    }
+  }, [selectedCharacter?.avatar]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase 6.4: track the last 3 distinct AI speakers for VN group sprite layout
+  const recentSpeakers = useMemo<string[]>(() => {
+    if (!isGroupChatMode) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (let i = messages.length - 1; i >= 0 && result.length < 3; i--) {
+      const m = messages[i];
+      if (!m.isUser && !m.isSystem && m.characterAvatar && !seen.has(m.characterAvatar)) {
+        seen.add(m.characterAvatar);
+        result.push(m.characterAvatar);
+      }
+    }
+    return result; // result[0] = most recent speaker
+  }, [messages, isGroupChatMode]);
+
   useEffect(() => {
     if (!selectedCharacter) return;
     if (lastCharacterRef.current === selectedCharacter.avatar) return;
@@ -303,6 +348,47 @@ export function ChatView() {
   // Phase 7.1/7.5: extension-gated features
   const imageGenEnabled = useExtensionStore((s) => s.enabled.imageGen);
   const summarizeEnabled = useExtensionStore((s) => s.enabled.summarize);
+
+  // Phase 6.4: background image picker
+  const handleBgFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      if (selectedCharacter) {
+        setVnBgForCharacter(selectedCharacter.avatar, dataUrl);
+      } else {
+        setVnBgGlobal(dataUrl);
+      }
+      setVnBgState(dataUrl);
+    };
+    reader.readAsDataURL(file);
+    // Reset so the same file can be re-selected later
+    e.target.value = '';
+  }, [selectedCharacter]);
+
+  const handleClearBg = useCallback(() => {
+    if (selectedCharacter) {
+      clearVnBgForCharacter(selectedCharacter.avatar);
+      setVnBgState(getVnBgGlobal());
+    } else {
+      clearVnBgGlobal();
+      setVnBgState(null);
+    }
+  }, [selectedCharacter]);
+
+  // Phase 6.4: costume setter (called from VN header input)
+  const handleSetCostume = useCallback((name: string) => {
+    if (!selectedCharacter) return;
+    if (name.trim()) {
+      setCostume(selectedCharacter.avatar, name.trim());
+      setActiveCostumeState(name.trim());
+    } else {
+      clearCostume(selectedCharacter.avatar);
+      setActiveCostumeState(null);
+    }
+  }, [selectedCharacter]);
 
   const handleSend = (content: string, images?: string[]) => {
     if (isGroupChatMode && groupChatCharacters.length >= 2) {
@@ -420,7 +506,70 @@ export function ChatView() {
   const cancelTitleEdit = () => setIsEditingTitle(false);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden relative">
+      {/* Phase 6.4: VN background image (z-0, behind sprite and content) */}
+      {isVnMode && vnBg && (
+        <img
+          src={vnBg}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style={{ zIndex: 0 }}
+        />
+      )}
+
+      {/* Phase 6.4: VN sprite layer — single character (z-1) */}
+      {isVnMode && !isGroupChatMode && selectedCharacter && (
+        <img
+          key={`vn-sprite-${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+          src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-contain object-bottom pointer-events-none"
+          style={{ zIndex: 1 }}
+          onError={() => {
+            if (latestEmotion) {
+              const key = `${selectedCharacter.avatar}-${latestEmotion}`;
+              setFailedExpressions((prev) => new Set(prev).add(key));
+            }
+          }}
+        />
+      )}
+
+      {/* Phase 6.4: VN sprite layer — group chat, last 3 speakers side-by-side */}
+      {isVnMode && isGroupChatMode && recentSpeakers.map((avatar, idx) => {
+        const total = recentSpeakers.length;
+        // Positioning: most recent (idx 0) is front/center, others are dimmed on sides.
+        const spritePositions: Record<number, Array<CSSProperties>> = {
+          1: [{ inset: 0 }],
+          2: [
+            { top: 0, bottom: 0, right: '5%', width: '45%' },     // most recent → right
+            { top: 0, bottom: 0, left: '5%', width: '45%' },      // older → left
+          ],
+          3: [
+            { top: 0, bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '38%' }, // center
+            { top: 0, bottom: 0, right: '2%', width: '35%' },     // right
+            { top: 0, bottom: 0, left: '2%', width: '35%' },      // left
+          ],
+        };
+        const positions = spritePositions[total] ?? spritePositions[1];
+        const pos = positions[idx] ?? { inset: 0 };
+        const opacity = idx === 0 ? 1 : 0.5;
+        const zIndex = 1 + (recentSpeakers.length - idx); // most recent on top
+        return (
+          <img
+            key={`vn-group-${avatar}`}
+            src={getDefaultAvatarUrl(avatar)}
+            alt=""
+            aria-hidden
+            className="absolute object-contain object-bottom pointer-events-none"
+            style={{ opacity, zIndex, ...pos }}
+          />
+        );
+      })}
+
+      {/* All chat content — raised to z-[2] so it sits above VN layers */}
+      <div className={`flex flex-col flex-1 min-h-0 ${isVnMode ? 'relative' : ''}`} style={isVnMode ? { zIndex: 2 } : undefined}>
       {/* Group Chat Header (always visible when in group mode) */}
       {isGroupChatMode ? (
         <>
@@ -494,6 +643,26 @@ export function ChatView() {
               >
                 <Settings2 size={18} />
               </button>
+              {isVnMode && (
+                <>
+                  <button
+                    onClick={() => bgInputRef.current?.click()}
+                    className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                    title="Set VN background image"
+                  >
+                    Set BG
+                  </button>
+                  {vnBg && (
+                    <button
+                      onClick={handleClearBg}
+                      className="text-xs px-2 py-1 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] transition-colors"
+                      title="Clear background"
+                    >
+                      ✕ BG
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 onClick={exitGroupChat}
                 className="text-xs px-3 py-1.5 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]"
@@ -509,59 +678,218 @@ export function ChatView() {
               isSending={isSending}
             />
           )}
+          {/* Hidden file input for VN background picker (group mode) */}
+          <input
+            ref={bgInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleBgFileChange}
+          />
         </>
       ) : selectedCharacter ? (
         <>
-          {/* Mobile: character portrait */}
-          <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
-            <img
-              key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-              src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-              alt={selectedCharacter.name}
-              className="w-full h-full object-cover object-top transition-opacity duration-300"
-              onError={() => {
-                if (latestEmotion) {
-                  const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
-                  setFailedExpressions((prev) => new Set(prev).add(expressionKey));
-                }
-              }}
-            />
-            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
-            <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
-                {selectedCharacter.name}
-              </h2>
-              <div className="flex items-center gap-2">
+          {/* Mobile: character portrait (hidden in VN mode — sprite renders as absolute layer) */}
+          {!isVnMode && (
+            <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
+              <img
+                key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+                src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                alt={selectedCharacter.name}
+                className="w-full h-full object-cover object-top transition-opacity duration-300"
+                onError={() => {
+                  if (latestEmotion) {
+                    const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
+                    setFailedExpressions((prev) => new Set(prev).add(expressionKey));
+                  }
+                }}
+              />
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
+              <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
+                  {selectedCharacter.name}
+                </h2>
+                <div className="flex items-center gap-2">
+                  {latestEmotion && (
+                    <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
+                      {latestEmotion}
+                    </span>
+                  )}
+                  <button
+                    onClick={openSearch}
+                    className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
+                    aria-label="Search messages"
+                    title="Search messages"
+                  >
+                    <Search size={15} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Phase 6.4: VN mode compact header — shown on mobile instead of the 30vh panel */}
+          {isVnMode && (
+            <div className="lg:hidden bg-black/30 backdrop-blur-sm flex-shrink-0">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <h2 className="text-sm font-semibold text-white truncate flex-1">
+                  {selectedCharacter.name}
+                </h2>
                 {latestEmotion && (
-                  <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-black/30 text-white/70 capitalize">
                     {latestEmotion}
                   </span>
                 )}
                 <button
+                  onClick={() => { setCostumeDraft(activeCostume ?? ''); setCostumeInputVisible((v) => !v); }}
+                  className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
+                  title="Change sprite costume"
+                >
+                  {activeCostume ? `✦ ${activeCostume}` : 'Costume'}
+                </button>
+                <button
                   onClick={openSearch}
-                  className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
+                  className="p-1.5 rounded-full text-white/80 hover:bg-black/30 transition-colors"
                   aria-label="Search messages"
                   title="Search messages"
                 >
                   <Search size={15} />
                 </button>
+                <button
+                  onClick={() => bgInputRef.current?.click()}
+                  className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
+                  title="Set VN background image"
+                >
+                  Set BG
+                </button>
+                {vnBg && (
+                  <button
+                    onClick={handleClearBg}
+                    className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
+                    title="Clear background"
+                  >
+                    ✕ BG
+                  </button>
+                )}
               </div>
+              {costumeInputVisible && (
+                <div className="flex items-center gap-2 px-3 pb-2">
+                  <input
+                    type="text"
+                    value={costumeDraft}
+                    onChange={(e) => setCostumeDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { handleSetCostume(costumeDraft); setCostumeInputVisible(false); }
+                      else if (e.key === 'Escape') setCostumeInputVisible(false);
+                    }}
+                    placeholder="Costume folder name (e.g. Alice_swimsuit)"
+                    className="flex-1 text-xs bg-black/40 border border-white/20 rounded px-2 py-1 text-white placeholder:text-white/40 focus:outline-none focus:border-white/40"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => { handleSetCostume(costumeDraft); setCostumeInputVisible(false); }}
+                    className="text-xs px-2 py-1 rounded bg-white/20 text-white hover:bg-white/30 transition-colors"
+                  >
+                    Apply
+                  </button>
+                  {activeCostume && (
+                    <button
+                      onClick={() => { handleSetCostume(''); setCostumeInputVisible(false); }}
+                      className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
           {/* Desktop: compact header bar */}
-          <div className="hidden lg:flex items-center gap-3 px-4 h-12 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-bg-secondary)]">
-            <h2 className="text-sm font-semibold text-[var(--color-text-primary)] flex-1 truncate">
+          <div className={`hidden lg:flex flex-wrap items-center gap-2 px-4 h-auto min-h-12 border-b border-[var(--color-border)] flex-shrink-0 py-1 ${isVnMode ? 'bg-black/30 backdrop-blur-sm' : 'bg-[var(--color-bg-secondary)]'}`}>
+            <h2 className={`text-sm font-semibold flex-1 truncate ${isVnMode ? 'text-white' : 'text-[var(--color-text-primary)]'}`}>
               {selectedCharacter.name}
             </h2>
+            {isVnMode && (
+              <>
+                {latestEmotion && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-black/30 text-white/70 capitalize">
+                    {latestEmotion}
+                  </span>
+                )}
+                <button
+                  onClick={() => { setCostumeDraft(activeCostume ?? ''); setCostumeInputVisible((v) => !v); }}
+                  className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
+                  title="Change sprite costume"
+                >
+                  {activeCostume ? `✦ ${activeCostume}` : 'Costume'}
+                </button>
+                {costumeInputVisible && (
+                  <>
+                    <input
+                      type="text"
+                      value={costumeDraft}
+                      onChange={(e) => setCostumeDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { handleSetCostume(costumeDraft); setCostumeInputVisible(false); }
+                        else if (e.key === 'Escape') setCostumeInputVisible(false);
+                      }}
+                      placeholder="Costume folder (e.g. Alice_swimsuit)"
+                      className="text-xs bg-black/40 border border-white/20 rounded px-2 py-1 text-white placeholder:text-white/40 focus:outline-none focus:border-white/40 w-48"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => { handleSetCostume(costumeDraft); setCostumeInputVisible(false); }}
+                      className="text-xs px-2 py-1 rounded bg-white/20 text-white hover:bg-white/30 transition-colors"
+                    >
+                      Apply
+                    </button>
+                    {activeCostume && (
+                      <button
+                        onClick={() => { handleSetCostume(''); setCostumeInputVisible(false); }}
+                        className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </>
+                )}
+                <button
+                  onClick={() => bgInputRef.current?.click()}
+                  className="text-xs px-2 py-1 rounded bg-black/30 text-white/70 hover:bg-black/50 transition-colors"
+                  title="Set VN background image"
+                >
+                  Set BG
+                </button>
+                {vnBg && (
+                  <button
+                    onClick={handleClearBg}
+                    className="text-xs px-2 py-1 rounded bg-black/30 text-white/60 hover:bg-black/50 transition-colors"
+                    title="Clear background"
+                  >
+                    ✕ BG
+                  </button>
+                )}
+              </>
+            )}
             <button
               onClick={openSearch}
-              className="p-1.5 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+              className={`p-1.5 rounded-md transition-colors ${isVnMode ? 'text-white/80 hover:bg-black/30' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]'}`}
               aria-label="Search messages"
               title="Search messages"
             >
               <Search size={18} />
             </button>
           </div>
+
+          {/* Hidden file input for VN background picker */}
+          <input
+            ref={bgInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleBgFileChange}
+          />
         </>
       ) : null}
 
@@ -629,7 +957,7 @@ export function ChatView() {
         ref={scrollContainerRef}
         className={`flex-1 min-h-0 overflow-y-auto relative ${
           isDragOver ? 'ring-2 ring-[var(--color-primary)] ring-inset' : ''
-        }`}
+        } ${isVnMode ? 'bg-black/40 backdrop-blur-[2px]' : ''}`}
         onScroll={handleScroll}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -834,6 +1162,7 @@ export function ChatView() {
             <Settings2 size={10} className="inline -mt-0.5" /> and tap a talk icon to choose who speaks next.
           </div>
         )}
+      </div>{/* end VN content wrapper */}
     </div>
   );
 }

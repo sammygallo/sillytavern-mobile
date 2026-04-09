@@ -23,13 +23,18 @@ function extractCharacterName(avatarName: string | undefined): string | undefine
   return name;
 }
 
-export function useCharacterSprites(avatarFilename: string | undefined) {
+/**
+ * @param avatarFilename  - character avatar filename (e.g. "Alice.png")
+ * @param nameOverride    - optional override for the sprite folder name, used by
+ *                         the costume system (e.g. "Alice_swimsuit" loads that folder)
+ */
+export function useCharacterSprites(avatarFilename: string | undefined, nameOverride?: string | null) {
   const [sprites, setSprites] = useState<SpriteInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Extract actual character name from avatar filename
-  const characterName = extractCharacterName(avatarFilename);
+  // If nameOverride is provided, use it directly; otherwise derive from avatarFilename.
+  const characterName = nameOverride || extractCharacterName(avatarFilename);
 
   useEffect(() => {
     if (!characterName) {
