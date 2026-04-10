@@ -196,7 +196,7 @@ export function SettingsPage() {
         ) : (
           <>
             {/* Active Provider Selection */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
                 Active Provider
               </h2>
@@ -301,7 +301,7 @@ export function SettingsPage() {
 
             {/* Model Selection */}
             {currentProvider && activeProvider !== 'custom' && (
-              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
                   Model
                 </h2>
@@ -321,7 +321,7 @@ export function SettingsPage() {
             )}
 
             {/* Phase 8.4: Connection Profiles */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <Plug size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -430,7 +430,7 @@ export function SettingsPage() {
             </section>
 
             {/* API Keys Configuration */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
                 API Keys
               </h2>
@@ -519,7 +519,7 @@ export function SettingsPage() {
             </section>
 
             {/* Generation Settings Link */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/generation')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -540,7 +540,7 @@ export function SettingsPage() {
             </section>
 
             {/* World Info Link */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/worldinfo')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -561,7 +561,7 @@ export function SettingsPage() {
             </section>
 
             {/* Regex Scripts Link (Phase 8.2) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/regex')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -582,7 +582,7 @@ export function SettingsPage() {
             </section>
 
             {/* Invitations */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/invitations')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -603,7 +603,7 @@ export function SettingsPage() {
             </section>
 
             {/* Users (Phase 3.1) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/users')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -624,7 +624,7 @@ export function SettingsPage() {
             </section>
 
             {/* Quick Replies (Phase 10.2) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/quickreplies')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -643,7 +643,7 @@ export function SettingsPage() {
             </section>
 
             {/* Extensions (Phase 7.1) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/extensions')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -662,7 +662,7 @@ export function SettingsPage() {
             </section>
 
             {/* Image Gallery (Phase 7.3) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/gallery')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -681,7 +681,7 @@ export function SettingsPage() {
             </section>
 
             {/* Data Bank (Phase 8.5) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
                 onClick={() => navigate('/settings/databank')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
@@ -700,7 +700,7 @@ export function SettingsPage() {
             </section>
 
             {/* Appearance (Phase 7.4) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <Palette size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -767,7 +767,7 @@ export function SettingsPage() {
             </section>
 
             {/* Chat Display (Phase 7.3) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <MessageSquare size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -904,7 +904,7 @@ export function SettingsPage() {
 
             {/* Voice Input Language */}
             {isSpeechSupported && (
-              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
                 <div className="flex items-center gap-2 mb-2">
                   <Mic size={16} className="text-[var(--color-text-secondary)]" />
                   <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -937,7 +937,7 @@ export function SettingsPage() {
 
             {/* Text-to-Speech (Phase 6.3) */}
             {isTtsSupported && (
-              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
                 <div className="flex items-center gap-2 mb-2">
                   <Volume2 size={16} className="text-[var(--color-text-secondary)]" />
                   <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -1037,7 +1037,7 @@ export function SettingsPage() {
             )}
 
             {/* Translation (Phase 7.2) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <Languages size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
