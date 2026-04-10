@@ -85,7 +85,7 @@ function nearestDalleSize(
 ): string {
   const sizes = model === 'dall-e-3' ? DALLE3_SIZES : DALLE2_SIZES;
   const aspect = w / h;
-  let best = sizes[0];
+  let best: string = sizes[0];
   let bestDiff = Infinity;
   for (const s of sizes) {
     const [sw, sh] = s.split('x').map(Number);
