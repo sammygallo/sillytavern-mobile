@@ -7,7 +7,11 @@ import {
 } from '../api/client';
 import { useSettingsStore } from './settingsStore';
 import { usePersonaStore } from './personaStore';
-import { useGenerationStore } from './generationStore';
+import {
+  useGenerationStore,
+  POST_HISTORY_SECTIONS,
+  type PromptSectionId,
+} from './generationStore';
 import { useCharacterStore } from './characterStore';
 import {
   useWorldInfoStore,
@@ -121,6 +125,33 @@ function loadAuthorNotesFromStorage(): Record<string, AuthorNote> {
 
 function saveAuthorNotesToStorage(notes: Record<string, AuthorNote>) {
   localStorage.setItem(AUTHOR_NOTES_KEY, JSON.stringify(notes));
+}
+
+/**
+ * Phase 9.3: per-chat variable storage. Keyed by chat file name, each value is
+ * a flat map of variable-name → string value. Populated and mutated by the
+ * `{{setvar}}` / `{{addvar}}` / `{{incvar}}` / `{{decvar}}` macros.
+ */
+const CHAT_VARIABLES_KEY = 'stm:chat-vars';
+
+function loadChatVariablesFromStorage(): Record<string, Record<string, string>> {
+  try {
+    const stored = localStorage.getItem(CHAT_VARIABLES_KEY);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveChatVariablesToStorage(vars: Record<string, Record<string, string>>) {
+  try {
+    localStorage.setItem(CHAT_VARIABLES_KEY, JSON.stringify(vars));
+  } catch {
+    // ignore quota
+  }
 }
 
 const GROUP_CHATS_KEY = 'sillytavern_group_chats';
@@ -373,6 +404,11 @@ interface ChatState {
   getAuthorNote: (fileName: string) => AuthorNote | null;
   setAuthorNote: (fileName: string, note: Partial<AuthorNote>) => void;
 
+  // Phase 9.3: per-chat variables consumed by the macro system
+  chatVariables: Record<string, Record<string, string>>;
+  getChatVariables: (fileName: string) => Record<string, string>;
+  setChatVariables: (fileName: string, vars: Record<string, string>) => void;
+
   // Phase 8.6: load a branch snapshot into memory (does not save to disk)
   loadBranchMessages: (messages: ChatMessage[]) => void;
 
@@ -507,7 +543,8 @@ function buildMacroContext(
   personaName: string,
   personaDescription: string,
   messages: ChatMessage[],
-  model: string
+  model: string,
+  variables?: Record<string, string>
 ): MacroContext {
   const nonSystem = messages.filter((m) => !m.isSystem);
   const lastMessage = nonSystem[nonSystem.length - 1]?.content || '';
@@ -524,10 +561,13 @@ function buildMacroContext(
     characterPersonality:
       character.personality || character.data?.personality || '',
     characterScenario: character.scenario || character.data?.scenario || '',
+    characterExampleMessages:
+      character.mes_example || character.data?.mes_example || '',
     lastMessage,
     lastUserMessage: lastUser,
     lastCharMessage: lastChar,
     model,
+    variables,
   };
 }
 
@@ -573,12 +613,23 @@ function buildConversationContext(
   const genState = useGenerationStore.getState();
   const { activeModel, activeProvider } = useSettingsStore.getState();
 
+  // Phase 9.3: clone the chat's variables into a mutable map that macros
+  // will read from and write to during processing. After the whole context
+  // is built, the snapshot is persisted back to the store via
+  // `setChatVariables` so `{{setvar}}` calls survive between turns.
+  const chatStoreState = useChatStore.getState();
+  const ctxChatFile = chatStoreState.currentChatFile;
+  const variables: Record<string, string> = ctxChatFile
+    ? { ...chatStoreState.getChatVariables(ctxChatFile) }
+    : {};
+
   const macroCtx = buildMacroContext(
     character,
     personaName,
     personaDescription,
     messages,
-    activeModel
+    activeModel,
+    variables
   );
   const sub = (text: string) => (text ? processMacros(text, macroCtx) : '');
 
@@ -625,7 +676,6 @@ function buildConversationContext(
       .join('\n\n');
 
   // Phase 7.1: Extension context contributions
-  const { currentChatFile: ctxChatFile } = useChatStore.getState();
   const extContributions = extensionRegistry.runContextHooks({
     messages: messages.map((m) => ({
       name: m.name,
@@ -709,47 +759,55 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     }
   }
 
-  // Assemble system prompt parts in order
-  const systemParts: string[] = [mainPrompt];
-  if (persona && persona.descriptionPosition === 'before_char' && personaBlock) {
-    systemParts.push(personaBlock);
-  }
+  // Phase 9.1: Compute every reorderable section's content into a keyed map.
+  // Order + enabled flags come from `genState.promptOrder`; assembly below
+  // iterates that array instead of pushing in a hard-coded sequence.
   const wiBeforeChar = joinWi(wiByPosition.before_char);
-  if (wiBeforeChar) {
-    systemParts.push(wiBeforeChar);
-  }
   const extBeforeChar = joinExt(extByPosition.before_char);
-  if (extBeforeChar) systemParts.push(extBeforeChar);
-  if (charInfoBlock) {
-    systemParts.push(charInfoBlock);
-  }
   const wiAfterChar = joinWi(wiByPosition.after_char);
-  if (wiAfterChar) {
-    systemParts.push(wiAfterChar);
-  }
   const extAfterChar = joinExt(extByPosition.after_char);
-  if (extAfterChar) systemParts.push(extAfterChar);
-  if (persona && persona.descriptionPosition === 'after_char' && personaDescription) {
-    systemParts.push(`[The user you're talking to is ${personaName}. ${personaDescription}]`);
-  }
-  if (persona && persona.descriptionPosition === 'in_prompt' && personaDescription) {
-    // Only add it once; if not added as before_char
-    // Already added as before_char, so only add if not already
-  }
   const wiBeforeAn = joinWi(wiByPosition.before_an);
-  if (wiBeforeAn) {
-    systemParts.push(wiBeforeAn);
-  }
   const extBeforeAn = joinExt(extByPosition.before_an);
-  if (extBeforeAn) systemParts.push(extBeforeAn);
-  if (userJailbreak) {
-    systemParts.push(userJailbreak);
-  }
-  systemParts.push(emotionInstruction);
+  const wiAfterAn = joinWi(wiByPosition.after_an);
+  const extAfterAn = joinExt(extByPosition.after_an);
 
-  // Phase 8.5 — RAG: inject retrieved chunks from the Data Bank
-  if (ragContext) {
-    systemParts.push(`[Relevant background information]\n${ragContext}`);
+  const sectionContent: Partial<Record<PromptSectionId, string>> = {
+    main_prompt: mainPrompt,
+    persona_before_char:
+      persona && persona.descriptionPosition === 'before_char' && personaBlock
+        ? personaBlock
+        : '',
+    wi_before_char: wiBeforeChar,
+    ext_before_char: extBeforeChar,
+    char_info_block: charInfoBlock,
+    wi_after_char: wiAfterChar,
+    ext_after_char: extAfterChar,
+    persona_after_char:
+      persona && persona.descriptionPosition === 'after_char' && personaDescription
+        ? `[The user you're talking to is ${personaName}. ${personaDescription}]`
+        : '',
+    wi_before_an: wiBeforeAn,
+    ext_before_an: extBeforeAn,
+    jailbreak: userJailbreak,
+    emotion_instruction: emotionInstruction,
+    rag_context: ragContext
+      ? `[Relevant background information]\n${ragContext}`
+      : '',
+    char_phi: charPostHistoryInstructions,
+    user_phi: userPHI,
+    wi_after_an: wiAfterAn,
+    ext_after_an: extAfterAn,
+  };
+
+  const promptOrder = genState.promptOrder;
+
+  // Pre-history stage: everything that lives in the leading system block.
+  const systemParts: string[] = [];
+  for (const entry of promptOrder) {
+    if (!entry.enabled) continue;
+    if (POST_HISTORY_SECTIONS.has(entry.id)) continue;
+    const content = sectionContent[entry.id];
+    if (content && content.trim()) systemParts.push(content);
   }
 
   context.push({
@@ -914,22 +972,14 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     context.push(...historyWithInsertions);
   }
 
-  // Post-history instructions: character's PHI, then user PHI
-  if (charPostHistoryInstructions) {
-    context.push({ role: 'system', content: charPostHistoryInstructions });
-  }
-  if (userPHI) {
-    context.push({ role: 'system', content: userPHI });
-  }
-
-  // World info 'after_an' entries go after post-history instructions
-  const wiAfterAn = joinWi(wiByPosition.after_an);
-  if (wiAfterAn) {
-    context.push({ role: 'system', content: wiAfterAn });
-  }
-  const extAfterAn = joinExt(extByPosition.after_an);
-  if (extAfterAn) {
-    context.push({ role: 'system', content: extAfterAn });
+  // Phase 9.1: Post-history stage — char PHI, user PHI, wi_after_an, ext_after_an
+  // emit in user-defined order (same map computed above).
+  for (const entry of promptOrder) {
+    if (!entry.enabled) continue;
+    if (!POST_HISTORY_SECTIONS.has(entry.id)) continue;
+    const content = sectionContent[entry.id];
+    if (!content || !content.trim()) continue;
+    context.push({ role: 'system', content });
   }
 
   // If not token-aware, still estimate tokens for the UI badge
@@ -937,6 +987,12 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     genState.setLastTokenEstimate(
       estimateConversationTokens(context, tokenProfile)
     );
+  }
+
+  // Phase 9.3: persist any `{{setvar}}`/`{{addvar}}`/`{{incvar}}`/`{{decvar}}`
+  // writes that happened during macro processing back to the chat's store.
+  if (ctxChatFile) {
+    chatStoreState.setChatVariables(ctxChatFile, variables);
   }
 
   return context;
@@ -1444,6 +1500,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     saveAuthorNotesToStorage(updated);
     set({ authorNotes: updated });
+  },
+
+  // Phase 9.3: Chat variables (consumed by macro system)
+  chatVariables: loadChatVariablesFromStorage(),
+
+  getChatVariables: (fileName: string) => {
+    return get().chatVariables[fileName] ?? {};
+  },
+
+  setChatVariables: (fileName: string, vars: Record<string, string>) => {
+    const { chatVariables } = get();
+    const updated = { ...chatVariables, [fileName]: { ...vars } };
+    saveChatVariablesToStorage(updated);
+    set({ chatVariables: updated });
   },
 
   refreshGroupChats: () => {
