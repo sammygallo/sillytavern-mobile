@@ -288,42 +288,35 @@ body {
 
 /*
  * Cards and sections — rainbow border via the .cyberpunk-card class.
- * Technique: transparent border + two backgrounds:
- *   1) solid dark fill clipped to padding-box
- *   2) animated conic-gradient clipped to border-box (shows through the border)
+ * Technique: transparent border + two background layers:
+ *   1) solid dark fill, clipped to padding-box
+ *   2) animated conic-gradient, clipped to border-box (shows through the border)
+ *
+ * CRITICAL: the solid fill MUST be wrapped in `linear-gradient(c, c)` —
+ * a bare `<color>` is only valid as the shorthand background-color, which in
+ * multi-layer declarations only applies to the FINAL layer. Using a plain
+ * color in the first layer makes the entire shorthand invalid and the browser
+ * silently drops it, leaving the card transparent.
  */
 [data-theme="cyberpunk"] .cyberpunk-card {
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   background:
-    var(--color-bg-secondary) padding-box,
-    conic-gradient(
-      from var(--rainbow-angle, 0deg),
-      rgba(139, 92, 246, 0.5),
-      rgba(59, 130, 246, 0.5),
-      rgba(34, 197, 94, 0.5),
-      rgba(245, 158, 11, 0.5),
-      rgba(239, 68, 68, 0.5),
-      rgba(224, 64, 251, 0.5),
-      rgba(139, 92, 246, 0.5)
-    ) border-box;
-  animation: rainbow-spin 8s linear infinite;
-  box-shadow: 0 0 12px -3px rgba(139, 92, 246, 0.15),
-              0 0 12px -3px rgba(59, 130, 246, 0.15),
-              0 0 12px -3px rgba(34, 197, 94, 0.15);
-  transition: box-shadow 0.3s;
-}
-
-[data-theme="cyberpunk"] .cyberpunk-card:hover {
-  border-color: transparent;
-  background:
-    var(--color-bg-secondary) padding-box,
+    linear-gradient(var(--color-bg-secondary), var(--color-bg-secondary)) padding-box,
     conic-gradient(
       from var(--rainbow-angle, 0deg),
       #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6
     ) border-box;
-  box-shadow: 0 0 16px -2px rgba(139, 92, 246, 0.25),
-              0 0 16px -2px rgba(59, 130, 246, 0.25),
-              0 0 16px -2px rgba(34, 197, 94, 0.25);
+  animation: rainbow-spin 8s linear infinite;
+  box-shadow: 0 0 16px -3px rgba(139, 92, 246, 0.35),
+              0 0 16px -3px rgba(59, 130, 246, 0.3),
+              0 0 16px -3px rgba(224, 64, 251, 0.3);
+  transition: box-shadow 0.3s;
+}
+
+[data-theme="cyberpunk"] .cyberpunk-card:hover {
+  box-shadow: 0 0 24px -2px rgba(139, 92, 246, 0.55),
+              0 0 24px -2px rgba(59, 130, 246, 0.45),
+              0 0 24px -2px rgba(224, 64, 251, 0.45);
 }
 
 /* Toggle switches — neon glow when active */
@@ -370,18 +363,24 @@ body {
               0 0 8px -2px rgba(59, 130, 246, 0.2);
 }
 
-/* User chat bubbles — dark bg with animated rainbow border + glow */
+/*
+ * User chat bubbles — dark fill + animated rainbow border + vibrant glow.
+ * Same `linear-gradient(color, color)` wrapper as .cyberpunk-card above;
+ * without it the background shorthand is invalid and the bubble renders
+ * transparent, letting the Tailwind `bg-[var(--color-primary)]` show through
+ * (or, when the override wins, nothing at all).
+ */
 [data-theme="cyberpunk"] .cyberpunk-user-bubble {
   background:
-    var(--color-bg-tertiary) padding-box,
+    linear-gradient(var(--color-bg-tertiary), var(--color-bg-tertiary)) padding-box,
     conic-gradient(
       from var(--rainbow-angle, 0deg),
       #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6
     ) border-box !important;
   color: var(--color-text-primary) !important;
-  border: 1.5px solid transparent !important;
+  border: 2px solid transparent !important;
   animation: rainbow-spin 8s linear infinite;
-  box-shadow: 0 0 10px -2px rgba(139, 92, 246, 0.25),
-              0 0 10px -2px rgba(59, 130, 246, 0.2),
-              0 0 10px -2px rgba(224, 64, 251, 0.2);
+  box-shadow: 0 0 14px -2px rgba(139, 92, 246, 0.5),
+              0 0 14px -2px rgba(59, 130, 246, 0.4),
+              0 0 14px -2px rgba(224, 64, 251, 0.45);
 }
