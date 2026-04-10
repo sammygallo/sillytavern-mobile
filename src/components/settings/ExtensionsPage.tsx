@@ -13,7 +13,7 @@ function ExtensionCard({ ext }: { ext: ExtensionManifest }) {
   const SettingsPanel = ext.settingsPanel;
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden">
+    <div className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
       <div className="flex items-center gap-3 p-4">
         <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center flex-shrink-0">
           <Icon size={20} className="text-[var(--color-primary)]" />
