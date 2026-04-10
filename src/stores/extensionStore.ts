@@ -1,24 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type ExtensionId = 'tts' | 'imageGen' | 'translate' | 'summarize';
-
 interface ExtensionState {
-  enabled: Record<ExtensionId, boolean>;
-  setEnabled: (id: ExtensionId, on: boolean) => void;
+  /** Per-extension enabled state. Keys are extension IDs (e.g. 'tts', 'summarize'). */
+  enabled: Record<string, boolean>;
+  setEnabled: (id: string, on: boolean) => void;
 }
-
-const DEFAULTS: Record<ExtensionId, boolean> = {
-  tts: true,
-  imageGen: true,
-  translate: true,
-  summarize: false,
-};
 
 export const useExtensionStore = create<ExtensionState>()(
   persist(
     (set) => ({
-      enabled: { ...DEFAULTS },
+      enabled: {},
       setEnabled: (id, on) =>
         set((s) => ({ enabled: { ...s.enabled, [id]: on } })),
     }),
