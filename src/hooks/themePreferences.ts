@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
-export type ThemePreset = 'purple' | 'blue' | 'green' | 'red' | 'amber';
+export type ThemePreset = 'purple' | 'blue' | 'green' | 'red' | 'amber' | 'cyberpunk';
 
 interface ThemeColors {
   primary: string;
@@ -56,6 +56,11 @@ const DARK_THEMES: Record<ThemePreset, ThemeColors> = {
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
   },
+  cyberpunk: {
+    primary: '#e040fb', primaryHover: '#ea80fc',
+    bgPrimary: '#0a0a0f', bgSecondary: '#12121a', bgTertiary: '#1a1a28',
+    textPrimary: '#f0e6ff', textSecondary: '#9a8fad', border: '#2a2540',
+  },
 };
 
 const LIGHT_THEMES: Record<ThemePreset, ThemeColors> = {
@@ -84,6 +89,12 @@ const LIGHT_THEMES: Record<ThemePreset, ThemeColors> = {
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
   },
+  cyberpunk: {
+    // Light mode still uses the neon palette but softened for readability.
+    primary: '#c026d3', primaryHover: '#a21caf',
+    bgPrimary: '#faf5ff', bgSecondary: '#f3e8ff', bgTertiary: '#e9d5ff',
+    textPrimary: '#1a0a2e', textSecondary: '#6b21a8', border: '#d8b4fe',
+  },
 };
 
 /** Accent swatch colors shown in the settings picker (always the dark variant). */
@@ -93,9 +104,10 @@ export const PRESET_SWATCHES: Record<ThemePreset, string> = {
   green: '#22c55e',
   red: '#ef4444',
   amber: '#f59e0b',
+  cyberpunk: 'conic-gradient(#8b5cf6, #3b82f6, #22c55e, #ef4444, #f59e0b, #8b5cf6)',
 };
 
-export const THEME_PRESETS: ThemePreset[] = ['purple', 'blue', 'green', 'red', 'amber'];
+export const THEME_PRESETS: ThemePreset[] = ['purple', 'blue', 'green', 'red', 'amber', 'cyberpunk'];
 
 // ---------------------------------------------------------------------------
 // localStorage persistence
@@ -169,6 +181,19 @@ export function applyTheme(): void {
   root.style.setProperty('--color-text-primary', colors.textPrimary);
   root.style.setProperty('--color-text-secondary', colors.textSecondary);
   root.style.setProperty('--color-border', colors.border);
+
+  // Cyberpunk preset: set a data attribute so CSS can target special effects.
+  // Also inject the rainbow gradient as a CSS variable for borders/glows.
+  if (preset === 'cyberpunk') {
+    root.setAttribute('data-theme', 'cyberpunk');
+    root.style.setProperty(
+      '--rainbow-gradient',
+      'linear-gradient(135deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6)'
+    );
+  } else {
+    root.removeAttribute('data-theme');
+    root.style.removeProperty('--rainbow-gradient');
+  }
 
   // Native form controls and scrollbars respect color-scheme
   root.style.colorScheme = resolved;

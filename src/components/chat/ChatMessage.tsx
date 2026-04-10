@@ -422,7 +422,7 @@ export function ChatMessage({
               className={`
                 px-4 py-2 rounded-2xl
                 ${isUser
-                  ? 'bg-[var(--color-primary)] text-white rounded-br-md'
+                  ? 'bg-[var(--color-primary)] text-white rounded-br-md cyberpunk-user-bubble'
                   : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-bl-md'}
                 ${isEditing ? 'w-full' : ''}
                 ${!isEditing && onEdit ? 'cursor-text select-text' : ''}
