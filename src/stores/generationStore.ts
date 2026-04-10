@@ -87,6 +87,99 @@ export const DEFAULT_INSTRUCT_CONFIG: InstructConfig = {
   extraStopStrings: [],
 };
 
+/** Phase 9.1: stable IDs for every reorderable prompt section. */
+export type PromptSectionId =
+  | 'main_prompt'
+  | 'persona_before_char'
+  | 'wi_before_char'
+  | 'ext_before_char'
+  | 'char_info_block'
+  | 'wi_after_char'
+  | 'ext_after_char'
+  | 'persona_after_char'
+  | 'wi_before_an'
+  | 'ext_before_an'
+  | 'jailbreak'
+  | 'emotion_instruction'
+  | 'rag_context'
+  | 'char_phi'
+  | 'user_phi'
+  | 'wi_after_an'
+  | 'ext_after_an';
+
+export interface PromptSectionEntry {
+  id: PromptSectionId;
+  enabled: boolean;
+}
+
+export const DEFAULT_PROMPT_ORDER: PromptSectionEntry[] = [
+  { id: 'main_prompt', enabled: true },
+  { id: 'persona_before_char', enabled: true },
+  { id: 'wi_before_char', enabled: true },
+  { id: 'ext_before_char', enabled: true },
+  { id: 'char_info_block', enabled: true },
+  { id: 'wi_after_char', enabled: true },
+  { id: 'ext_after_char', enabled: true },
+  { id: 'persona_after_char', enabled: true },
+  { id: 'wi_before_an', enabled: true },
+  { id: 'ext_before_an', enabled: true },
+  { id: 'jailbreak', enabled: true },
+  { id: 'emotion_instruction', enabled: true },
+  { id: 'rag_context', enabled: true },
+  { id: 'char_phi', enabled: true },
+  { id: 'user_phi', enabled: true },
+  { id: 'wi_after_an', enabled: true },
+  { id: 'ext_after_an', enabled: true },
+];
+
+/** Sections emitted AFTER the chat history (post-history stage). */
+export const POST_HISTORY_SECTIONS: ReadonlySet<PromptSectionId> = new Set<PromptSectionId>([
+  'char_phi',
+  'user_phi',
+  'wi_after_an',
+  'ext_after_an',
+]);
+
+export const PROMPT_SECTION_LABELS: Record<PromptSectionId, string> = {
+  main_prompt: 'Main / System Prompt',
+  persona_before_char: 'Persona (before character)',
+  wi_before_char: 'World Info — Before Char',
+  ext_before_char: 'Extensions — Before Char',
+  char_info_block: 'Character Info (desc / personality / scenario / examples)',
+  wi_after_char: 'World Info — After Char',
+  ext_after_char: 'Extensions — After Char',
+  persona_after_char: 'Persona (after character)',
+  wi_before_an: 'World Info — Before Author Note',
+  ext_before_an: 'Extensions — Before Author Note',
+  jailbreak: 'Jailbreak / Auxiliary Prompt',
+  emotion_instruction: 'Emotion Tag Instruction',
+  rag_context: 'Data Bank / RAG Context',
+  char_phi: 'Character Post-History Instructions',
+  user_phi: 'User Post-History Instructions',
+  wi_after_an: 'World Info — After Author Note',
+  ext_after_an: 'Extensions — After Author Note',
+};
+
+export const PROMPT_SECTION_DESCRIPTIONS: Record<PromptSectionId, string> = {
+  main_prompt: 'The top-level system instruction. Character card overrides win when respected.',
+  persona_before_char: 'Your persona description, when positioned before the character block.',
+  wi_before_char: 'World Info entries marked "before character".',
+  ext_before_char: 'Extension-injected context marked "before character".',
+  char_info_block: 'Description + personality + scenario + example dialogue.',
+  wi_after_char: 'World Info entries marked "after character".',
+  ext_after_char: 'Extension-injected context marked "after character".',
+  persona_after_char: 'Your persona description, when positioned after the character block.',
+  wi_before_an: 'World Info entries marked "before author note".',
+  ext_before_an: 'Extension-injected context marked "before author note".',
+  jailbreak: 'User-level jailbreak / auxiliary system prompt.',
+  emotion_instruction: 'Instructs the AI to prefix each reply with an [emotion:TAG] tag.',
+  rag_context: 'Semantic chunks retrieved from the Data Bank for the current message.',
+  char_phi: "Character card's post-history instructions (after chat history).",
+  user_phi: 'User-level post-history instructions (after chat history).',
+  wi_after_an: 'World Info entries marked "after author note" (after chat history).',
+  ext_after_an: 'Extension-injected context marked "after author note" (after chat history).',
+};
+
 interface GenerationState {
   sampler: SamplerParams;
   presets: GenerationPreset[];
@@ -95,6 +188,8 @@ interface GenerationState {
   prompt: PromptConfig;
   context: ContextConfig;
   instruct: InstructConfig;
+  /** Phase 9.1: user-editable prompt section order + enabled flags. */
+  promptOrder: PromptSectionEntry[];
 
   // Cached last-used token estimate for the UI badge
   lastTokenEstimate: number;
@@ -114,6 +209,11 @@ interface GenerationState {
 
   setInstruct: (instruct: Partial<InstructConfig>) => void;
 
+  setPromptOrder: (order: PromptSectionEntry[]) => void;
+  movePromptSection: (id: PromptSectionId, direction: 'up' | 'down') => void;
+  togglePromptSection: (id: PromptSectionId) => void;
+  resetPromptOrder: () => void;
+
   setLastTokenEstimate: (n: number) => void;
 }
 
@@ -126,6 +226,7 @@ interface PersistedShape {
   prompt: PromptConfig;
   context: ContextConfig;
   instruct: InstructConfig;
+  promptOrder?: PromptSectionEntry[];
 }
 
 function loadFromStorage(): Partial<PersistedShape> {
@@ -154,11 +255,41 @@ function persist(state: GenerationState) {
     prompt: state.prompt,
     context: state.context,
     instruct: state.instruct,
+    promptOrder: state.promptOrder,
   });
 }
 
 function generatePresetId(): string {
   return `preset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Merge a persisted promptOrder with the default. Unknown/legacy IDs are
+ * dropped, and any sections that exist in the default but not in the persisted
+ * array are appended at the end with `enabled: true` (forward-compat).
+ */
+export function mergePromptOrder(
+  persisted: PromptSectionEntry[] | undefined
+): PromptSectionEntry[] {
+  if (!Array.isArray(persisted) || persisted.length === 0) {
+    return DEFAULT_PROMPT_ORDER.map((e) => ({ ...e }));
+  }
+  const knownIds = new Set<PromptSectionId>(DEFAULT_PROMPT_ORDER.map((e) => e.id));
+  const seen = new Set<PromptSectionId>();
+  const result: PromptSectionEntry[] = [];
+  for (const entry of persisted) {
+    if (!entry || typeof entry.id !== 'string') continue;
+    if (!knownIds.has(entry.id as PromptSectionId)) continue;
+    if (seen.has(entry.id as PromptSectionId)) continue;
+    seen.add(entry.id as PromptSectionId);
+    result.push({ id: entry.id as PromptSectionId, enabled: entry.enabled !== false });
+  }
+  for (const def of DEFAULT_PROMPT_ORDER) {
+    if (!seen.has(def.id)) {
+      result.push({ ...def });
+    }
+  }
+  return result;
 }
 
 const initial = loadFromStorage();
@@ -170,6 +301,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
   prompt: { ...DEFAULT_PROMPT_CONFIG, ...(initial.prompt ?? {}) },
   context: { ...DEFAULT_CONTEXT_CONFIG, ...(initial.context ?? {}) },
   instruct: { ...DEFAULT_INSTRUCT_CONFIG, ...(initial.instruct ?? {}) },
+  promptOrder: mergePromptOrder(initial.promptOrder),
   lastTokenEstimate: 0,
 
   setSampler: (patch) => {
@@ -281,6 +413,49 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
       const next = { ...state, instruct: { ...state.instruct, ...patch } };
       persist(next);
       return { instruct: next.instruct };
+    });
+  },
+
+  setPromptOrder: (order) => {
+    set((state) => {
+      const next = { ...state, promptOrder: mergePromptOrder(order) };
+      persist(next);
+      return { promptOrder: next.promptOrder };
+    });
+  },
+
+  movePromptSection: (id, direction) => {
+    set((state) => {
+      const idx = state.promptOrder.findIndex((e) => e.id === id);
+      if (idx < 0) return {};
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= state.promptOrder.length) return {};
+      const nextOrder = state.promptOrder.slice();
+      const [moved] = nextOrder.splice(idx, 1);
+      nextOrder.splice(target, 0, moved);
+      const next = { ...state, promptOrder: nextOrder };
+      persist(next);
+      return { promptOrder: nextOrder };
+    });
+  },
+
+  togglePromptSection: (id) => {
+    set((state) => {
+      const nextOrder = state.promptOrder.map((e) =>
+        e.id === id ? { ...e, enabled: !e.enabled } : e
+      );
+      const next = { ...state, promptOrder: nextOrder };
+      persist(next);
+      return { promptOrder: nextOrder };
+    });
+  },
+
+  resetPromptOrder: () => {
+    set((state) => {
+      const nextOrder = DEFAULT_PROMPT_ORDER.map((e) => ({ ...e }));
+      const next = { ...state, promptOrder: nextOrder };
+      persist(next);
+      return { promptOrder: nextOrder };
     });
   },
 

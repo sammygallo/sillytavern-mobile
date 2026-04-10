@@ -6,12 +6,14 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { getDefaultContextSize } from '../../utils/tokenizer';
 import { INSTRUCT_TEMPLATES } from '../../utils/instructTemplates';
 import { Button, Input, TextArea } from '../ui';
+import { PromptOrderEditor } from './PromptOrderEditor';
 
-type TabId = 'samplers' | 'prompts' | 'context' | 'instruct';
+type TabId = 'samplers' | 'prompts' | 'order' | 'context' | 'instruct';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'samplers', label: 'Samplers' },
   { id: 'prompts', label: 'Prompts' },
+  { id: 'order', label: 'Order' },
   { id: 'context', label: 'Context' },
   { id: 'instruct', label: 'Instruct' },
 ];
@@ -400,6 +402,8 @@ export function GenerationSettingsPage() {
             </div>
           </section>
         )}
+
+        {tab === 'order' && <PromptOrderEditor />}
 
         {tab === 'context' && (
           <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 space-y-4">

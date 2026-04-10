@@ -5,7 +5,7 @@ import { ProfilePage } from './components/auth/ProfilePage';
 import { RequireRole } from './components/auth/RequireRole';
 import { MainLayout } from './components/layout/MainLayout';
 import { ChatView } from './components/chat/ChatView';
-import { SettingsPage, GenerationSettingsPage, InvitationManager, UserManagementPage, QuickReplyPage, ExtensionsPage, DataBankPage, GalleryPage } from './components/settings';
+import { SettingsPage, GenerationSettingsPage, InvitationManager, UserManagementPage, QuickReplyPage, ExtensionsPage, DataBankPage, GalleryPage, PromptTemplatesPage } from './components/settings';
 import { WorldInfoPage } from './components/worldinfo';
 import { RegexScriptPage } from './components/regexscripts';
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
@@ -22,6 +22,7 @@ function App() {
         <Route path="/profile" element={<RequireRole minRole="end_user"><ProfilePage /></RequireRole>} />
         <Route path="/settings" element={<RequireRole minRole="admin"><SettingsPage /></RequireRole>} />
         <Route path="/settings/generation" element={<RequireRole minRole="admin"><GenerationSettingsPage /></RequireRole>} />
+        <Route path="/settings/prompts" element={<RequireRole minRole="admin"><PromptTemplatesPage /></RequireRole>} />
         <Route path="/settings/worldinfo" element={<RequireRole minRole="admin"><WorldInfoPage /></RequireRole>} />
         <Route path="/settings/regex" element={<RequireRole minRole="admin"><RegexScriptPage /></RequireRole>} />
         <Route path="/settings/invitations" element={<RequireRole minRole="admin"><InvitationManager /></RequireRole>} />

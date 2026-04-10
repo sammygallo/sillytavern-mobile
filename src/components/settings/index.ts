@@ -6,3 +6,4 @@ export { QuickReplyPage } from './QuickReplyPage';
 export { ExtensionsPage } from './ExtensionsPage';
 export { DataBankPage } from './DataBankPage';
 export { GalleryPage } from './GalleryPage';
+export { PromptTemplatesPage } from './PromptTemplatesPage';
