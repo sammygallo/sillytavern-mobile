@@ -267,3 +267,146 @@ body {
    chat width are all driven by inline Tailwind classes + inline styles
    in ChatMessage.tsx.  No additional CSS needed here.
    =================================================================== */
+
+/* ===================================================================
+   Cyberpunk / Neon Rainbow Theme
+   Active when data-theme="cyberpunk" is set on <html>.
+   Gradient borders with slow parallax, soft neon glow.
+   =================================================================== */
+
+/* Animated rainbow gradient — shifts slowly for parallax effect. */
+@property --rainbow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rainbow-spin {
+  to { --rainbow-angle: 360deg; }
+}
+
+/* Cards, sections, modals — rainbow border + glow */
+[data-theme="cyberpunk"] section,
+[data-theme="cyberpunk"] .bg-\[var\(--color-bg-secondary\)\] {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  background-origin: border-box;
+}
+
+[data-theme="cyberpunk"] section::before,
+[data-theme="cyberpunk"] .bg-\[var\(--color-bg-secondary\)\]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--rainbow-angle, 0deg),
+    #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  animation: rainbow-spin 8s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+}
+
+/* Brighten on hover */
+[data-theme="cyberpunk"] section:hover::before,
+[data-theme="cyberpunk"] .bg-\[var\(--color-bg-secondary\)\]:hover::before {
+  opacity: 0.85;
+}
+
+/* Soft glow under cards */
+[data-theme="cyberpunk"] section,
+[data-theme="cyberpunk"] .bg-\[var\(--color-bg-secondary\)\] {
+  box-shadow: 0 0 12px -3px rgba(139, 92, 246, 0.15),
+              0 0 12px -3px rgba(59, 130, 246, 0.15),
+              0 0 12px -3px rgba(34, 197, 94, 0.15);
+}
+
+/* Buttons — thin rainbow border + subtle glow */
+[data-theme="cyberpunk"] button[class*="bg-[var(--color-primary)]"],
+[data-theme="cyberpunk"] button[class*="bg-\[var\(--color-primary\)\]"] {
+  box-shadow: 0 0 10px -2px rgba(224, 64, 251, 0.4),
+              0 0 20px -4px rgba(139, 92, 246, 0.2);
+}
+
+/* Toggle switches — neon glow when active */
+[data-theme="cyberpunk"] button[role="switch"][aria-checked="true"] {
+  box-shadow: 0 0 8px 1px rgba(224, 64, 251, 0.5);
+}
+
+/* Scrollbar — neon accent */
+[data-theme="cyberpunk"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #e040fb);
+  border-radius: 9999px;
+}
+
+[data-theme="cyberpunk"] ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #a78bfa, #ea80fc);
+}
+
+/* Streaming cursor — rainbow pulse */
+[data-theme="cyberpunk"] .streaming-cursor {
+  background: linear-gradient(180deg, #8b5cf6, #3b82f6, #22c55e);
+  background-size: 100% 300%;
+  animation: cursor-blink 0.8s step-end infinite,
+             rainbow-cursor-shift 3s ease infinite;
+}
+
+@keyframes rainbow-cursor-shift {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 0% 100%; }
+}
+
+/* Blockquote accent — rainbow left border */
+[data-theme="cyberpunk"] .markdown-content .md-segment blockquote {
+  border-image: linear-gradient(180deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444) 1;
+}
+
+/* Links — neon glow on hover */
+[data-theme="cyberpunk"] .markdown-content .md-segment a:hover {
+  text-shadow: 0 0 6px rgba(224, 64, 251, 0.5);
+}
+
+/* Code blocks — subtle border glow */
+[data-theme="cyberpunk"] .code-block-wrapper {
+  box-shadow: 0 0 8px -2px rgba(139, 92, 246, 0.2),
+              0 0 8px -2px rgba(59, 130, 246, 0.2);
+}
+
+/* User chat bubbles — dark bg with animated rainbow border + glow */
+[data-theme="cyberpunk"] .cyberpunk-user-bubble {
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-text-primary) !important;
+  position: relative;
+  overflow: visible;
+  box-shadow: 0 0 10px -2px rgba(139, 92, 246, 0.25),
+              0 0 10px -2px rgba(59, 130, 246, 0.2),
+              0 0 10px -2px rgba(224, 64, 251, 0.2);
+}
+
+[data-theme="cyberpunk"] .cyberpunk-user-bubble::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--rainbow-angle, 0deg),
+    #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  animation: rainbow-spin 8s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}

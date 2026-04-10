@@ -754,7 +754,11 @@ export function SettingsPage() {
                         ? 'ring-2 ring-offset-2 ring-offset-[var(--color-bg-secondary)] ring-[var(--color-primary)] scale-110'
                         : 'hover:scale-110'
                     }`}
-                    style={{ backgroundColor: PRESET_SWATCHES[preset] }}
+                    style={{
+                      ...(PRESET_SWATCHES[preset].includes('gradient')
+                        ? { background: PRESET_SWATCHES[preset] }
+                        : { backgroundColor: PRESET_SWATCHES[preset] }),
+                    }}
                     title={preset.charAt(0).toUpperCase() + preset.slice(1)}
                     aria-label={`${preset} theme`}
                   />
