@@ -1217,6 +1217,8 @@ export function ChatView() {
           isOpen={isImageGenOpen}
           onClose={() => setIsImageGenOpen(false)}
           initialPrompt={selectedCharacter.name}
+          messages={messages}
+          characterName={selectedCharacter.name}
           onInsert={async (dataUrl, prompt) => {
             await insertImageMessage(
               dataUrl,

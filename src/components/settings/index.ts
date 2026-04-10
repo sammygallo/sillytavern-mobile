@@ -5,3 +5,4 @@ export { UserManagementPage } from './UserManagementPage';
 export { QuickReplyPage } from './QuickReplyPage';
 export { ExtensionsPage } from './ExtensionsPage';
 export { DataBankPage } from './DataBankPage';
+export { GalleryPage } from './GalleryPage';

@@ -29,6 +29,8 @@ import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemp
 import { useRegexScriptStore } from './regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
 import { useDataBankStore } from './dataBankStore';
+import { extensionRegistry } from '../extensions/registry';
+import type { ContextContribution } from '../extensions/types';
 
 export interface ChatMessage {
   id: string;
@@ -622,6 +624,35 @@ function buildConversationContext(
       .filter((c) => c.trim().length > 0)
       .join('\n\n');
 
+  // Phase 7.1: Extension context contributions
+  const { currentChatFile: ctxChatFile } = useChatStore.getState();
+  const extContributions = extensionRegistry.runContextHooks({
+    messages: messages.map((m) => ({
+      name: m.name,
+      isUser: m.isUser,
+      isSystem: m.isSystem,
+      content: m.content,
+    })),
+    characterName: character.name,
+    characterAvatar: character.avatar || '',
+    currentChatFile: ctxChatFile || '',
+  });
+  const extByPosition: Record<string, ContextContribution[]> = {
+    before_char: [],
+    after_char: [],
+    before_an: [],
+    after_an: [],
+    at_depth: [],
+  };
+  for (const c of extContributions) {
+    (extByPosition[c.position] ??= []).push(c);
+  }
+  const joinExt = (list: ContextContribution[]): string =>
+    list
+      .map((c) => c.content)
+      .filter((c) => c.trim().length > 0)
+      .join('\n\n');
+
   const description = sub(getCharacterField(character, 'description'));
   const personality = sub(getCharacterField(character, 'personality'));
   const scenario = sub(getCharacterField(character, 'scenario'));
@@ -687,6 +718,8 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   if (wiBeforeChar) {
     systemParts.push(wiBeforeChar);
   }
+  const extBeforeChar = joinExt(extByPosition.before_char);
+  if (extBeforeChar) systemParts.push(extBeforeChar);
   if (charInfoBlock) {
     systemParts.push(charInfoBlock);
   }
@@ -694,6 +727,8 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   if (wiAfterChar) {
     systemParts.push(wiAfterChar);
   }
+  const extAfterChar = joinExt(extByPosition.after_char);
+  if (extAfterChar) systemParts.push(extAfterChar);
   if (persona && persona.descriptionPosition === 'after_char' && personaDescription) {
     systemParts.push(`[The user you're talking to is ${personaName}. ${personaDescription}]`);
   }
@@ -705,6 +740,8 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   if (wiBeforeAn) {
     systemParts.push(wiBeforeAn);
   }
+  const extBeforeAn = joinExt(extByPosition.before_an);
+  if (extBeforeAn) systemParts.push(extBeforeAn);
   if (userJailbreak) {
     systemParts.push(userJailbreak);
   }
@@ -732,9 +769,8 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   const depthPromptContent = depthPrompt ? sub(depthPrompt.prompt) : '';
 
   // Phase 8.1: Author's Note — per-chat persistent instruction injected at depth
-  const { currentChatFile } = useChatStore.getState();
-  const authorNote = currentChatFile
-    ? useChatStore.getState().getAuthorNote(currentChatFile)
+  const authorNote = ctxChatFile
+    ? useChatStore.getState().getAuthorNote(ctxChatFile)
     : null;
 
   // Persona @ depth
@@ -759,6 +795,14 @@ Choose the emotion that best matches how ${character.name} would feel based on t
     const d = Math.max(0, Math.floor(m.entry.depth));
     if (!wiAtDepthByDepth[d]) wiAtDepthByDepth[d] = [];
     wiAtDepthByDepth[d].push(m);
+  }
+
+  // Phase 7.1: Group extension at-depth contributions by their depth value.
+  const extAtDepthByDepth: Record<number, ContextContribution[]> = {};
+  for (const c of extByPosition.at_depth) {
+    const d = Math.max(0, Math.floor(c.depth ?? 0));
+    if (!extAtDepthByDepth[d]) extAtDepthByDepth[d] = [];
+    extAtDepthByDepth[d].push(c);
   }
 
   for (let i = 0; i < recentMessages.length; i++) {
@@ -791,6 +835,15 @@ Choose the emotion that best matches how ${character.name} would feel based on t
       const content = joinWi(wiHere);
       if (content) {
         historyWithInsertions.push({ role: 'system', content });
+      }
+    }
+    // Phase 7.1: Extension at-depth contributions
+    const extHere = extAtDepthByDepth[depthFromEnd];
+    if (extHere && extHere.length > 0) {
+      for (const c of extHere) {
+        if (c.content.trim()) {
+          historyWithInsertions.push({ role: c.role, content: c.content });
+        }
       }
     }
 
@@ -833,6 +886,17 @@ Choose the emotion that best matches how ${character.name} would feel based on t
       }
     }
   }
+  // Phase 7.1: Extension at-depth overflow — prepend if depth > history length.
+  for (const depthKey of Object.keys(extAtDepthByDepth)) {
+    const d = parseInt(depthKey, 10);
+    if (d > recentMessages.length) {
+      for (const c of extAtDepthByDepth[d]) {
+        if (c.content.trim()) {
+          historyWithInsertions.unshift({ role: c.role, content: c.content });
+        }
+      }
+    }
+  }
 
   // Token-aware trimming: keep system prompts, drop oldest history that exceeds budget
   if (ctxConfig.tokenAware) {
@@ -862,6 +926,10 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   const wiAfterAn = joinWi(wiByPosition.after_an);
   if (wiAfterAn) {
     context.push({ role: 'system', content: wiAfterAn });
+  }
+  const extAfterAn = joinExt(extByPosition.after_an);
+  if (extAfterAn) {
+    context.push({ role: 'system', content: extAfterAn });
   }
 
   // If not token-aware, still estimate tokens for the UI badge
