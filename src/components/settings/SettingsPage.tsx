@@ -49,6 +49,83 @@ import { TRANSLATE_PROVIDERS, TRANSLATE_LANGUAGES, type TranslateProvider } from
 import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
 import { useGenerationStore } from '../../stores/generationStore';
 
+/**
+ * Phase 10.1 — Local model presets.
+ * One-click buttons that pre-fill the custom endpoint URL (and, for Ollama
+ * only, a default model name) for the five most common local OpenAI-compatible
+ * servers. All five serve the OpenAI `/v1` base; users just need to know the
+ * right host + port, which this table encodes.
+ */
+interface LocalPreset {
+  name: string;
+  url: string;
+  defaultModel?: string;
+}
+
+const LOCAL_PRESETS: LocalPreset[] = [
+  { name: 'Ollama', url: 'http://localhost:11434/v1', defaultModel: 'llama3' },
+  { name: 'LM Studio', url: 'http://localhost:1234/v1' },
+  { name: 'llama.cpp', url: 'http://localhost:8080/v1' },
+  { name: 'KoboldCpp', url: 'http://localhost:5001/v1' },
+  { name: 'Oobabooga', url: 'http://localhost:5000/v1' },
+];
+
+/**
+ * Phase 10.1 — Test a custom OpenAI-compatible endpoint from the browser.
+ *
+ * Fetches `${url}/models` directly (no backend proxy — local endpoints are
+ * reachable from the browser since they're on localhost). On success returns
+ * the list of model IDs so the UI can turn the model field into a dropdown.
+ * On failure returns a human-readable error message with specific hints for
+ * the most common misconfigurations (missing `/v1`, CORS, server not running).
+ */
+async function testLocalEndpoint(
+  url: string
+): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
+  const normalized = url.replace(/\/+$/, '');
+  try {
+    const res = await fetch(`${normalized}/models`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        return {
+          ok: false,
+          error: "Endpoint returned 404. Did you include '/v1' at the end of the URL?",
+        };
+      }
+      return { ok: false, error: `Endpoint returned HTTP ${res.status}` };
+    }
+    const data = (await res.json().catch(() => null)) as
+      | { data?: Array<{ id?: string }> }
+      | null;
+    const models = Array.isArray(data?.data)
+      ? data.data
+          .map((m) => m.id)
+          .filter((x): x is string => typeof x === 'string')
+      : [];
+    return { ok: true, models };
+  } catch (e) {
+    // Browser fetch throws TypeError for both network failures and CORS
+    // blocks (the response is opaque, so we can't distinguish them). Point
+    // the user at both possibilities in one message.
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      error:
+        `Couldn't reach the endpoint (${msg}). Is your local server running? ` +
+        'CORS may also block browser access — see help below.',
+    };
+  }
+}
+
+type TestState =
+  | { kind: 'idle' }
+  | { kind: 'pending' }
+  | { kind: 'success'; count: number }
+  | { kind: 'error'; message: string };
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const {
@@ -84,6 +161,9 @@ export function SettingsPage() {
   // Custom endpoint fields — kept as local state and only persisted on Save/blur.
   const [customUrlInput, setCustomUrlInput] = useState('');
   const [customModelInput, setCustomModelInput] = useState('');
+  // Phase 10.1: test-connection state and model-list discovery.
+  const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
 
@@ -127,6 +207,13 @@ export function SettingsPage() {
   // Sync local custom-endpoint inputs from store after fetchSettings resolves.
   useEffect(() => { setCustomUrlInput(customUrl); }, [customUrl]);
   useEffect(() => { setCustomModelInput(activeModel); }, [activeModel]);
+
+  // Phase 10.1: reset test-connection state whenever the URL input changes so
+  // a stale "success" badge doesn't linger after the user edits the URL.
+  useEffect(() => {
+    setTestState({ kind: 'idle' });
+    setDiscoveredModels([]);
+  }, [customUrlInput]);
 
   const handleSaveApiKey = async (providerId: string) => {
     const key = apiKeyInputs[providerId];
@@ -253,6 +340,33 @@ export function SettingsPage() {
                   </h2>
                 </div>
 
+                {/* Phase 10.1: one-click presets for the common local runners. */}
+                <div>
+                  <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                    Quick presets
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LOCAL_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setCustomUrlInput(preset.url);
+                          // Only pre-fill the model if a default exists AND the
+                          // current model field is empty — don't clobber a user
+                          // who already picked their own model name.
+                          if (preset.defaultModel && !customModelInput.trim()) {
+                            setCustomModelInput(preset.defaultModel);
+                          }
+                        }}
+                        className="px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
                     Base URL
@@ -266,6 +380,30 @@ export function SettingsPage() {
                       className="flex-1"
                     />
                     <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const url = customUrlInput.trim();
+                        if (!url) return;
+                        setTestState({ kind: 'pending' });
+                        const result = await testLocalEndpoint(url);
+                        if (result.ok) {
+                          setTestState({ kind: 'success', count: result.models.length });
+                          setDiscoveredModels(result.models);
+                        } else {
+                          setTestState({ kind: 'error', message: result.error });
+                          setDiscoveredModels([]);
+                        }
+                      }}
+                      disabled={testState.kind === 'pending' || !customUrlInput.trim()}
+                      className="shrink-0"
+                    >
+                      {testState.kind === 'pending' ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        'Test'
+                      )}
+                    </Button>
+                    <Button
                       onClick={() => setCustomUrl(customUrlInput.trim())}
                       disabled={isSaving || !customUrlInput.trim() || customUrlInput.trim() === customUrl}
                       className="shrink-0"
@@ -273,28 +411,83 @@ export function SettingsPage() {
                       {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
                     </Button>
                   </div>
-                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                    OpenAI-compatible base URL. Examples: Ollama → <code>http://localhost:11434/v1</code>, LM Studio → <code>http://localhost:1234/v1</code>
-                  </p>
+
+                  {/* Phase 10.1: test-connection result badge */}
+                  {testState.kind === 'success' && (
+                    <p className="mt-1.5 text-xs text-green-400 flex items-center gap-1">
+                      <Check size={12} />
+                      Connected. Found {testState.count} model{testState.count !== 1 ? 's' : ''}.
+                    </p>
+                  )}
+                  {testState.kind === 'error' && (
+                    <p className="mt-1.5 text-xs text-red-400">{testState.message}</p>
+                  )}
+
+                  <div className="mt-2 text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                    <p className="mb-1">OpenAI-compatible base URL. Ends in <code>/v1</code> for most tools.</p>
+                    <p className="mb-1">
+                      <strong className="text-[var(--color-text-primary)]">CORS:</strong> your local server must allow browser requests.
+                      Ollama and LM Studio allow it by default;
+                      for <code>llama.cpp</code> run with <code>--cors</code>;
+                      KoboldCpp enables it by default on recent versions.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
                     Model name
                   </label>
-                  <Input
-                    value={customModelInput}
-                    onChange={(e) => setCustomModelInput(e.target.value)}
-                    onBlur={() => {
-                      if (customModelInput !== activeModel) {
-                        setActiveModel(customModelInput);
-                      }
-                    }}
-                    placeholder="e.g. llama3, mistral, codellama"
-                  />
-                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                    Exact model identifier your endpoint expects. Changes are saved on blur.
-                  </p>
+                  {discoveredModels.length > 0 ? (
+                    <>
+                      <select
+                        value={
+                          discoveredModels.includes(customModelInput)
+                            ? customModelInput
+                            : '__custom__'
+                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '__custom__') {
+                            // Clear the discovered list so the text input returns
+                            setDiscoveredModels([]);
+                            return;
+                          }
+                          setCustomModelInput(value);
+                          if (value !== activeModel) {
+                            setActiveModel(value);
+                          }
+                        }}
+                        className="w-full text-sm bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                      >
+                        {discoveredModels.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                        <option value="__custom__">Custom…</option>
+                      </select>
+                      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                        Discovered from <code>{customUrlInput}/models</code>. Select one or choose Custom… to type manually.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        value={customModelInput}
+                        onChange={(e) => setCustomModelInput(e.target.value)}
+                        onBlur={() => {
+                          if (customModelInput !== activeModel) {
+                            setActiveModel(customModelInput);
+                          }
+                        }}
+                        placeholder="e.g. llama3, mistral, codellama"
+                      />
+                      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                        Exact model identifier your endpoint expects. Click Test to discover available models.
+                      </p>
+                    </>
+                  )}
                 </div>
               </section>
             )}
