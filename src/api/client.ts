@@ -244,7 +244,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ handle: 'default-user', password: '' }),
       });
-    } catch (e) {
+    } catch {
       // If default-user login fails, we can't bootstrap
       throw new Error('Cannot register: Please login as an admin user first');
     }
@@ -785,7 +785,10 @@ export const SECRET_KEYS = {
   MISTRAL: 'api_key_mistralai',
   GROQ: 'api_key_groq',
   OPENROUTER: 'api_key_openrouter',
+  // Phase 10.2
   COHERE: 'api_key_cohere',
+  DEEPSEEK: 'api_key_deepseek',
+  PERPLEXITY: 'api_key_perplexity',
 } as const;
 
 export const PROVIDERS = [
@@ -795,6 +798,12 @@ export const PROVIDERS = [
   { id: 'mistralai', name: 'Mistral AI', secretKey: SECRET_KEYS.MISTRAL, models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'] },
   { id: 'groq', name: 'Groq', secretKey: SECRET_KEYS.GROQ, models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
   { id: 'openrouter', name: 'OpenRouter', secretKey: SECRET_KEYS.OPENROUTER, models: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-pro-1.5'] },
+  // Phase 10.2 — additional cloud providers. The SillyTavern backend routes by
+  // `chat_completion_source` matching the `id` below, and the API key is stored
+  // under the corresponding SECRET_KEYS entry. No backend changes required.
+  { id: 'deepseek', name: 'DeepSeek', secretKey: SECRET_KEYS.DEEPSEEK, models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { id: 'cohere', name: 'Cohere', secretKey: SECRET_KEYS.COHERE, models: ['command-r-plus', 'command-r', 'command-r-08-2024'] },
+  { id: 'perplexity', name: 'Perplexity', secretKey: SECRET_KEYS.PERPLEXITY, models: ['sonar', 'sonar-pro', 'llama-3.1-sonar-large-128k-online'] },
   // Custom / local: no secret key required; URL and model are stored directly in oai_settings.
   { id: 'custom', name: 'Custom / Local', secretKey: '', models: [] as readonly string[] },
 ] as const;
