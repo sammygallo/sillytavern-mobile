@@ -77,15 +77,17 @@ interface DataBankState {
    * Find the top-K most relevant chunks for `query` across all in-scope
    * documents (global + those matching `characterAvatar`).
    *
-   * Returns an array of chunk texts sorted by relevance, or [] if no
-   * embedded documents are in scope or the API call fails.
-   * Falls back to `embeddingsApiKey` from the store if `apiKey` is omitted.
+   * Returns an array of {text, docName} objects sorted by relevance, or [] if
+   * no embedded documents are in scope or the API call fails. Each result
+   * carries its parent document's name so callers can attribute the source
+   * when injecting into a prompt. Falls back to `embeddingsApiKey` from the
+   * store if `apiKey` is omitted.
    */
   queryRelevantChunks: (
     query: string,
     characterAvatar?: string,
     topK?: number
-  ) => Promise<string[]>;
+  ) => Promise<Array<{ text: string; docName: string }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,14 +218,20 @@ export const useDataBankStore = create<DataBankState>((set, get) => ({
 
     if (inScope.length === 0) return [];
 
-    const allChunks = inScope.flatMap((d) => d.chunks);
+    // Attach docName from the parent document at flatten time so retrieval
+    // results can be attributed back to their source for provenance.
+    const allChunks = inScope.flatMap((d) =>
+      d.chunks.map((c) => ({ ...c, docName: d.name }))
+    );
     if (allChunks.length === 0) return [];
 
     try {
       const queryEmbedding = await getEmbedding(query, key);
       const results = findTopK(queryEmbedding, allChunks, topK);
       // Only return chunks with at least weak relevance (score > 0.3)
-      return results.filter((r) => r.score > 0.3).map((r) => r.text);
+      return results
+        .filter((r) => r.score > 0.3)
+        .map((r) => ({ text: r.text, docName: r.docName }));
     } catch {
       // Fail silently so generation still proceeds without RAG
       return [];

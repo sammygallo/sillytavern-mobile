@@ -575,7 +575,10 @@ function buildMacroContext(
  * Phase 8.5 — RAG helper.
  * Extracts the last user message from `messages`, queries the Data Bank for
  * relevant chunks scoped to `characterAvatar`, and returns a formatted string
- * to inject into the system prompt. Returns null when RAG is inactive.
+ * to inject into the system prompt. Each chunk is prefixed with its source
+ * document name (e.g. `[From: ember_lore]`) so the model can cite passages
+ * and users can debug which document a chunk came from. Returns null when
+ * no relevant chunks are found or RAG is inactive.
  */
 async function resolveRagContext(
   messages: ChatMessage[],
@@ -589,7 +592,9 @@ async function resolveRagContext(
     .queryRelevantChunks(lastUser.content, characterAvatar);
 
   if (chunks.length === 0) return null;
-  return chunks.join('\n\n---\n\n');
+  return chunks
+    .map((c) => `[From: ${c.docName}]\n${c.text}`)
+    .join('\n\n---\n\n');
 }
 
 // Build conversation context for AI
@@ -1003,7 +1008,8 @@ function buildGroupConversationContext(
   messages: ChatMessage[],
   characters: CharacterInfo[],
   currentCharacter: CharacterInfo,
-  scenarioOverride?: string
+  scenarioOverride?: string,
+  ragContext?: string
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
@@ -1065,7 +1071,15 @@ CONTENT RULES:
 - Stay in character as ${currentCharacter.name} only — do NOT write lines for other characters
 - React naturally to what other characters and the user say`;
 
-  context.push({ role: 'system', content: systemPrompt });
+  // Phase 8.5: append Data Bank / RAG context to the system prompt. Group
+  // chats use a single flat system message (vs. the section-map in solo
+  // chat), so we just concatenate the retrieved chunks at the tail rather
+  // than forking the Phase 9 promptOrder system.
+  const finalSystemPrompt = ragContext
+    ? `${systemPrompt}\n\n[Relevant background information]\n${ragContext}`
+    : systemPrompt;
+
+  context.push({ role: 'system', content: finalSystemPrompt });
 
   // Phase 8.1: Author's Note for group chats
   const { currentChatFile: groupChatFile } = useChatStore.getState();
@@ -1128,11 +1142,16 @@ async function generateGroupTurn(
 
   const { provider, model } = getProviderAndModel();
   const updatedMessages = get().messages;
+  // Phase 8.5: resolve Data Bank / RAG chunks scoped to the current speaker.
+  // In a group turn this means Seraphina's character-scoped docs only fire
+  // on Seraphina's turn, which matches how solo chats scope per-character.
+  const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
   const context = buildGroupConversationContext(
     updatedMessages,
     characters,
     character,
-    scenarioOverride
+    scenarioOverride,
+    ragCtx ?? undefined
   );
 
   const finalContext = maybeApplyInstructMode(context);
