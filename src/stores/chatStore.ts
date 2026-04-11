@@ -75,6 +75,21 @@ export const DEFAULT_GROUP_ACTIVATION_STRATEGY: GroupActivationStrategy = 'list'
 export const DEFAULT_POOLED_EXCLUDE_RECENT = 1;
 export const DEFAULT_AUTO_MODE_DELAY_MS = 1500;
 
+/**
+ * Phase 5.3 — how character cards are laid out in a group chat system prompt.
+ *
+ * - `swap` (default): only the currently speaking character's full info is
+ *   injected; other members get a one-line bullet with description +
+ *   personality. Lower token cost; the active speaker "swaps in" each turn.
+ * - `join`: every member gets a full block (description, personality,
+ *   scenario, example dialogue). The current speaker's block is prefixed with
+ *   `[SPEAKING NOW]`. Higher token cost but the model has full context on all
+ *   characters at once, letting it react consistently to their backstories.
+ */
+export type GroupCardMode = 'swap' | 'join';
+
+export const DEFAULT_GROUP_CARD_MODE: GroupCardMode = 'swap';
+
 export interface GroupChatInfo {
   fileName: string;
   characterNames: string[];
@@ -98,6 +113,8 @@ export interface GroupChatInfo {
   talkativenessOverrides: Record<string, number>;
   /** Phase 5.3: user-editable chat title. Falls back to comma-joined names. */
   title?: string;
+  /** Phase 5.3: how member cards are laid out in the system prompt. */
+  cardMode: GroupCardMode;
 }
 
 /** Phase 8.1: per-chat Author's Note — a persistent instruction that gets
@@ -198,6 +215,10 @@ function migrateGroupChat(raw: Partial<GroupChatInfo> & {
       typeof (raw as Partial<GroupChatInfo>).title === 'string'
         ? (raw as Partial<GroupChatInfo>).title
         : undefined,
+    cardMode:
+      raw.cardMode === 'join' || raw.cardMode === 'swap'
+        ? raw.cardMode
+        : DEFAULT_GROUP_CARD_MODE,
   };
 }
 
@@ -389,7 +410,7 @@ interface ChatState {
   setGroupScenarioOverride: (fileName: string, scenario: string) => void;
   reorderGroupMembers: (fileName: string, avatars: string[]) => void;
 
-  // Phase 5.3: per-member talkativeness overrides, title, live add/remove
+  // Phase 5.3: per-member talkativeness overrides, title, live add/remove, card mode
   setGroupTalkativenessOverride: (
     fileName: string,
     avatar: string,
@@ -398,6 +419,7 @@ interface ChatState {
   setGroupTitle: (fileName: string, title: string) => void;
   addGroupChatMember: (fileName: string, character: CharacterInfo) => void;
   removeGroupChatMember: (fileName: string, avatar: string) => void;
+  setGroupCardMode: (fileName: string, mode: GroupCardMode) => void;
 
   // Phase 8.1: Author's Note
   authorNotes: Record<string, AuthorNote>;
@@ -1009,17 +1031,51 @@ function buildGroupConversationContext(
   characters: CharacterInfo[],
   currentCharacter: CharacterInfo,
   scenarioOverride?: string,
-  ragContext?: string
+  ragContext?: string,
+  cardMode: GroupCardMode = DEFAULT_GROUP_CARD_MODE
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const context: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
 
-  const characterDescriptions = characters.map((char) => {
-    const details = [
-      char.description && `Description: ${char.description}`,
-      char.personality && `Personality: ${char.personality}`,
-    ].filter(Boolean).join(' ');
-    return `- ${char.name}: ${details || 'A character in the conversation'}`;
-  }).join('\n');
+  // Phase 5.3: build the "Characters in this conversation" block according to
+  // the chosen mode. Swap keeps the flat one-liner-per-member view (only the
+  // current speaker's full info lives elsewhere in the prompt). Join emits a
+  // full section per member with description / personality / scenario /
+  // examples, and prefixes the current speaker's section with [SPEAKING NOW]
+  // so the model knows which one to write for.
+  let cardBlock: string;
+  if (cardMode === 'join') {
+    cardBlock = characters
+      .map((char) => {
+        const isCurrent = char.avatar === currentCharacter.avatar;
+        const desc = getCharacterField(char, 'description');
+        const pers = getCharacterField(char, 'personality');
+        const scen = getCharacterField(char, 'scenario');
+        const examples = getCharacterField(char, 'mes_example');
+        const header = isCurrent
+          ? `[SPEAKING NOW] ${char.name}`
+          : char.name;
+        const parts = [
+          desc && `Description: ${desc}`,
+          pers && `Personality: ${pers}`,
+          scen && `Scenario: ${scen}`,
+          examples && `Example dialogue:\n${examples}`,
+        ].filter(Boolean);
+        return `## ${header}\n${parts.join('\n\n')}`;
+      })
+      .join('\n\n---\n\n');
+  } else {
+    cardBlock = characters
+      .map((char) => {
+        const desc = getCharacterField(char, 'description');
+        const pers = getCharacterField(char, 'personality');
+        const details = [
+          desc && `Description: ${desc}`,
+          pers && `Personality: ${pers}`,
+        ].filter(Boolean).join(' ');
+        return `- ${char.name}: ${details || 'A character in the conversation'}`;
+      })
+      .join('\n');
+  }
 
   // Resolve scenario: override wins, else falls back to current character's
   // scenario. Macros are processed on the override, but {{char}} is ambiguous
@@ -1051,14 +1107,15 @@ function buildGroupConversationContext(
   }
 
   // Include the current speaker's example dialogue if available — mirrors what
-  // buildConversationContext does for solo chat. This gives the model concrete
-  // examples of how to format RP-style responses (asterisk actions, etc.).
-  const mesExample = getCharacterField(currentCharacter, 'mes_example');
+  // buildConversationContext does for solo chat. In Join mode this is already
+  // baked into the speaker's own block above, so we suppress the duplicate.
+  const mesExample =
+    cardMode === 'join' ? '' : getCharacterField(currentCharacter, 'mes_example');
 
   const systemPrompt = `This is a roleplay group chat. You are playing ${currentCharacter.name} — write ONLY ${currentCharacter.name}'s turn.
 
 Characters in this conversation:
-${characterDescriptions}
+${cardBlock}
 
 ${scenarioText ? `Current scenario: ${scenarioText}\n` : ''}${mesExample ? `Example dialogue for ${currentCharacter.name}:\n${mesExample}\n\n` : ''}FORMATTING RULES (follow exactly):
 - Wrap ALL actions, movements, and narration in *single asterisks*: *He glances toward the door*
@@ -1146,12 +1203,20 @@ async function generateGroupTurn(
   // In a group turn this means Seraphina's character-scoped docs only fire
   // on Seraphina's turn, which matches how solo chats scope per-character.
   const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
+  // Phase 5.3: look up the group's card-handling mode so the builder knows
+  // whether to produce a swap-style flat bullet list or a full per-member
+  // block layout for join mode.
+  const chatState = get();
+  const groupCardMode =
+    chatState.groupChats.find((g) => g.fileName === chatState.currentChatFile)
+      ?.cardMode ?? DEFAULT_GROUP_CARD_MODE;
   const context = buildGroupConversationContext(
     updatedMessages,
     characters,
     character,
     scenarioOverride,
-    ragCtx ?? undefined
+    ragCtx ?? undefined,
+    groupCardMode
   );
 
   const finalContext = maybeApplyInstructMode(context);
@@ -1560,6 +1625,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ groupChats: updated });
   },
 
+  // Phase 5.3: how character cards are laid out in the group system prompt.
+  setGroupCardMode: (fileName, mode) => {
+    const { groupChats } = get();
+    const updated = groupChats.map((g) =>
+      g.fileName === fileName ? { ...g, cardMode: mode } : g
+    );
+    saveGroupChatsToStorage(updated);
+    set({ groupChats: updated });
+  },
+
   toggleGroupMute: (fileName, avatar) => {
     const { groupChats } = get();
     const updated = groupChats.map((g) => {
@@ -1864,6 +1939,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       scenarioOverride: '',
       talkativenessOverrides: {},
       title: undefined,
+      cardMode: DEFAULT_GROUP_CARD_MODE,
     };
     const updatedGroupChats = [...groupChats, newGroupChat];
     saveGroupChatsToStorage(updatedGroupChats);

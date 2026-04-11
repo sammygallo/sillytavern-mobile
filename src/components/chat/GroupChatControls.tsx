@@ -12,6 +12,7 @@ import {
   useChatStore,
   getTalkativeness,
   type GroupActivationStrategy,
+  type GroupCardMode,
 } from '../../stores/chatStore';
 import { useCharacterStore } from '../../stores/characterStore';
 import { Modal } from '../ui/Modal';
@@ -50,6 +51,23 @@ const STRATEGY_OPTIONS: Array<{
   },
 ];
 
+const CARD_MODE_OPTIONS: Array<{
+  value: GroupCardMode;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: 'swap',
+    label: 'Swap',
+    hint: 'Only the active speaker gets full info — lower token cost.',
+  },
+  {
+    value: 'join',
+    label: 'Join',
+    hint: 'All members get full description, personality, scenario, and examples.',
+  },
+];
+
 /**
  * Collapsible controls for the active group chat: activation strategy,
  * pooled exclusion window, per-member mute/force-talk, auto-mode loop,
@@ -65,6 +83,7 @@ export function GroupChatControls({
     s.groupChats.find((g) => g.fileName === fileName) || null
   );
   const setGroupActivationStrategy = useChatStore((s) => s.setGroupActivationStrategy);
+  const setGroupCardMode = useChatStore((s) => s.setGroupCardMode);
   const toggleGroupMute = useChatStore((s) => s.toggleGroupMute);
   const setGroupPooledExcludeRecent = useChatStore((s) => s.setGroupPooledExcludeRecent);
   const setGroupAutoMode = useChatStore((s) => s.setGroupAutoMode);
@@ -108,10 +127,13 @@ export function GroupChatControls({
   const autoModeEnabled = groupChat.autoModeEnabled;
   const autoModeDelayMs = groupChat.autoModeDelayMs;
   const scenarioOverride = groupChat.scenarioOverride;
+  const cardMode = groupChat.cardMode;
   // Pooled N must stay below the pool size so we always have a valid fallback.
   const maxExclude = Math.max(0, characters.length - 1);
   const activeHint =
     STRATEGY_OPTIONS.find((o) => o.value === strategy)?.hint ?? '';
+  const activeCardHint =
+    CARD_MODE_OPTIONS.find((o) => o.value === cardMode)?.hint ?? '';
 
   const handleDragStart = (avatar: string) => {
     if (isSending) return;
@@ -231,6 +253,37 @@ export function GroupChatControls({
         </div>
         <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
           {activeHint}
+        </p>
+      </div>
+
+      {/* Phase 5.3: card-handling mode — swap (current speaker only) vs join (all members). */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+            Card mode
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-[var(--color-bg-tertiary)] p-1">
+          {CARD_MODE_OPTIONS.map((opt) => {
+            const active = opt.value === cardMode;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setGroupCardMode(fileName, opt.value)}
+                className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
+          {activeCardHint}
         </p>
       </div>
 
