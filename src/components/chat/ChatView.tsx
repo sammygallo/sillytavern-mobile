@@ -90,6 +90,7 @@ export function ChatView() {
   /** Whether the user is scrolled near the bottom (within 150px). */
   const isNearBottomRef = useRef(true);
   const lastCharacterRef = useRef<string | null>(null);
+  const lastGroupModeRef = useRef<boolean>(false);
 
   // Phase 7.3: display preferences (read from localStorage on mount/render)
   const chatLayoutMode = getChatLayoutMode();
@@ -325,13 +326,16 @@ export function ChatView() {
 
   useEffect(() => {
     if (!selectedCharacter) return;
-    if (lastCharacterRef.current === selectedCharacter.avatar) return;
+    const sameChar = lastCharacterRef.current === selectedCharacter.avatar;
+    const sameMode = lastGroupModeRef.current === isGroupChatMode;
+    if (sameChar && sameMode) return;
 
     clearChat();
     lastCharacterRef.current = selectedCharacter.avatar;
+    lastGroupModeRef.current = isGroupChatMode;
     setFailedExpressions(new Set());
     fetchChatFiles(selectedCharacter.avatar);
-  }, [selectedCharacter, fetchChatFiles, clearChat]);
+  }, [selectedCharacter, isGroupChatMode, fetchChatFiles, clearChat]);
 
   useEffect(() => {
     if (!selectedCharacter) return;
