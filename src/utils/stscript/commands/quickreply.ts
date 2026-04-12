@@ -2,7 +2,7 @@
 
 import { registerCommand } from '../registry';
 import { executeClosure, isClosure, unwrapClosure } from '../executor';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getNamedArg(args: ParsedArg[], key: string): string | undefined {
   return args.find(a => a.key === key)?.value;
@@ -140,10 +140,7 @@ registerCommand({
     if (targetSet) {
       const entry = targetSet.entries.find(e => e.label.toLowerCase() === label.toLowerCase());
       if (entry) {
-        const updates: Record<string, string> = {};
-        if (newLabel) updates.label = newLabel;
-        if (message !== undefined) updates.message = message;
-        store.updateEntry(targetSet.id, entry.id, updates);
+        store.updateEntry(targetSet.id, entry.id, newLabel || entry.label, message ?? entry.message);
         return newLabel || label;
       }
     }
@@ -157,7 +154,7 @@ registerCommand({
   description: 'Get the message text of a Quick Reply entry',
   category: 'quickreply',
   usage: '/qr-get set=SetName label=Label',
-  async handler(args, _raw, ctx) {
+  async handler(args) {
     const setName = getNamedArg(args, 'set');
     const label = getNamedArg(args, 'label') || getUnnamedArgs(args);
 

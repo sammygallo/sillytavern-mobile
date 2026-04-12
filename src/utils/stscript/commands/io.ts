@@ -1,7 +1,7 @@
 // I/O commands: /echo, /pass, /setinput, /input, /popup, /buttons
 
 import { registerCommand } from '../registry';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getUnnamedArgs(args: ParsedArg[]): string {
   return args.filter(a => !a.key).map(a => a.value).join(' ');

@@ -4,7 +4,7 @@
 
 import { registerCommand } from '../registry';
 import { resolveVariable } from '../executor';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getNamedArg(args: ParsedArg[], key: string): string | undefined {
   return args.find(a => a.key === key)?.value;

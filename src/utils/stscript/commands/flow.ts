@@ -2,7 +2,7 @@
 
 import { registerCommand } from '../registry';
 import { isClosure, unwrapClosure, executeClosure, MAX_LOOP_ITERATIONS } from '../executor';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getNamedArg(args: ParsedArg[], key: string): string | undefined {
   return args.find(a => a.key === key)?.value;

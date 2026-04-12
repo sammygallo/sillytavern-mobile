@@ -1,7 +1,7 @@
 // Character commands: /go, /persona, /random
 
 import { registerCommand } from '../registry';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getUnnamedArgs(args: ParsedArg[]): string {
   return args.filter(a => !a.key).map(a => a.value).join(' ');
@@ -31,7 +31,7 @@ registerCommand({
         ctx.showToast(`/go: character "${name}" not found`, 'error');
         return '';
       }
-      useCharacterStore.getState().selectCharacter(match);
+      await useCharacterStore.getState().selectCharacter(match.avatar);
       ctx.navigate(`/chat/${match.avatar}`);
       return match.name;
     } catch (err) {
@@ -78,7 +78,7 @@ registerCommand({
       const chars = useCharacterStore.getState().characters;
       if (chars.length === 0) { ctx.showToast('/random: no characters', 'error'); return ''; }
       const pick = chars[Math.floor(Math.random() * chars.length)];
-      useCharacterStore.getState().selectCharacter(pick);
+      await useCharacterStore.getState().selectCharacter(pick.avatar);
       ctx.navigate(`/chat/${pick.avatar}`);
       return pick.name;
     } catch (err) {
