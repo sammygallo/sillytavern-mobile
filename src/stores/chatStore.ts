@@ -1227,7 +1227,8 @@ async function generateGroupTurn(
     model,
     abortController.signal,
     getGenerationOptions(),
-    images
+    images,
+    isTextCompletionMode()
   );
 
   if (!stream) return false;
@@ -1333,18 +1334,23 @@ function getGenerationOptions(): GenerationOptions {
 }
 
 // Helper: optionally convert message array into a single instruct-mode message
-// when instruct mode is enabled. The backend still expects chat-completion-style
-// messages, so we wrap the formatted prompt as a single user message.
+// when instruct mode is enabled (or text completion mode requires it).
 function maybeApplyInstructMode(
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[]
 ): { role: 'user' | 'assistant' | 'system'; content: string }[] {
   const { instruct } = useGenerationStore.getState();
-  if (!instruct.enabled) return messages;
+  // Text completion mode implicitly requires instruct formatting
+  if (!instruct.enabled && instruct.completionMode !== 'text') return messages;
   const tpl = getInstructTemplate(instruct.templateId);
   if (!tpl) return messages;
 
   const prompt = formatInstructPrompt(messages, tpl);
   return [{ role: 'user', content: prompt }];
+}
+
+/** Phase 10.3: returns true when the user has selected text completion mode. */
+function isTextCompletionMode(): boolean {
+  return useGenerationStore.getState().instruct.completionMode === 'text';
 }
 
 // Helper: save chat to backend
@@ -2054,7 +2060,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         model,
         abortController.signal,
         getGenerationOptions(),
-        imagesFromLastUserMessage(contextMessages, provider, model)
+        imagesFromLastUserMessage(contextMessages, provider, model),
+        isTextCompletionMode()
       );
       if (!stream) return;
 
@@ -2143,7 +2150,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         model,
         abortController.signal,
         getGenerationOptions(),
-        imagesFromLastUserMessage(messages, provider, model)
+        imagesFromLastUserMessage(messages, provider, model),
+        isTextCompletionMode()
       );
       if (!stream) return;
 
@@ -2206,7 +2214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const { provider, model } = getProviderAndModel();
       const finalContext = maybeApplyInstructMode(context);
-      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions());
+      const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions(), undefined, isTextCompletionMode());
       if (!stream) return '';
 
       let responseText = '';
@@ -2352,7 +2360,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         model,
         abortController.signal,
         getGenerationOptions(),
-        resolveImagesForSend(attachedImages)
+        resolveImagesForSend(attachedImages),
+        isTextCompletionMode()
       );
 
       if (stream) {
@@ -2685,7 +2694,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         model,
         abortController.signal,
         getGenerationOptions(),
-        imagesFromLastUserMessage(updatedMessages, provider, model)
+        imagesFromLastUserMessage(updatedMessages, provider, model),
+        isTextCompletionMode()
       );
 
       if (stream) {

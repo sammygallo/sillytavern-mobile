@@ -74,17 +74,22 @@ export const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
   messageCount: 20,
 };
 
+export type CompletionMode = 'chat' | 'text';
+
 export interface InstructConfig {
   enabled: boolean;
   templateId: string;
   /** Extra stop strings applied on top of template defaults. */
   extraStopStrings: string[];
+  /** Phase 10.3: 'chat' sends messages array, 'text' sends a single prompt string. */
+  completionMode: CompletionMode;
 }
 
 export const DEFAULT_INSTRUCT_CONFIG: InstructConfig = {
   enabled: false,
   templateId: 'chatml',
   extraStopStrings: [],
+  completionMode: 'chat',
 };
 
 /** Phase 9.1: stable IDs for every reorderable prompt section. */
