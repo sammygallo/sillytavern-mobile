@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
+import { Download, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCharacterStore } from '../../stores/characterStore';
@@ -8,6 +8,7 @@ import { Avatar, Button } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
 import { ChatHistoryPanel } from '../chat/ChatHistoryPanel';
 import { PersonaSelector, PersonaManager } from '../persona';
+import { usePwaInstall } from '../../hooks/usePwaInstall';
 import type { CharacterInfo } from '../../api/client';
 
 interface HeaderProps {
@@ -21,6 +22,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const userRole = currentUser?.role;
   const canEdit = can(userRole, 'character:edit');
   const canViewSettings = can(userRole, 'settings:view');
+  const { canInstall, install: installPwa } = usePwaInstall();
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [convertToPersonaData, setConvertToPersonaData] = useState<
@@ -95,6 +97,17 @@ export function Header({ onMenuClick }: HeaderProps) {
             onClick={() => setShowHistoryPanel(true)}
           >
             <History size={20} />
+          </Button>
+        )}
+        {canInstall && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-2"
+            aria-label="Install app"
+            onClick={installPwa}
+          >
+            <Download size={20} />
           </Button>
         )}
         <PersonaSelector />

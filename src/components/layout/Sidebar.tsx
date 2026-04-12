@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import {
   X,
   Search,
@@ -13,11 +14,13 @@ import {
   Star,
   Filter,
   ArrowUpDown,
+  Loader2,
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore, type GroupChatInfo } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
 import { can } from '../../utils/permissions';
+import { haptic } from '../../utils/haptics';
 import { Avatar, Button, Input } from '../ui';
 import { CharacterCreation } from '../character/CharacterCreation';
 import { CharacterImport } from '../character/CharacterImport';
@@ -86,6 +89,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     fetchCharacters();
   }, [fetchCharacters]);
 
+  // Phase 6.3: Pull-to-refresh on character list
+  const charListRef = useRef<HTMLDivElement>(null);
+  const { pullDistance, isRefreshing } = usePullToRefresh(charListRef, fetchCharacters);
+
   // When a character is selected, hide the list (show portrait)
   useEffect(() => {
     if (selectedCharacter) {
@@ -108,6 +115,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   };
 
   const handleCharacterSelect = (avatar: string) => {
+    haptic();
     selectCharacter(avatar);
     setShowCharacterList(false);
     onClose();
@@ -421,7 +429,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
 
             {/* Character List */}
-            <div className="flex-1 overflow-y-auto">
+            <div ref={charListRef} className="flex-1 overflow-y-auto">
+              {/* Pull-to-refresh indicator */}
+              {(pullDistance > 0 || isRefreshing) && (
+                <div
+                  className="flex items-center justify-center overflow-hidden transition-all"
+                  style={{ height: isRefreshing ? 40 : pullDistance }}
+                >
+                  <Loader2
+                    size={18}
+                    className={`text-[var(--color-primary)] ${isRefreshing ? 'animate-spin' : ''}`}
+                    style={{ opacity: Math.min(1, pullDistance / 60) }}
+                  />
+                </div>
+              )}
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--color-primary)]" />

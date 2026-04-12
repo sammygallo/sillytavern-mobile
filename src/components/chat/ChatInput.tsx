@@ -8,6 +8,7 @@ import {
   MAX_IMAGES_PER_MESSAGE,
 } from '../../utils/images';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { haptic } from '../../utils/haptics';
 import { getSpeechLanguage } from '../../hooks/speechLanguage';
 
 interface ChatInputProps {
@@ -297,6 +298,7 @@ export function ChatInput({
     const hasText = message.trim().length > 0;
     const hasImages = images.length > 0;
     if ((hasText || hasImages) && !disabled && !isCompressing && !isListening) {
+      haptic();
       onSend(message.trim(), hasImages ? images : undefined);
       setMessage('');
       setImages([]);
@@ -496,6 +498,7 @@ export function ChatInput({
               setShowAutocomplete(trimmed.startsWith('/') && !trimmed.includes(' '));
             }}
             onKeyDown={handleKeyDown}
+            enterKeyHint="send"
             placeholder={isListening ? 'Listening…' : placeholder}
             disabled={disabled || isListening}
             rows={1}

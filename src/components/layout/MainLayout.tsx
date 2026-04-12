@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useSwipeSidebar } from '../../hooks/useSwipeSidebar';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const swipeRef = useSwipeSidebar(sidebarOpen, openSidebar, closeSidebar);
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
   const { fetchSettings, fetchSecrets } = useSettingsStore();
   const navigate = useNavigate();
@@ -42,7 +46,7 @@ export function MainLayout() {
   }
 
   return (
-    <div className="h-screen flex bg-[var(--color-bg-primary)] overflow-hidden">
+    <div ref={swipeRef} className="h-screen flex bg-[var(--color-bg-primary)] overflow-hidden">
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
