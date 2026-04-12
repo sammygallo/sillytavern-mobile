@@ -290,6 +290,16 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
           </div>
         ) : (
           <>
+            {/* ── AI Settings Group ─────────────────────────────── */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Zap size={16} className="text-[var(--color-primary)]" />
+                <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                  AI Settings
+                </h2>
+              </div>
+              <div className="space-y-6">
+
             {/* Active Provider Selection */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
@@ -718,6 +728,9 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                 })}
               </div>
             </section>
+
+              </div>
+            </div>
 
             {/* Generation Settings Link */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
