@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Pencil, Trash2, Check, X, Zap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useQuickReplyStore, type QuickReplyEntry } from '../../stores/quickReplyStore';
 import { Button, Input } from '../ui';
 
-export function QuickReplyPage() {
-  const navigate = useNavigate();
+export function QuickReplyPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const {
     sets,
     activeSetId,
@@ -244,7 +244,7 @@ export function QuickReplyPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
-        <Button variant="ghost" size="sm" className="p-2" onClick={() => navigate('/settings')} aria-label="Back">
+        <Button variant="ghost" size="sm" className="p-2" onClick={() => goBack()} aria-label="Back">
           <ArrowLeft size={24} />
         </Button>
         <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">Quick Replies</h1>

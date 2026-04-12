@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useGenerationStore, DEFAULT_SAMPLER } from '../../stores/generationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { getDefaultContextSize } from '../../utils/tokenizer';
@@ -18,8 +18,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'instruct', label: 'Instruct' },
 ];
 
-export function GenerationSettingsPage() {
-  const navigate = useNavigate();
+export function GenerationSettingsPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const {
     sampler,
     presets,
@@ -69,7 +69,7 @@ export function GenerationSettingsPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2"
           aria-label="Back"
         >

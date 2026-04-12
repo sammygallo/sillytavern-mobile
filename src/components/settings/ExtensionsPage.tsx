@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useExtensionStore } from '../../stores/extensionStore';
 import { extensionRegistry } from '../../extensions/registry';
 import type { ExtensionManifest } from '../../extensions/types';
@@ -60,8 +60,8 @@ function ExtensionCard({ ext }: { ext: ExtensionManifest }) {
   );
 }
 
-export function ExtensionsPage() {
-  const navigate = useNavigate();
+export function ExtensionsPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const extensions = extensionRegistry.getAll();
 
   return (
@@ -70,7 +70,7 @@ export function ExtensionsPage() {
       <div className="sticky top-0 z-10 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-4 py-3 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2 -ml-2 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors"
           aria-label="Back"
         >

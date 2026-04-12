@@ -9,7 +9,7 @@ import {
   Copy,
   BookOpen,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import {
   useWorldInfoStore,
   type WorldInfoBook,
@@ -17,8 +17,8 @@ import {
 import { Button, Input, ConfirmDialog } from '../ui';
 import { WorldInfoBookEditor } from './WorldInfoBookEditor';
 
-export function WorldInfoPage() {
-  const navigate = useNavigate();
+export function WorldInfoPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const {
     books,
     activeBookIds,
@@ -114,7 +114,7 @@ export function WorldInfoPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2"
           aria-label="Back"
         >

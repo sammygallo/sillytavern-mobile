@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Copy, Download, RotateCcw, Save, Upload } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { Button } from '../ui';
 import {
   type ThemeColors,
@@ -40,13 +40,12 @@ const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function ThemeEditorPage() {
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
+export function ThemeEditorPage({ params: pageParams }: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const editId = params.get('id');
-  const fromPreset = params.get('from') as ThemePreset | null;
+  const editId = pageParams?.id ?? null;
+  const fromPreset = (pageParams?.from ?? null) as ThemePreset | null;
   const resolved = resolveMode(getThemeMode());
 
   // Load initial colors
@@ -104,13 +103,13 @@ export function ThemeEditorPage() {
     saveCustomTheme(theme);
     setActivePreset(`custom:${themeId}` as ActivePreset);
     applyTheme();
-    navigate('/settings');
+    goBack();
   };
 
   // Cancel — restore original theme
   const handleBack = () => {
     applyTheme();
-    navigate('/settings');
+    goBack();
   };
 
   // Export as JSON

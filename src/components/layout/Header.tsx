@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Download, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useCharacterStore } from '../../stores/characterStore';
 import { can } from '../../utils/permissions';
 import { Avatar, Button } from '../ui';
@@ -81,7 +82,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           </>
         ) : (
           <h1 className="text-sm font-semibold text-[var(--color-text-primary)]">
-            SillyTavern
+            GoodGirlsBotClub
           </h1>
         )}
       </div>
@@ -117,7 +118,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             size="sm"
             className="p-2"
             aria-label="Settings"
-            onClick={() => navigate('/settings')}
+            onClick={() => useSettingsPanelStore.getState().open()}
           >
             <Settings size={20} />
           </Button>

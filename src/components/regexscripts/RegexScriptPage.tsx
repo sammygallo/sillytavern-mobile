@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import {
   ArrowLeft,
   Plus,
@@ -21,8 +21,8 @@ const SCOPE_LABELS: Record<string, string> = {
   both: 'Both',
 };
 
-export function RegexScriptPage() {
-  const navigate = useNavigate();
+export function RegexScriptPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const scripts = useRegexScriptStore((s) => s.scripts);
   const {
     createScript,
@@ -100,7 +100,7 @@ export function RegexScriptPage() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
         <button
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]"
           aria-label="Back"
         >

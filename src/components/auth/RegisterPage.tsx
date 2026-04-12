@@ -83,7 +83,7 @@ export function RegisterPage() {
             Create Account
           </h1>
           <p className="text-[var(--color-text-secondary)]">
-            Join SillyTavern
+            Join GoodGirlsBotClub
           </p>
         </div>
 
