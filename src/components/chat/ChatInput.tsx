@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Send, Mic, Paperclip, Square, X, Image } from 'lucide-react';
+import { CommandAutocomplete } from './CommandAutocomplete';
 import { Button } from '../ui';
 import {
   compressImageFiles,
@@ -58,8 +59,20 @@ export function ChatInput({
   const [images, setImages] = useState<string[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 8.7: derive autocomplete prefix from message
+  const autocompletePrefix = useMemo<string | null>(() => {
+    if (!showAutocomplete) return null;
+    const trimmed = message.trimStart();
+    if (!trimmed.startsWith('/')) return null;
+    // Extract text after / up to first space
+    const match = trimmed.match(/^\/(\w*)$/);
+    if (match) return match[1];
+    return null;
+  }, [message, showAutocomplete]);
 
   // Speech-to-text. Snapshot the textarea contents when start() fires so
   // dictation APPENDS rather than replacing. baseTextRef is the only place
@@ -461,11 +474,27 @@ export function ChatInput({
         )}
 
         {/* Input Area */}
-        <div className="flex-1 flex items-end bg-[var(--color-bg-tertiary)] rounded-2xl px-4 py-2">
+        <div className="flex-1 flex items-end bg-[var(--color-bg-tertiary)] rounded-2xl px-4 py-2 relative">
+          {/* Phase 8.7: Slash command autocomplete */}
+          <CommandAutocomplete
+            prefix={autocompletePrefix}
+            onSelect={(name) => {
+              setMessage('/' + name + ' ');
+              setShowAutocomplete(false);
+              textareaRef.current?.focus();
+            }}
+            onDismiss={() => setShowAutocomplete(false)}
+          />
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMessage(val);
+              // Show autocomplete when typing a / command (no spaces yet)
+              const trimmed = val.trimStart();
+              setShowAutocomplete(trimmed.startsWith('/') && !trimmed.includes(' '));
+            }}
             onKeyDown={handleKeyDown}
             placeholder={isListening ? 'Listening…' : placeholder}
             disabled={disabled || isListening}

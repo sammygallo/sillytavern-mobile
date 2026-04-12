@@ -9,6 +9,7 @@ import { SettingsPage, GenerationSettingsPage, InvitationManager, UserManagement
 import { WorldInfoPage } from './components/worldinfo';
 import { RegexScriptPage } from './components/regexscripts';
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
+import { ToastProvider } from './components/ui/Toast';
 
 // Phase 7.1: Register all built-in extensions at app startup.
 import './extensions';
@@ -16,6 +17,7 @@ import './extensions';
 function App() {
   return (
     <BrowserRouter>
+    <ToastProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -38,6 +40,7 @@ function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+    </ToastProvider>
     </BrowserRouter>
   );
 }
