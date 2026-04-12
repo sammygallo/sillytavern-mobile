@@ -289,6 +289,27 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
               </button>
             </section>
 
+            {/* Character Management */}
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
+              <button
+                onClick={() => pushPage('characters')}
+                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                  <Image size={20} className="text-[var(--color-primary)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Character Management
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    View, edit, and manage character ownership
+                  </p>
+                </div>
+                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+              </button>
+            </section>
+
             {/* Quick Replies (Phase 10.2) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button

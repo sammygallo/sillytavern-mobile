@@ -9,6 +9,7 @@ export type SettingsPageId =
   | 'regex'
   | 'invitations'
   | 'users'
+  | 'characters'
   | 'quickreplies'
   | 'extensions'
   | 'databank'

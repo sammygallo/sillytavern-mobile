@@ -17,6 +17,8 @@ import {
   useWorldInfoStore,
   bookToCharacterBookV2,
 } from './worldInfoStore';
+import { useCharacterOwnershipStore } from './characterOwnershipStore';
+import { useAuthStore } from './authStore';
 
 const FAVORITES_KEY = 'sillytavern_character_favorites';
 const LINKED_BOOKS_KEY = 'sillytavern_character_linked_books_v1';
@@ -204,6 +206,13 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     set({ isCreating: true, error: null });
     try {
       const avatarUrl = await api.createCharacter(data, avatarFile);
+      // Record ownership for the creating user
+      if (avatarUrl) {
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          useCharacterOwnershipStore.getState().setOwner(avatarUrl, currentUser.handle);
+        }
+      }
       // Refresh the character list
       await get().fetchCharacters();
       set({ isCreating: false });
@@ -256,6 +265,8 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         saveFavorites(newFavorites);
         set({ favorites: newFavorites });
       }
+      // Clean up ownership data
+      useCharacterOwnershipStore.getState().removeOwnership(avatar);
       // Clean up character-embedded lorebook and linked-book references
       useWorldInfoStore.getState().deleteCharacterBook(avatar);
       if (linkedBookIdsByAvatar[avatar]) {
@@ -280,6 +291,16 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     set({ isDuplicating: true, error: null });
     try {
       const newAvatar = await api.duplicateCharacter(avatar);
+      // Record the duplicating user as owner of the new copy
+      if (newAvatar) {
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          const ownershipStore = useCharacterOwnershipStore.getState();
+          const originalVisibility = ownershipStore.getVisibility(avatar);
+          ownershipStore.setOwner(newAvatar, currentUser.handle);
+          ownershipStore.setVisibility(newAvatar, originalVisibility);
+        }
+      }
       // Refresh list to show the new character
       await get().fetchCharacters();
       set({ isDuplicating: false });
