@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Copy, Download, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Copy, Download, RotateCcw, Save, Upload } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../ui';
 import {
@@ -10,7 +10,6 @@ import {
   type ActivePreset,
   applyColors,
   applyTheme,
-  getActivePreset,
   getCustomThemes,
   getPresetColors,
   getThemeMode,
