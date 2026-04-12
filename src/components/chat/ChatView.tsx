@@ -21,6 +21,7 @@ import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
   getDefaultAvatarUrl,
+  mapEmotionToAvailable,
   type Emotion,
 } from '../../utils/emotions';
 import {
@@ -176,14 +177,18 @@ export function ChatView() {
 
   const getAvatarUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
-      if (isGroupChatMode) return getDefaultAvatarUrl(avatar);
       if (emotion) {
-        const spritePath = getSpritePath(emotion);
-        if (spritePath) return spritePath;
+        const expressionKey = `${avatar}-${emotion}`;
+        if (!failedExpressions.has(expressionKey)) {
+          // Try alias mapping (e.g. "happy" → "joy") then direct lookup
+          const mapped = mapEmotionToAvailable(emotion, availableEmotions);
+          const spritePath = getSpritePath(mapped || emotion);
+          if (spritePath) return spritePath;
+        }
       }
-      return getExpressionThumbnailUrl(avatar, emotion ?? null);
+      return getExpressionThumbnailUrl(avatar, null);
     },
-    [getSpritePath, isGroupChatMode]
+    [getSpritePath, failedExpressions, availableEmotions]
   );
 
   const getFullImageUrl = useCallback(
@@ -1066,13 +1071,18 @@ export function ChatView() {
         ) : (
           <div className="py-4">
             {displayedMessages.map((message) => {
+              const charAvatar = isGroupChatMode && message.characterAvatar
+                ? message.characterAvatar
+                : selectedCharacter?.avatar;
               const messageAvatar = message.isUser
                 ? undefined
-                : isGroupChatMode && message.characterAvatar
-                  ? getAvatarUrl(message.characterAvatar, message.emotion)
-                  : selectedCharacter
-                    ? getAvatarUrl(selectedCharacter.avatar, message.emotion)
-                    : undefined;
+                : charAvatar
+                  ? getAvatarUrl(charAvatar, message.emotion)
+                  : undefined;
+              // Fallback: default avatar thumbnail (no expression) when sprite 404s
+              const fallbackAvatar = !message.isUser && charAvatar
+                ? getExpressionThumbnailUrl(charAvatar, null)
+                : undefined;
 
               const isLastAiMessage = message.id === lastAiMessageId;
               const isAiMessage = !message.isUser && !message.isSystem;
@@ -1102,6 +1112,15 @@ export function ChatView() {
                     isUser={message.isUser}
                     isSystem={message.isSystem}
                     avatar={messageAvatar}
+                    avatarFallback={fallbackAvatar}
+                    onAvatarError={
+                      message.emotion && !message.isUser && charAvatar
+                        ? () => {
+                            const key = `${charAvatar}-${message.emotion}`;
+                            setFailedExpressions(prev => new Set(prev).add(key));
+                          }
+                        : undefined
+                    }
                     timestamp={message.timestamp}
                     disabled={isSending}
                     images={message.images}
