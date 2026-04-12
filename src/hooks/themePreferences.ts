@@ -15,7 +15,10 @@
 export type ThemeMode = 'light' | 'dark' | 'auto';
 export type ThemePreset = 'purple' | 'blue' | 'green' | 'red' | 'amber' | 'cyberpunk';
 
-interface ThemeColors {
+/** Active preset — either a built-in name or `custom:<id>` for user-created themes. */
+export type ActivePreset = ThemePreset | `custom:${string}`;
+
+export interface ThemeColors {
   primary: string;
   primaryHover: string;
   bgPrimary: string;
@@ -115,6 +118,7 @@ export const THEME_PRESETS: ThemePreset[] = ['purple', 'blue', 'green', 'red', '
 
 const MODE_KEY = 'stm:theme-mode';
 const PRESET_KEY = 'stm:theme-preset';
+const CUSTOM_THEMES_KEY = 'stm:custom-themes';
 
 const VALID_MODES: ThemeMode[] = ['light', 'dark', 'auto'];
 const VALID_PRESETS: ThemePreset[] = THEME_PRESETS;
@@ -131,16 +135,99 @@ export function setThemeMode(mode: ThemeMode): void {
   try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
 }
 
-export function getThemePreset(): ThemePreset {
+export function getActivePreset(): ActivePreset {
   try {
     const v = localStorage.getItem(PRESET_KEY);
-    if (v && VALID_PRESETS.includes(v as ThemePreset)) return v as ThemePreset;
+    if (!v) return 'purple';
+    if (VALID_PRESETS.includes(v as ThemePreset)) return v as ThemePreset;
+    if (v.startsWith('custom:')) return v as ActivePreset;
   } catch { /* ignore */ }
   return 'purple';
 }
 
-export function setThemePreset(preset: ThemePreset): void {
+/** @deprecated Use getActivePreset() for new code */
+export function getThemePreset(): ThemePreset {
+  const active = getActivePreset();
+  if (active.startsWith('custom:')) return 'purple';
+  return active as ThemePreset;
+}
+
+export function setActivePreset(preset: ActivePreset): void {
   try { localStorage.setItem(PRESET_KEY, preset); } catch { /* ignore */ }
+}
+
+/** @deprecated Use setActivePreset() for new code */
+export function setThemePreset(preset: ThemePreset): void {
+  setActivePreset(preset);
+}
+
+// ---------------------------------------------------------------------------
+// Custom theme CRUD
+// ---------------------------------------------------------------------------
+
+export interface CustomTheme {
+  id: string;
+  name: string;
+  dark: ThemeColors;
+  light: ThemeColors;
+}
+
+export interface CustomThemeExport {
+  name: string;
+  version: 1;
+  dark: ThemeColors;
+  light: ThemeColors;
+}
+
+export function getCustomThemes(): CustomTheme[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_THEMES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveCustomThemes(themes: CustomTheme[]): void {
+  try { localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify(themes)); } catch { /* ignore */ }
+}
+
+export function saveCustomTheme(theme: CustomTheme): void {
+  const themes = getCustomThemes();
+  const idx = themes.findIndex(t => t.id === theme.id);
+  if (idx >= 0) themes[idx] = theme;
+  else themes.push(theme);
+  saveCustomThemes(themes);
+}
+
+export function deleteCustomTheme(id: string): void {
+  const themes = getCustomThemes().filter(t => t.id !== id);
+  saveCustomThemes(themes);
+  // If the deleted theme was active, revert to purple
+  const active = getActivePreset();
+  if (active === `custom:${id}`) {
+    setActivePreset('purple');
+    applyTheme();
+  }
+}
+
+export function generateThemeId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+/** Get colors for a custom theme by id, or null if not found. */
+function getCustomThemeColors(id: string, mode: 'light' | 'dark'): ThemeColors | null {
+  const theme = getCustomThemes().find(t => t.id === id);
+  if (!theme) return null;
+  return theme[mode];
+}
+
+/** Validate that an object has all 8 required ThemeColors keys with string values. */
+export function isValidThemeColors(obj: unknown): obj is ThemeColors {
+  if (!obj || typeof obj !== 'object') return false;
+  const keys: (keyof ThemeColors)[] = ['primary', 'primaryHover', 'bgPrimary', 'bgSecondary', 'bgTertiary', 'textPrimary', 'textSecondary', 'border'];
+  return keys.every(k => typeof (obj as Record<string, unknown>)[k] === 'string');
 }
 
 // ---------------------------------------------------------------------------
@@ -165,14 +252,9 @@ export function resolveMode(mode: ThemeMode): 'light' | 'dark' {
  * Call this synchronously before `createRoot()` in main.tsx and again
  * whenever the user changes theme settings.
  */
-export function applyTheme(): void {
-  const mode = getThemeMode();
-  const preset = getThemePreset();
-  const resolved = resolveMode(mode);
-
-  const colors = resolved === 'light' ? LIGHT_THEMES[preset] : DARK_THEMES[preset];
+/** Apply a ThemeColors object to CSS variables on `<html>`. */
+export function applyColors(colors: ThemeColors): void {
   const root = document.documentElement;
-
   root.style.setProperty('--color-primary', colors.primary);
   root.style.setProperty('--color-primary-hover', colors.primaryHover);
   root.style.setProperty('--color-bg-primary', colors.bgPrimary);
@@ -181,10 +263,28 @@ export function applyTheme(): void {
   root.style.setProperty('--color-text-primary', colors.textPrimary);
   root.style.setProperty('--color-text-secondary', colors.textSecondary);
   root.style.setProperty('--color-border', colors.border);
+}
+
+export function applyTheme(): void {
+  const mode = getThemeMode();
+  const active = getActivePreset();
+  const resolved = resolveMode(mode);
+
+  let colors: ThemeColors;
+  if (active.startsWith('custom:')) {
+    const id = active.slice(7);
+    const custom = getCustomThemeColors(id, resolved);
+    colors = custom ?? (resolved === 'light' ? LIGHT_THEMES.purple : DARK_THEMES.purple);
+  } else {
+    const preset = active as ThemePreset;
+    colors = resolved === 'light' ? LIGHT_THEMES[preset] : DARK_THEMES[preset];
+  }
+
+  applyColors(colors);
+  const root = document.documentElement;
 
   // Cyberpunk preset: set a data attribute so CSS can target special effects.
-  // Also inject the rainbow gradient as a CSS variable for borders/glows.
-  if (preset === 'cyberpunk') {
+  if (active === 'cyberpunk') {
     root.setAttribute('data-theme', 'cyberpunk');
     root.style.setProperty(
       '--rainbow-gradient',
@@ -201,4 +301,9 @@ export function applyTheme(): void {
   // Update mobile status bar color
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', colors.bgPrimary);
+}
+
+/** Get the ThemeColors for a built-in preset at the given mode. */
+export function getPresetColors(preset: ThemePreset, mode: 'light' | 'dark'): ThemeColors {
+  return mode === 'light' ? LIGHT_THEMES[preset] : DARK_THEMES[preset];
 }
