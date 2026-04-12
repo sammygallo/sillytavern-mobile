@@ -5,7 +5,7 @@ import { ProfilePage } from './components/auth/ProfilePage';
 import { RequireRole } from './components/auth/RequireRole';
 import { MainLayout } from './components/layout/MainLayout';
 import { ChatView } from './components/chat/ChatView';
-import { SettingsPage, GenerationSettingsPage, InvitationManager, UserManagementPage, QuickReplyPage, ExtensionsPage, DataBankPage, GalleryPage, PromptTemplatesPage } from './components/settings';
+import { SettingsPage, GenerationSettingsPage, InvitationManager, UserManagementPage, QuickReplyPage, ExtensionsPage, DataBankPage, GalleryPage, PromptTemplatesPage, ThemeEditorPage } from './components/settings';
 import { WorldInfoPage } from './components/worldinfo';
 import { RegexScriptPage } from './components/regexscripts';
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
@@ -33,6 +33,7 @@ function App() {
         <Route path="/settings/extensions" element={<RequireRole minRole="end_user"><ExtensionsPage /></RequireRole>} />
         <Route path="/settings/databank" element={<RequireRole minRole="end_user"><DataBankPage /></RequireRole>} />
         <Route path="/settings/gallery" element={<RequireRole minRole="end_user"><GalleryPage /></RequireRole>} />
+        <Route path="/settings/themes" element={<RequireRole minRole="end_user"><ThemeEditorPage /></RequireRole>} />
         <Route path="/invite/:token" element={<InviteAcceptPage />} />
         <Route path="/" element={<MainLayout />}>
           <Route index element={<ChatView />} />

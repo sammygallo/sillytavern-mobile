@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, ChevronRight, Database, Eye, EyeOff, FileText, Globe, Image, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, ChevronRight, Database, Edit3, Eye, EyeOff, FileText, Globe, Image, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Plus, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
@@ -41,6 +41,11 @@ import {
   PRESET_SWATCHES,
   type ThemeMode,
   type ThemePreset,
+  type ActivePreset,
+  getActivePreset,
+  setActivePreset,
+  getCustomThemes,
+  deleteCustomTheme,
 } from '../../hooks/themePreferences';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
@@ -170,6 +175,9 @@ export function SettingsPage() {
   // Phase 7.4: Theme preferences
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
   const [themePresetVal, setThemePresetState] = useState<ThemePreset>(() => getThemePreset());
+  // Phase 6.1: Custom themes
+  const [activePreset, setActivePresetState] = useState<ActivePreset>(() => getActivePreset());
+  const [customThemes, setCustomThemes] = useState(() => getCustomThemes());
 
   // Phase 7.3: Chat display preferences
   const [layoutMode, setLayoutModeState] = useState<ChatLayoutMode>(() => getChatLayoutMode());
@@ -913,7 +921,7 @@ export function SettingsPage() {
               </button>
             </section>
 
-            {/* Appearance (Phase 7.4) */}
+            {/* Appearance (Phase 7.4 + 6.1) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <Palette size={16} className="text-[var(--color-text-secondary)]" />
@@ -950,21 +958,22 @@ export function SettingsPage() {
                 ))}
               </div>
 
-              {/* Accent Color */}
+              {/* Accent Color — Built-in Presets */}
               <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
                 Accent Color
               </label>
-              <div className="flex gap-3">
+              <div className="flex gap-3 mb-4">
                 {THEME_PRESETS.map((preset) => (
                   <button
                     key={preset}
                     onClick={() => {
                       setThemePresetState(preset);
                       setThemePreset(preset);
+                      setActivePresetState(preset);
                       applyTheme();
                     }}
                     className={`w-8 h-8 rounded-full transition-all ${
-                      themePresetVal === preset
+                      activePreset === preset
                         ? 'ring-2 ring-offset-2 ring-offset-[var(--color-bg-secondary)] ring-[var(--color-primary)] scale-110'
                         : 'hover:scale-110'
                     }`}
@@ -978,6 +987,68 @@ export function SettingsPage() {
                   />
                 ))}
               </div>
+
+              {/* Custom Themes */}
+              {customThemes.length > 0 && (
+                <>
+                  <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">
+                    Custom Themes
+                  </label>
+                  <div className="space-y-2 mb-4">
+                    {customThemes.map((ct) => (
+                      <div
+                        key={ct.id}
+                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all ${
+                          activePreset === `custom:${ct.id}`
+                            ? 'bg-[var(--color-bg-tertiary)] ring-1 ring-[var(--color-primary)]'
+                            : 'hover:bg-[var(--color-bg-tertiary)]'
+                        }`}
+                        onClick={() => {
+                          setActivePreset(`custom:${ct.id}`);
+                          setActivePresetState(`custom:${ct.id}`);
+                          applyTheme();
+                        }}
+                      >
+                        {/* Mini swatch preview */}
+                        <div className="flex gap-0.5 shrink-0">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: ct.dark.primary }} />
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: ct.dark.bgPrimary }} />
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: ct.dark.textPrimary }} />
+                        </div>
+                        <span className="text-xs text-[var(--color-text-primary)] flex-1 truncate">{ct.name}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); navigate(`/settings/themes?id=${ct.id}`); }}
+                          className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                          title="Edit"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteCustomTheme(ct.id);
+                            setCustomThemes(getCustomThemes());
+                            setActivePresetState(getActivePreset());
+                          }}
+                          className="p-1 text-[var(--color-text-secondary)] hover:text-red-400"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Create custom theme */}
+              <button
+                onClick={() => navigate(`/settings/themes?from=${themePresetVal}`)}
+                className="flex items-center gap-2 text-xs text-[var(--color-primary)] hover:underline"
+              >
+                <Plus size={14} />
+                Create Custom Theme
+              </button>
             </section>
 
             {/* Chat Display (Phase 7.3) */}
