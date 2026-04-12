@@ -5,6 +5,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useSwipeSidebar } from '../../hooks/useSwipeSidebar';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
+import { SettingsPanel } from '../settings/SettingsPanel';
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -58,6 +59,9 @@ export function MainLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Settings Panel — slides in from right, overlays chat */}
+      <SettingsPanel />
     </div>
   );
 }

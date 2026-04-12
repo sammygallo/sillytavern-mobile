@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Loader2, Trash2, UserX, UserCheck, ShieldAlert } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { adminApi, type AdminUserInfo } from '../../api/client';
 import { useAuthStore } from '../../stores/authStore';
 import { Avatar, Button } from '../ui';
@@ -26,8 +26,8 @@ function getAvatarUrl(avatar: string) {
   return `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
 }
 
-export function UserManagementPage() {
-  const navigate = useNavigate();
+export function UserManagementPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const { currentUser } = useAuthStore();
   const isOwner = currentUser?.role === 'owner';
 
@@ -130,7 +130,7 @@ export function UserManagementPage() {
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       {/* Header */}
       <div className="sticky top-0 z-10 h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/settings')} className="p-2" aria-label="Back">
+        <Button variant="ghost" size="sm" onClick={() => goBack()} className="p-2" aria-label="Back">
           <ArrowLeft size={20} />
         </Button>
         <h1 className="text-base font-semibold text-[var(--color-text-primary)]">Users</h1>

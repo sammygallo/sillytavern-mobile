@@ -9,7 +9,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
 import { Button, Input, ConfirmDialog } from '../ui';
 
@@ -20,8 +20,8 @@ import { Button, Input, ConfirmDialog } from '../ui';
  * load it back, rename, delete, and import/export as JSON. Mirrors the
  * regex-script page import/export pattern.
  */
-export function PromptTemplatesPage() {
-  const navigate = useNavigate();
+export function PromptTemplatesPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const {
     templates,
     activeTemplateId,
@@ -112,7 +112,7 @@ export function PromptTemplatesPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2"
           aria-label="Back"
         >

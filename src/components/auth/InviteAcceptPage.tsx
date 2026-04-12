@@ -70,7 +70,7 @@ export function InviteAcceptPage() {
     <div className="min-h-screen bg-[var(--color-bg-primary)] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">SillyTavern</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">GoodGirlsBotClub</h1>
         </div>
 
         {stage === 'validating' && (

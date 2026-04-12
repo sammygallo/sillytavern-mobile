@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, Trash2, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useImageGenStore, type GalleryEntry } from '../../stores/imageGenStore';
 
 function formatDate(ts: number): string {
@@ -43,8 +43,8 @@ function Lightbox({ entry, onClose }: { entry: GalleryEntry; onClose: () => void
   );
 }
 
-export function GalleryPage() {
-  const navigate = useNavigate();
+export function GalleryPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const gallery = useImageGenStore((s) => s.gallery);
   const removeFromGallery = useImageGenStore((s) => s.removeFromGallery);
   const clearGallery = useImageGenStore((s) => s.clearGallery);
@@ -57,7 +57,7 @@ export function GalleryPage() {
       <div className="sticky top-0 z-10 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-4 py-3 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2 -ml-2 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors"
           aria-label="Back"
         >

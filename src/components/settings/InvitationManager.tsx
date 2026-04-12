@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Copy, Check, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { invitationsApi, type Invitation } from '../../api/client';
 import { Button } from '../ui';
 import type { UserRole } from '../../types';
@@ -31,8 +31,8 @@ function timeAgo(ts: number): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export function InvitationManager() {
-  const navigate = useNavigate();
+export function InvitationManager(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +94,7 @@ export function InvitationManager() {
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       {/* Header */}
       <div className="sticky top-0 z-10 h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/settings')} className="p-2" aria-label="Back">
+        <Button variant="ghost" size="sm" onClick={() => goBack()} className="p-2" aria-label="Back">
           <ArrowLeft size={20} />
         </Button>
         <h1 className="text-base font-semibold text-[var(--color-text-primary)]">Invitations</h1>

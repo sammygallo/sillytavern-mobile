@@ -22,7 +22,7 @@ import {
   User,
   Zap,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useDataBankStore, type DataBankDocument } from '../../stores/dataBankStore';
 import { useCharacterStore } from '../../stores/characterStore';
 import { Button } from '../ui';
@@ -282,8 +282,8 @@ function DocCard({ doc, isEmbedding, hasApiKey, onEmbed, onDelete, characterName
 // Page
 // ---------------------------------------------------------------------------
 
-export function DataBankPage() {
-  const navigate = useNavigate();
+export function DataBankPage(_props?: { params?: Record<string, string> }) {
+  const { goBack } = useSettingsPanelStore();
   const {
     documents,
     embeddingIds,
@@ -334,7 +334,7 @@ export function DataBankPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/settings')}
+          onClick={() => goBack()}
           className="p-2"
           aria-label="Back"
         >

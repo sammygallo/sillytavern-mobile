@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, ChevronRight, Database, Edit3, Eye, EyeOff, FileText, Globe, Image, Key, Languages, Loader2, MessageSquare, Mic, Palette, Plug, Plus, Replace, Sliders, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
 import { Button, Input } from '../ui';
@@ -131,8 +131,8 @@ type TestState =
   | { kind: 'success'; count: number }
   | { kind: 'error'; message: string };
 
-export function SettingsPage() {
-  const navigate = useNavigate();
+export function SettingsPage(_props?: { params?: Record<string, string> }) {
+  const { pushPage, goBack } = useSettingsPanelStore();
   const {
     secrets,
     activeProvider,
@@ -260,14 +260,14 @@ export function SettingsPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/')}
+          onClick={() => goBack()}
           className="p-2"
           aria-label="Back"
         >
           <ArrowLeft size={24} />
         </Button>
         <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">
-          AI Settings
+          Settings
         </h1>
       </header>
 
@@ -722,7 +722,7 @@ export function SettingsPage() {
             {/* Generation Settings Link */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/generation')}
+                onClick={() => pushPage('generation')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -743,7 +743,7 @@ export function SettingsPage() {
             {/* Prompt Templates Link */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/prompts')}
+                onClick={() => pushPage('prompts')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -764,7 +764,7 @@ export function SettingsPage() {
             {/* World Info Link */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/worldinfo')}
+                onClick={() => pushPage('worldinfo')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -785,7 +785,7 @@ export function SettingsPage() {
             {/* Regex Scripts Link (Phase 8.2) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/regex')}
+                onClick={() => pushPage('regex')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -806,7 +806,7 @@ export function SettingsPage() {
             {/* Invitations */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/invitations')}
+                onClick={() => pushPage('invitations')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -827,7 +827,7 @@ export function SettingsPage() {
             {/* Users (Phase 3.1) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/users')}
+                onClick={() => pushPage('users')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -848,7 +848,7 @@ export function SettingsPage() {
             {/* Quick Replies (Phase 10.2) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/quickreplies')}
+                onClick={() => pushPage('quickreplies')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -867,7 +867,7 @@ export function SettingsPage() {
             {/* Extensions (Phase 7.1) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/extensions')}
+                onClick={() => pushPage('extensions')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -886,7 +886,7 @@ export function SettingsPage() {
             {/* Image Gallery (Phase 7.3) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/gallery')}
+                onClick={() => pushPage('gallery')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -905,7 +905,7 @@ export function SettingsPage() {
             {/* Data Bank (Phase 8.5) */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
               <button
-                onClick={() => navigate('/settings/databank')}
+                onClick={() => pushPage('databank')}
                 className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
               >
                 <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -1017,7 +1017,7 @@ export function SettingsPage() {
                         </div>
                         <span className="text-xs text-[var(--color-text-primary)] flex-1 truncate">{ct.name}</span>
                         <button
-                          onClick={(e) => { e.stopPropagation(); navigate(`/settings/themes?id=${ct.id}`); }}
+                          onClick={(e) => { e.stopPropagation(); pushPage('themes', { id: ct.id }); }}
                           className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                           title="Edit"
                         >
@@ -1043,7 +1043,7 @@ export function SettingsPage() {
 
               {/* Create custom theme */}
               <button
-                onClick={() => navigate(`/settings/themes?from=${themePresetVal}`)}
+                onClick={() => pushPage('themes', { from: themePresetVal })}
                 className="flex items-center gap-2 text-xs text-[var(--color-primary)] hover:underline"
               >
                 <Plus size={14} />
