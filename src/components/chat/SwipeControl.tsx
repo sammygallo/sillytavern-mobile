@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { haptic } from '../../utils/haptics';
 
 interface SwipeControlProps {
   swipeId: number;
@@ -26,7 +27,7 @@ export function SwipeControl({
   return (
     <div className="flex items-center gap-1 mt-1 text-[var(--color-text-secondary)]">
       <button
-        onClick={onSwipeLeft}
+        onClick={() => { haptic(); onSwipeLeft(); }}
         disabled={!canSwipeLeft}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         aria-label="Previous response"
@@ -37,7 +38,7 @@ export function SwipeControl({
         {current}/{swipesCount}
       </span>
       <button
-        onClick={onSwipeRight}
+        onClick={() => { haptic(); onSwipeRight(); }}
         disabled={!canSwipeRight}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         aria-label={atLastSwipe ? 'Generate new response' : 'Next response'}

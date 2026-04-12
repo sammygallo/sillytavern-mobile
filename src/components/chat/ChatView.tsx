@@ -16,11 +16,15 @@ import { TypingIndicator } from './TypingIndicator';
 import { ImageGenModal } from './ImageGenModal';
 import { QuickReplyBar } from './QuickReplyBar';
 import { useExtensionStore } from '../../stores/extensionStore';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { useOrientation } from '../../hooks/useOrientation';
+import { useKeyboardHeight } from '../../hooks/useKeyboardHeight';
 import { useSummarizeStore } from '../../stores/summarizeStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
   getDefaultAvatarUrl,
+  mapEmotionToAvailable,
   type Emotion,
 } from '../../utils/emotions';
 import {
@@ -94,6 +98,11 @@ export function ChatView() {
   const chatMaxWidth = getChatMaxWidth();
   // Phase 6.4: VN mode (re-read on every render so settings changes take effect immediately)
   const isVnMode = getVnMode();
+  // Phase 6.3: Mobile UX hooks
+  const isMobile = useIsMobile();
+  const { isLandscape } = useOrientation();
+  const keyboardHeight = useKeyboardHeight();
+  const isMobileLandscape = isMobile && isLandscape;
 
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
@@ -176,14 +185,18 @@ export function ChatView() {
 
   const getAvatarUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
-      if (isGroupChatMode) return getDefaultAvatarUrl(avatar);
       if (emotion) {
-        const spritePath = getSpritePath(emotion);
-        if (spritePath) return spritePath;
+        const expressionKey = `${avatar}-${emotion}`;
+        if (!failedExpressions.has(expressionKey)) {
+          // Try alias mapping (e.g. "happy" → "joy") then direct lookup
+          const mapped = mapEmotionToAvailable(emotion, availableEmotions);
+          const spritePath = getSpritePath(mapped || emotion);
+          if (spritePath) return spritePath;
+        }
       }
-      return getExpressionThumbnailUrl(avatar, emotion ?? null);
+      return getExpressionThumbnailUrl(avatar, null);
     },
-    [getSpritePath, isGroupChatMode]
+    [getSpritePath, failedExpressions, availableEmotions]
   );
 
   const getFullImageUrl = useCallback(
@@ -762,8 +775,8 @@ export function ChatView() {
         </>
       ) : selectedCharacter ? (
         <>
-          {/* Mobile: character portrait (hidden in VN mode — sprite renders as absolute layer) */}
-          {!isVnMode && (
+          {/* Mobile: character portrait (hidden in VN mode and mobile landscape) */}
+          {!isVnMode && !isMobileLandscape && (
             <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
               <img
                 key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
@@ -1031,6 +1044,7 @@ export function ChatView() {
         className={`flex-1 min-h-0 overflow-y-auto relative ${
           isDragOver ? 'ring-2 ring-[var(--color-primary)] ring-inset' : ''
         } ${isVnMode ? 'bg-black/40 backdrop-blur-[2px]' : ''}`}
+        style={keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : undefined}
         onScroll={handleScroll}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -1066,13 +1080,18 @@ export function ChatView() {
         ) : (
           <div className="py-4">
             {displayedMessages.map((message) => {
+              const charAvatar = isGroupChatMode && message.characterAvatar
+                ? message.characterAvatar
+                : selectedCharacter?.avatar;
               const messageAvatar = message.isUser
                 ? undefined
-                : isGroupChatMode && message.characterAvatar
-                  ? getAvatarUrl(message.characterAvatar, message.emotion)
-                  : selectedCharacter
-                    ? getAvatarUrl(selectedCharacter.avatar, message.emotion)
-                    : undefined;
+                : charAvatar
+                  ? getAvatarUrl(charAvatar, message.emotion)
+                  : undefined;
+              // Fallback: default avatar thumbnail (no expression) when sprite 404s
+              const fallbackAvatar = !message.isUser && charAvatar
+                ? getExpressionThumbnailUrl(charAvatar, null)
+                : undefined;
 
               const isLastAiMessage = message.id === lastAiMessageId;
               const isAiMessage = !message.isUser && !message.isSystem;
@@ -1102,6 +1121,15 @@ export function ChatView() {
                     isUser={message.isUser}
                     isSystem={message.isSystem}
                     avatar={messageAvatar}
+                    avatarFallback={fallbackAvatar}
+                    onAvatarError={
+                      message.emotion && !message.isUser && charAvatar
+                        ? () => {
+                            const key = `${charAvatar}-${message.emotion}`;
+                            setFailedExpressions(prev => new Set(prev).add(key));
+                          }
+                        : undefined
+                    }
                     timestamp={message.timestamp}
                     disabled={isSending}
                     images={message.images}

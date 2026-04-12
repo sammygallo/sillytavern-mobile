@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { MoreHorizontal, Check, X, Volume2, Square, Globe } from 'lucide-react';
 import { Avatar } from '../ui';
+import { BottomSheet } from '../ui/BottomSheet';
 import { MessageActionMenu } from './MessageActionMenu';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { haptic } from '../../utils/haptics';
 import { SwipeControl } from './SwipeControl';
 import { stripEmotionTag } from '../../utils/emotions';
 import { MarkdownContent } from './MarkdownContent';
@@ -20,6 +23,10 @@ interface ChatMessageProps {
   isUser: boolean;
   isSystem?: boolean;
   avatar?: string;
+  /** Fallback avatar URL when the primary (expression) avatar fails to load. */
+  avatarFallback?: string;
+  /** Called when the primary avatar fails, e.g. to track failed expression sprites. */
+  onAvatarError?: () => void;
   timestamp?: number;
   disabled?: boolean;
   /** Phase 6.1: attached image data URLs shown as a grid above content. */
@@ -59,6 +66,8 @@ export function ChatMessage({
   isUser,
   isSystem,
   avatar,
+  avatarFallback,
+  onAvatarError,
   timestamp,
   disabled,
   images,
@@ -81,6 +90,7 @@ export function ChatMessage({
   onCheckpoint,
   triggerEditNonce,
 }: ChatMessageProps) {
+  const isMobile = useIsMobile();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [showMenu, setShowMenu] = useState(false);
@@ -218,24 +228,49 @@ export function ChatMessage({
   const actionButtons = !isEditing && (onEdit || onDelete) ? (
     <div className="relative flex flex-col gap-0.5">
       <button
-        onClick={() => setShowMenu(!showMenu)}
+        onClick={() => { setShowMenu(!showMenu); haptic(); }}
         disabled={disabled}
         className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
         aria-label="Message actions"
       >
         <MoreHorizontal size={16} />
       </button>
-      <MessageActionMenu
-        isOpen={showMenu}
-        onClose={() => setShowMenu(false)}
-        onEdit={handleStartEdit}
-        onCopy={handleCopy}
-        onDelete={() => onDelete?.()}
-        onRegenerate={onRegenerate}
-        showRegenerate={!isUser && !!onRegenerate}
-        onCheckpoint={onCheckpoint}
-        anchorRight={layoutMode === 'bubbles' && isUser}
-      />
+      {/* Desktop: dropdown menu. Mobile: bottom sheet. */}
+      {isMobile ? (
+        <BottomSheet isOpen={showMenu} onClose={() => setShowMenu(false)} title="Message Actions">
+          <div className="space-y-1">
+            {[
+              { label: 'Edit', onClick: handleStartEdit },
+              { label: 'Copy', onClick: handleCopy },
+              ...(onCheckpoint ? [{ label: 'Checkpoint', onClick: onCheckpoint }] : []),
+              ...(!isUser && onRegenerate ? [{ label: 'Regenerate', onClick: onRegenerate }] : []),
+              { label: 'Delete', onClick: () => onDelete?.(), danger: true },
+            ].map((action) => (
+              <button
+                key={action.label}
+                onClick={() => { action.onClick(); setShowMenu(false); }}
+                className={`w-full text-left px-3 py-3 rounded-lg text-sm transition-colors hover:bg-[var(--color-bg-tertiary)] ${
+                  action.danger ? 'text-red-400' : 'text-[var(--color-text-primary)]'
+                }`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      ) : (
+        <MessageActionMenu
+          isOpen={showMenu}
+          onClose={() => setShowMenu(false)}
+          onEdit={handleStartEdit}
+          onCopy={handleCopy}
+          onDelete={() => onDelete?.()}
+          onRegenerate={onRegenerate}
+          showRegenerate={!isUser && !!onRegenerate}
+          onCheckpoint={onCheckpoint}
+          anchorRight={layoutMode === 'bubbles' && isUser}
+        />
+      )}
       {showTtsButton && (
         <button
           onClick={() => isSpeaking ? stop() : speak(content, messageId)}
@@ -405,7 +440,7 @@ export function ChatMessage({
   if (layoutMode === 'bubbles') {
     return (
       <div className={`flex gap-3 px-4 py-3 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        <Avatar src={avatar} alt={name} size="md" shape={avatarShape} className="flex-shrink-0" />
+        <Avatar src={avatar} fallbackSrc={avatarFallback} onFallback={onAvatarError} alt={name} size="md" shape={avatarShape} className="flex-shrink-0" />
 
         <div
           className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
@@ -454,7 +489,7 @@ export function ChatMessage({
       >
         {/* Header row: avatar + name + time + actions */}
         <div className="flex items-center gap-2 mb-1.5">
-          <Avatar src={avatar} alt={name} size="sm" shape={avatarShape} className="flex-shrink-0" />
+          <Avatar src={avatar} fallbackSrc={avatarFallback} onFallback={onAvatarError} alt={name} size="sm" shape={avatarShape} className="flex-shrink-0" />
           <span className={`text-xs font-semibold ${
             isUser ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'
           }`}>

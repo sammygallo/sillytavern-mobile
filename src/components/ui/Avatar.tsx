@@ -3,6 +3,10 @@ import { User } from 'lucide-react';
 
 interface AvatarProps {
   src?: string;
+  /** Fallback image URL to try when `src` fails to load. */
+  fallbackSrc?: string;
+  /** Called when `src` fails and we switch to `fallbackSrc`. */
+  onFallback?: () => void;
   alt?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Phase 7.3: avatar shape — circle (default), square, or rounded square. */
@@ -10,13 +14,14 @@ interface AvatarProps {
   className?: string;
 }
 
-export function Avatar({ src, alt, size = 'md', shape = 'circle', className = '' }: AvatarProps) {
-  const [error, setError] = useState(false);
+export function Avatar({ src, fallbackSrc, onFallback, alt, size = 'md', shape = 'circle', className = '' }: AvatarProps) {
+  // 'none' → showing src, 'primary-failed' → showing fallbackSrc, 'all-failed' → show icon
+  const [errorStage, setErrorStage] = useState<'none' | 'primary-failed' | 'all-failed'>('none');
 
   // Reset error state when src changes
   useEffect(() => {
-    setError(false);
-  }, [src]);
+    setErrorStage('none');
+  }, [src, fallbackSrc]);
 
   const sizes = {
     sm: 'w-8 h-8',
@@ -40,7 +45,12 @@ export function Avatar({ src, alt, size = 'md', shape = 'circle', className = ''
 
   const shapeClass = shapes[shape];
 
-  if (!src || error) {
+  // Determine the active image source
+  let activeSrc: string | undefined;
+  if (errorStage === 'none') activeSrc = src;
+  else if (errorStage === 'primary-failed' && fallbackSrc) activeSrc = fallbackSrc;
+
+  if (!activeSrc || errorStage === 'all-failed') {
     return (
       <div
         className={`${sizes[size]} ${shapeClass} bg-[var(--color-bg-tertiary)] flex items-center justify-center ${className}`}
@@ -52,10 +62,17 @@ export function Avatar({ src, alt, size = 'md', shape = 'circle', className = ''
 
   return (
     <img
-      src={src}
+      src={activeSrc}
       alt={alt || 'Avatar'}
       className={`${sizes[size]} ${shapeClass} object-cover ${className}`}
-      onError={() => setError(true)}
+      onError={() => {
+        if (errorStage === 'none') {
+          setErrorStage(fallbackSrc ? 'primary-failed' : 'all-failed');
+          onFallback?.();
+        } else {
+          setErrorStage('all-failed');
+        }
+      }}
     />
   );
 }

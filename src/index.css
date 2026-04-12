@@ -384,3 +384,12 @@ body {
               0 0 14px -2px rgba(59, 130, 246, 0.4),
               0 0 14px -2px rgba(224, 64, 251, 0.45);
 }
+
+/* --- Phase 6.3: Bottom sheet slide-up animation -------------------- */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
+}
