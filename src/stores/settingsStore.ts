@@ -77,6 +77,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         model = (oaiSettings.google_model as string) || 'gemini-1.5-pro';
       } else if (chatCompletionSource === 'custom') {
         model = (oaiSettings.custom_model as string) || '';
+      } else if (chatCompletionSource === 'deepseek') {
+        model = (oaiSettings.deepseek_model as string) || 'deepseek-chat';
+      } else if (chatCompletionSource === 'cohere') {
+        model = (oaiSettings.cohere_model as string) || 'command-r-plus';
+      } else if (chatCompletionSource === 'perplexity') {
+        model = (oaiSettings.perplexity_model as string) || 'sonar';
       }
 
       const customUrl = (oaiSettings.custom_url as string) || '';
@@ -183,6 +189,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         oaiSettings.claude_model = defaultModel;
       } else if (provider === 'makersuite') {
         oaiSettings.google_model = defaultModel;
+      } else if (provider === 'deepseek') {
+        oaiSettings.deepseek_model = defaultModel;
+      } else if (provider === 'cohere') {
+        oaiSettings.cohere_model = defaultModel;
+      } else if (provider === 'perplexity') {
+        oaiSettings.perplexity_model = defaultModel;
       }
       // 'custom': custom_url / custom_model are managed by setCustomUrl / setActiveModel separately.
 
@@ -232,6 +244,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         oaiSettings.google_model = model;
       } else if (activeProvider === 'custom') {
         oaiSettings.custom_model = model;
+      } else if (activeProvider === 'deepseek') {
+        oaiSettings.deepseek_model = model;
+      } else if (activeProvider === 'cohere') {
+        oaiSettings.cohere_model = model;
+      } else if (activeProvider === 'perplexity') {
+        oaiSettings.perplexity_model = model;
       }
 
       settings.oai_settings = oaiSettings;
