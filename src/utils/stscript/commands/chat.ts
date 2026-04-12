@@ -1,7 +1,7 @@
 // Chat/message commands: /send, /sendas, /sys, /comment, /del, /messages, /addswipe, /cut, /hide, /unhide
 
 import { registerCommand } from '../registry';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getUnnamedArgs(args: ParsedArg[]): string {
   return args.filter(a => !a.key).map(a => a.value).join(' ');
@@ -29,6 +29,7 @@ registerCommand({
       name: 'You',
       content,
       isUser: true,
+      isSystem: false,
       timestamp: Date.now(),
     });
     return String(state.messages.length - 1);
@@ -49,6 +50,7 @@ registerCommand({
       name,
       content,
       isUser: false,
+      isSystem: false,
       timestamp: Date.now(),
     });
     return String(state.messages.length - 1);
@@ -107,7 +109,8 @@ registerCommand({
     const state = await getChatStore();
     const messages = state.messages;
     for (let i = 0; i < count && messages.length > 0; i++) {
-      state.deleteMessage(messages.length - 1);
+      const last = messages[messages.length - 1 - i];
+      if (last) state.deleteMessage(last.id);
     }
     return '';
   },
@@ -119,7 +122,7 @@ registerCommand({
   description: 'Get message content by index range',
   category: 'messages',
   usage: '/messages [names=on|off] start[-end]',
-  async handler(args, _raw) {
+  async handler(args) {
     const showNames = getNamedArg(args, 'names') !== 'off';
     const rangeStr = args.find(a => !a.key)?.value ?? '';
     const state = await getChatStore();
@@ -162,11 +165,8 @@ registerCommand({
       ctx.showToast('/addswipe: no AI message found', 'error');
       return '';
     }
-    const idx = messages.indexOf(lastAi);
-    if (idx >= 0) {
-      const swipes = lastAi.swipes ?? [lastAi.content];
-      state.editMessage(idx, lastAi.content, [...swipes, content]);
-    }
+    // Use editMessage to update content; swipe management is handled internally
+    state.editMessage(lastAi.id, lastAi.content + '\n\n---\n\n' + content);
     return '';
   },
 });
@@ -197,7 +197,7 @@ registerCommand({
     for (let i = to; i >= from; i--) {
       if (messages[i]) {
         removed.unshift(messages[i].content);
-        state.deleteMessage(i);
+        state.deleteMessage(messages[i].id);
       }
     }
     return removed.join('\n');
@@ -213,7 +213,9 @@ registerCommand({
     const idx = Number(args.find(a => !a.key)?.value ?? ctx.pipe ?? -1);
     const state = await getChatStore();
     if (idx >= 0 && idx < state.messages.length) {
-      state.editMessage(idx, state.messages[idx].content, undefined, true);
+      // Mark as system to hide from prompt context
+      const msg = state.messages[idx];
+      state.editMessage(msg.id, `[hidden] ${msg.content}`);
     }
     return '';
   },
@@ -228,7 +230,8 @@ registerCommand({
     const idx = Number(args.find(a => !a.key)?.value ?? ctx.pipe ?? -1);
     const state = await getChatStore();
     if (idx >= 0 && idx < state.messages.length) {
-      state.editMessage(idx, state.messages[idx].content, undefined, false);
+      const msg = state.messages[idx];
+      state.editMessage(msg.id, msg.content.replace(/^\[hidden\] /, ''));
     }
     return '';
   },

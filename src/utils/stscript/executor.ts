@@ -3,11 +3,9 @@
 
 import type {
   ParsedPipeline,
-  ParsedCommand,
   ParsedArg,
   ExecutionContext,
   Scope,
-  AbortReason,
 } from './types';
 import { parsePipeline } from './parser';
 import { getCommand } from './registry';

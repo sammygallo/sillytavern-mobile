@@ -1,7 +1,7 @@
 // Generation commands: /gen, /trigger, /continue, /swipe, /regenerate
 
 import { registerCommand } from '../registry';
-import type { ParsedArg, ExecutionContext } from '../types';
+import type { ParsedArg } from '../types';
 
 function getUnnamedArgs(args: ParsedArg[]): string {
   return args.filter(a => !a.key).map(a => a.value).join(' ');
@@ -118,9 +118,8 @@ registerCommand({
       const lastAi = [...messages].reverse().find(m => !m.isUser);
       if (!lastAi) return '';
 
-      const idx = messages.indexOf(lastAi);
-      if (idx >= 0) {
-        await state.swipeRight(idx, character);
+      if (lastAi) {
+        await state.swipeRight(lastAi.id, character);
       }
       return '';
     } catch (err) {
