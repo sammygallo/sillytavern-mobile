@@ -541,6 +541,42 @@ export function GenerationSettingsPage() {
                 Added on top of the template's built-in stop strings.
               </p>
             </div>
+
+            {/* Phase 10.3: Completion Mode */}
+            <div>
+              <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">
+                Completion Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'chat' as const, label: 'Chat' },
+                  { value: 'text' as const, label: 'Text' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setInstruct({ completionMode: opt.value });
+                      // Text mode requires instruct formatting
+                      if (opt.value === 'text' && !instruct.enabled) {
+                        setInstruct({ enabled: true, completionMode: opt.value });
+                      }
+                    }}
+                    className={`p-2.5 rounded-lg text-center text-xs font-medium transition-all ${
+                      instruct.completionMode === opt.value
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
+                {instruct.completionMode === 'text'
+                  ? 'Sends a single prompt string to the text completion endpoint. Best for local models (llama.cpp, KoboldCpp).'
+                  : 'Sends a messages array to the chat completion endpoint. Works with all cloud providers.'}
+              </p>
+            </div>
           </section>
         )}
       </div>

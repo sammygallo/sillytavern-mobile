@@ -474,7 +474,9 @@ export const api = {
     model?: string,
     signal?: AbortSignal,
     generationOptions?: GenerationOptions,
-    images?: GenerationImage[]
+    images?: GenerationImage[],
+    /** Phase 10.3: when true, send as text completion (single prompt string). */
+    textCompletionMode?: boolean,
   ): Promise<ReadableStream<Uint8Array> | null> {
     const token = await getCsrfToken();
 
@@ -514,13 +516,28 @@ export const api = {
     // Build request body with optional sampler params.
     // Unknown fields are ignored by most providers.
     const body: Record<string, unknown> = {
-      messages: messagesToSend,
       stream: true,
       max_tokens: generationOptions?.maxTokens ?? 1024,
       temperature: generationOptions?.temperature ?? 0.9,
-      chat_completion_source: provider || 'openai',
       model: model || 'gpt-4o',
     };
+
+    // Phase 10.3: text completion mode sends a single prompt string
+    // to a separate backend endpoint.
+    let endpoint: string;
+    if (textCompletionMode) {
+      // In text-completion mode, instruct mode has already flattened
+      // messages into a single user message containing the full prompt.
+      const prompt = messages.length === 1
+        ? messages[0].content
+        : messages.map(m => m.content).join('\n');
+      body.prompt = prompt;
+      endpoint = '/api/backends/text-completions/generate';
+    } else {
+      body.messages = messagesToSend;
+      body.chat_completion_source = provider || 'openai';
+      endpoint = '/api/backends/chat-completions/generate';
+    }
 
     if (generationOptions) {
       if (generationOptions.topP !== undefined) body.top_p = generationOptions.topP;
@@ -544,7 +561,7 @@ export const api = {
       }
     }
 
-    const response = await fetch('/api/backends/chat-completions/generate', {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
