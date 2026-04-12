@@ -1,5 +1,7 @@
 import { useEffect, useRef, useMemo, useState, useCallback, type CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, ChevronDown, X, Check } from 'lucide-react';
+import { showToastGlobal } from '../ui/Toast';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatMessage } from './ChatMessage';
@@ -45,6 +47,7 @@ import {
 } from '../../hooks/displayPreferences';
 
 export function ChatView() {
+  const routerNavigate = useNavigate();
   const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
   const {
     messages,
@@ -204,6 +207,39 @@ export function ChatView() {
     const t = setTimeout(() => searchInputRef.current?.focus(), 60);
     return () => clearTimeout(t);
   }, [isSearchOpen]);
+
+  // Phase 8.7: STscript modal state
+  const [stscriptModal, setStscriptModal] = useState<{
+    type: 'popup' | 'input' | 'buttons';
+    message: string;
+    buttons?: string[];
+    defaultValue?: string;
+    resolve: (value: string) => void;
+  } | null>(null);
+
+  // Phase 8.7: Register STscript UI callbacks so slash commands can interact with the UI.
+  useEffect(() => {
+    import('../../utils/stscript').then(({ registerUICallbacks }) => {
+      registerUICallbacks({
+        showToast: (msg, variant) => showToastGlobal(msg, variant),
+        setInputText: (text) => {
+          setPrefillText(text);
+          setPrefillNonce(n => n + 1);
+        },
+        showPopup: (message, buttons) => {
+          return new Promise<string>((resolve) => {
+            setStscriptModal({ type: buttons ? 'buttons' : 'popup', message, buttons, resolve });
+          });
+        },
+        showInputPrompt: (message, defaultValue) => {
+          return new Promise<string | null>((resolve) => {
+            setStscriptModal({ type: 'input', message, defaultValue, resolve: (v) => resolve(v || null) });
+          });
+        },
+        navigate: (path) => routerNavigate(path),
+      });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Phase 9.1: auto-navigate to first match when query changes
   useEffect(() => {
@@ -1240,6 +1276,48 @@ export function ChatView() {
             <Settings2 size={10} className="inline -mt-0.5" /> and tap a talk icon to choose who speaks next.
           </div>
         )}
+      {/* Phase 8.7: STscript popup/input/buttons modal */}
+      {stscriptModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => { stscriptModal.resolve(''); setStscriptModal(null); }}>
+          <div className="bg-[var(--color-bg-primary)] rounded-lg shadow-xl max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>
+            <pre className="whitespace-pre-wrap text-sm text-[var(--color-text-primary)] mb-4 max-h-60 overflow-y-auto">{stscriptModal.message}</pre>
+            {stscriptModal.type === 'input' && (
+              <input
+                autoFocus
+                className="w-full px-3 py-2 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)] mb-3"
+                defaultValue={stscriptModal.defaultValue || ''}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    stscriptModal.resolve((e.target as HTMLInputElement).value);
+                    setStscriptModal(null);
+                  }
+                }}
+                id="stscript-input"
+              />
+            )}
+            <div className="flex gap-2 justify-end">
+              {stscriptModal.type === 'buttons' && stscriptModal.buttons ? (
+                stscriptModal.buttons.map((label) => (
+                  <button key={label} className="px-4 py-2 rounded bg-[var(--color-primary)] text-white text-sm" onClick={() => { stscriptModal.resolve(label); setStscriptModal(null); }}>
+                    {label}
+                  </button>
+                ))
+              ) : stscriptModal.type === 'input' ? (
+                <>
+                  <button className="px-4 py-2 rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm" onClick={() => { stscriptModal.resolve(''); setStscriptModal(null); }}>Cancel</button>
+                  <button className="px-4 py-2 rounded bg-[var(--color-primary)] text-white text-sm" onClick={() => {
+                    const input = document.getElementById('stscript-input') as HTMLInputElement | null;
+                    stscriptModal.resolve(input?.value || '');
+                    setStscriptModal(null);
+                  }}>OK</button>
+                </>
+              ) : (
+                <button className="px-4 py-2 rounded bg-[var(--color-primary)] text-white text-sm" onClick={() => { stscriptModal.resolve('ok'); setStscriptModal(null); }}>OK</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       </div>{/* end VN content wrapper */}
     </div>
   );

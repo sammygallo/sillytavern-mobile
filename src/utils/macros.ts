@@ -402,6 +402,28 @@ function processInline(text: string, ctx: MacroContext): string {
         return ctx.extra[args.trim()] || '';
       }
 
+      // ───── Phase 8.7: STscript execution macros ─────
+      case 'pipe':
+        return ctx.extra?.['pipe'] ?? '';
+      case 'timesindex':
+      case 'times_index':
+        return ctx.extra?.['timesIndex'] ?? '';
+      case 'input':
+        return ctx.extra?.['input'] ?? '';
+      case 'lastmessageid':
+      case 'last_message_id':
+        return ctx.extra?.['lastMessageId'] ?? '';
+      case 'var': {
+        // Scoped variable access: {{var::name}}
+        if (!args) return '';
+        const scopeVars = ctx.extra?.['__scopeVars'];
+        if (!scopeVars) return '';
+        try {
+          const map: Record<string, string> = JSON.parse(scopeVars);
+          return map[args.trim()] ?? '';
+        } catch { return ''; }
+      }
+
       // ───── Phase 9.3: Variables ─────
       case 'getvar': {
         const key = args.trim();

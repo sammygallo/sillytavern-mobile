@@ -2291,6 +2291,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     availableEmotions?: string[],
     images?: string[]
   ) => {
+    // Phase 8.7: STscript slash command intercept
+    if (content.trimStart().startsWith('/')) {
+      try {
+        const stscript = await import('../utils/stscript');
+        const ctx = stscript.buildExecutionContext({ originalInput: content.trimStart() });
+        await stscript.executeSlashCommand(content.trimStart(), ctx);
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : 'Slash command error' });
+      }
+      return;
+    }
+
     const { addMessage } = get();
 
     // Phase 6.1: non-vision model guard. Refuse to send images to a model
@@ -2402,6 +2414,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     characters: CharacterInfo[],
     images?: string[]
   ) => {
+    // Phase 8.7: STscript slash command intercept (group chat)
+    if (content.trimStart().startsWith('/')) {
+      try {
+        const stscript = await import('../utils/stscript');
+        const ctx = stscript.buildExecutionContext({ originalInput: content.trimStart() });
+        await stscript.executeSlashCommand(content.trimStart(), ctx);
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : 'Slash command error' });
+      }
+      return;
+    }
+
     const { addMessage, currentChatFile, getGroupChatByFile } = get();
 
     // Phase 6.1: non-vision model guard — same as single-character send.
