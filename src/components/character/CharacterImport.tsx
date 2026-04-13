@@ -5,7 +5,6 @@ import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { Modal, Button, Input, TextArea, ImageUpload, TagInput } from '../ui';
 import type { CharacterInfo } from '../../api/client';
 import type { CharacterBookV2 } from '../../utils/characterCard';
-import { LorebookDetectedError } from '../../utils/characterCard';
 
 interface CharacterImportProps {
   isOpen: boolean;
