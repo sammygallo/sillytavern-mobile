@@ -50,10 +50,10 @@ export interface CharacterBookV2 {
   entries: CharacterBookEntryV2[];
 }
 
-// Character Card V2 specification format
+// Character Card V2/V3 specification format (V3 is structurally identical)
 export interface CharacterCardV2 {
-  spec: 'chara_card_v2';
-  spec_version: '2.0';
+  spec: 'chara_card_v2' | 'chara_card_v3';
+  spec_version: '2.0' | '3.0';
   data: {
     name: string;
     description: string;
@@ -164,7 +164,7 @@ export function extractCharacterBook(
   card: CharacterCardV2 | CharacterExportData | null | undefined
 ): CharacterBookV2 | null {
   if (!card) return null;
-  if ('spec' in card && card.spec === 'chara_card_v2') {
+  if ('spec' in card && (card.spec === 'chara_card_v2' || card.spec === 'chara_card_v3')) {
     const book = card.data.character_book;
     if (!book || typeof book !== 'object') return null;
     const entries = (book as CharacterBookV2).entries;
@@ -175,10 +175,10 @@ export function extractCharacterBook(
 }
 
 /**
- * Type guard to check if card is V2 format
+ * Type guard to check if card is V2/V3 format
  */
 function isCharacterCardV2(card: CharacterCardV2 | CharacterExportData): card is CharacterCardV2 {
-  return 'spec' in card && card.spec === 'chara_card_v2';
+  return 'spec' in card && (card.spec === 'chara_card_v2' || card.spec === 'chara_card_v3');
 }
 
 /**
@@ -348,8 +348,8 @@ export async function extractCharacterFromPNG(
           const jsonString = atob(base64String);
           const charData = JSON.parse(jsonString);
 
-          // Check if it's V2 format
-          if (charData.spec === 'chara_card_v2') {
+          // Check if it's V2/V3 format
+          if (charData.spec === 'chara_card_v2' || charData.spec === 'chara_card_v3') {
             return charData as CharacterCardV2;
           }
 
@@ -494,8 +494,8 @@ export async function parseCharacterFromJSON(
   try {
     const data = JSON.parse(text);
 
-    // Check if it's V2 format
-    if (data.spec === 'chara_card_v2') {
+    // Check if it's V2/V3 format
+    if (data.spec === 'chara_card_v2' || data.spec === 'chara_card_v3') {
       return data as CharacterCardV2;
     }
 
