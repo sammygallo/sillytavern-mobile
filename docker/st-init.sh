@@ -16,7 +16,7 @@ if [ ! -f "$CONFIG" ]; then
 # connects to localhost:8000 — ST always sees 127.0.0.1, which is
 # whitelisted. Port 8000 is never exposed externally.
 whitelistMode: true
-enableForwardedWhitelist: true
+enableForwardedWhitelist: false
 enableUserAccounts: true
 listen: true
 whitelist:
@@ -24,15 +24,14 @@ whitelist:
 EOF
 fi
 
-# Explicitly set enableForwardedWhitelist: true.
-# If the key is absent, ST re-adds it on startup with its own default of true,
-# which would cause it to check X-Forwarded-For against the whitelist.
-# Setting it to false here (BEFORE ST starts) ensures ST reads the explicit
-# value and does not replace it with the default.
+# Explicitly set enableForwardedWhitelist: false.
+# When true, ST checks X-Forwarded-For / X-Real-IP against the whitelist,
+# blocking external clients even though nginx pins X-Forwarded-For to 127.0.0.1.
+# With false, ST only checks the direct connection IP (always 127.0.0.1 from nginx).
 if grep -q 'enableForwardedWhitelist' "$CONFIG"; then
-  sed -i 's/enableForwardedWhitelist:.*/enableForwardedWhitelist: true/' "$CONFIG"
+  sed -i 's/enableForwardedWhitelist:.*/enableForwardedWhitelist: false/' "$CONFIG"
 else
-  echo 'enableForwardedWhitelist: true' >> "$CONFIG"
+  echo 'enableForwardedWhitelist: false' >> "$CONFIG"
 fi
 
 # ST rewrites config.yaml during startup, overriding our values.
@@ -46,8 +45,8 @@ fi
   done
 
   CHANGED=0
-  if grep -q 'enableForwardedWhitelist: false' "$CONFIG"; then
-    sed -i 's/enableForwardedWhitelist: false/enableForwardedWhitelist: true/' "$CONFIG"
+  if grep -q 'enableForwardedWhitelist: true' "$CONFIG"; then
+    sed -i 's/enableForwardedWhitelist: true/enableForwardedWhitelist: false/' "$CONFIG"
     CHANGED=1
   fi
   if grep -q 'whitelistDockerHosts: true' "$CONFIG"; then
