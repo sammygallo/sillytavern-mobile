@@ -5,6 +5,8 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
+import { useAuthStore } from '../../stores/authStore';
+import { hasMinRole } from '../../utils/permissions';
 import { Button, Input } from '../ui';
 
 type TestState =
@@ -44,15 +46,20 @@ async function testLocalEndpoint(
 export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   const { goBack } = useSettingsPanelStore();
   const {
-    secrets, activeProvider, activeModel, customUrl,
+    secrets, globalSecrets, globalSharingEnabled, globalSharingSupported,
+    activeProvider, activeModel, customUrl,
     isSaving, error, successMessage,
-    fetchSecrets, fetchSettings,
-    saveApiKey, deleteApiKey,
-    setActiveProvider, setActiveModel, setCustomUrl, clearMessages,
+    fetchSecrets, fetchSettings, fetchGlobalSecrets,
+    saveApiKey, deleteApiKey, saveGlobalApiKey, deleteGlobalApiKey,
+    setActiveProvider, setActiveModel, setCustomUrl, setGlobalSharing, clearMessages,
   } = useSettingsStore();
+  const userRole = useAuthStore((s) => s.currentUser?.role);
+  const isOwner = hasMinRole(userRole, 'owner');
 
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
+  const [globalKeyInputs, setGlobalKeyInputs] = useState<Record<string, string>>({});
+  const [showGlobalKey, setShowGlobalKey] = useState<Record<string, boolean>>({});
 
   // Connection profiles
   const { profiles, activeProfileId, saveProfile, deleteProfile, renameProfile, setActiveProfileId } = useConnectionProfileStore();
@@ -68,7 +75,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
 
-  useEffect(() => { fetchSecrets(); fetchSettings(); }, [fetchSecrets, fetchSettings]);
+  useEffect(() => { fetchSecrets(); fetchSettings(); if (isOwner) fetchGlobalSecrets(); }, [fetchSecrets, fetchSettings, fetchGlobalSecrets, isOwner]);
   useEffect(() => {
     if (successMessage || error) {
       const timer = setTimeout(clearMessages, 3000);
@@ -84,6 +91,26 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
     if (!key?.trim()) return;
     await saveApiKey(providerId, key.trim());
     setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
+  };
+
+  const handleSaveGlobalKey = async (providerId: string) => {
+    const key = globalKeyInputs[providerId];
+    if (!key?.trim()) return;
+    await saveGlobalApiKey(providerId, key.trim());
+    setGlobalKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
+  };
+
+  const hasGlobalKey = (secretKey: string): boolean => {
+    const data = globalSecrets[secretKey];
+    return Array.isArray(data) && data.length > 0;
+  };
+
+  const getGlobalSecretInfo = (secretKey: string): SecretState | null => {
+    const data = globalSecrets[secretKey];
+    if (Array.isArray(data) && data.length > 0) {
+      return data.find((s) => s.active) || data[0];
+    }
+    return null;
   };
 
   const hasApiKey = (secretKey: string): boolean => {
@@ -347,6 +374,77 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
             })}
           </div>
         </section>
+
+        {/* Global API Keys — Owner only */}
+        {isOwner && globalSharingSupported && (
+          <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Globe size={16} className="text-[var(--color-text-secondary)]" />
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Global API Keys</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--color-text-secondary)]">Share with all users</span>
+                <button
+                  role="switch"
+                  aria-checked={globalSharingEnabled}
+                  onClick={() => setGlobalSharing(!globalSharingEnabled)}
+                  disabled={isSaving}
+                  className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                    globalSharingEnabled ? 'bg-[var(--color-primary)]' : 'bg-zinc-600'
+                  }`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                    globalSharingEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+              Keys set here are used as defaults for users who haven't entered their own. Your personal keys above always take priority.
+            </p>
+            <div className="space-y-4">
+              {PROVIDERS.filter((p) => p.id !== 'custom').map((provider) => {
+                const globalInfo = getGlobalSecretInfo(provider.secretKey);
+                const configured = !!globalInfo;
+                const inputValue = globalKeyInputs[provider.id] || '';
+                const showKey = showGlobalKey[provider.id] || false;
+                return (
+                  <div key={provider.id} className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Globe size={16} className="text-[var(--color-text-secondary)]" />
+                        <span className="text-sm font-medium text-[var(--color-text-primary)]">{provider.name}</span>
+                      </div>
+                      {configured && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-blue-400">Shared</span>
+                          <Button variant="ghost" size="sm" onClick={() => deleteGlobalApiKey(provider.secretKey)} disabled={isSaving} className="p-1 text-red-400 hover:text-red-300">
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <Input type={showKey ? 'text' : 'password'} value={inputValue}
+                          onChange={(e) => setGlobalKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
+                          placeholder={configured ? 'Enter new key to replace...' : 'Enter global API key...'} className="pr-10" />
+                        <button type="button" onClick={() => setShowGlobalKey((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
+                          {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                      <Button onClick={() => handleSaveGlobalKey(provider.id)} disabled={!inputValue.trim() || isSaving} className="shrink-0">
+                        {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

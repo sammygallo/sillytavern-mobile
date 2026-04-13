@@ -11,6 +11,9 @@ interface SettingsState {
   isSaving: boolean;
   error: string | null;
   successMessage: string | null;
+  globalSecrets: SecretsResponse;
+  globalSharingEnabled: boolean;
+  globalSharingSupported: boolean;
 
   // Actions
   fetchSecrets: () => Promise<void>;
@@ -21,6 +24,10 @@ interface SettingsState {
   setActiveModel: (model: string) => Promise<void>;
   setCustomUrl: (url: string) => Promise<void>;
   clearMessages: () => void;
+  fetchGlobalSecrets: () => Promise<void>;
+  saveGlobalApiKey: (provider: string, apiKey: string) => Promise<void>;
+  deleteGlobalApiKey: (secretKey: string) => Promise<void>;
+  setGlobalSharing: (enabled: boolean) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -32,6 +39,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isSaving: false,
   error: null,
   successMessage: null,
+  globalSecrets: {},
+  globalSharingEnabled: false,
+  globalSharingSupported: false,
 
   fetchSecrets: async () => {
     set({ isLoading: true, error: null });
@@ -291,4 +301,63 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   clearMessages: () => set({ error: null, successMessage: null }),
+
+  fetchGlobalSecrets: async () => {
+    try {
+      const [globalSecrets, sharingStatus] = await Promise.all([
+        settingsApi.getGlobalSecrets(),
+        settingsApi.getGlobalSharingStatus(),
+      ]);
+      set({
+        globalSecrets,
+        globalSharingEnabled: sharingStatus.enabled,
+        globalSharingSupported: true,
+      });
+    } catch {
+      set({ globalSecrets: {}, globalSharingEnabled: false, globalSharingSupported: false });
+    }
+  },
+
+  saveGlobalApiKey: async (providerId: string, apiKey: string) => {
+    set({ isSaving: true, error: null, successMessage: null });
+    try {
+      const provider = PROVIDERS.find((p) => p.id === providerId);
+      if (!provider) throw new Error('Unknown provider');
+
+      const { globalSecrets } = get();
+      const existing = globalSecrets[provider.secretKey];
+      if (Array.isArray(existing) && existing.length > 0) {
+        for (const secret of existing) {
+          try { await settingsApi.deleteGlobalSecret(provider.secretKey, secret.id); } catch { /* ignore */ }
+        }
+      }
+
+      await settingsApi.writeGlobalSecret(provider.secretKey, apiKey, provider.name);
+      await get().fetchGlobalSecrets();
+      set({ isSaving: false, successMessage: `${provider.name} global API key saved` });
+    } catch (error) {
+      set({ isSaving: false, error: error instanceof Error ? error.message : 'Failed to save global API key' });
+    }
+  },
+
+  deleteGlobalApiKey: async (secretKey: string) => {
+    set({ isSaving: true, error: null, successMessage: null });
+    try {
+      await settingsApi.deleteGlobalSecret(secretKey);
+      await get().fetchGlobalSecrets();
+      set({ isSaving: false, successMessage: 'Global API key deleted' });
+    } catch (error) {
+      set({ isSaving: false, error: error instanceof Error ? error.message : 'Failed to delete global API key' });
+    }
+  },
+
+  setGlobalSharing: async (enabled: boolean) => {
+    set({ isSaving: true, error: null });
+    try {
+      await settingsApi.setGlobalSharing(enabled);
+      set({ globalSharingEnabled: enabled, isSaving: false });
+    } catch (error) {
+      set({ isSaving: false, error: error instanceof Error ? error.message : 'Failed to toggle global sharing' });
+    }
+  },
 }));

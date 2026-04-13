@@ -6,6 +6,8 @@ import { useSwipeSidebar } from '../../hooks/useSwipeSidebar';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { SettingsPanel } from '../settings/SettingsPanel';
+import { OnboardingWalkthrough } from '../onboarding/OnboardingWalkthrough';
+import { useOnboardingStore } from '../../stores/onboardingStore';
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -13,7 +15,7 @@ export function MainLayout() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const swipeRef = useSwipeSidebar(sidebarOpen, openSidebar, closeSidebar);
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
-  const { fetchSettings, fetchSecrets } = useSettingsStore();
+  const { fetchSettings, fetchSecrets, fetchGlobalSecrets } = useSettingsStore();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,14 +27,23 @@ export function MainLayout() {
     if (isAuthenticated) {
       fetchSettings();
       fetchSecrets();
+      fetchGlobalSecrets();
     }
-  }, [isAuthenticated, fetchSettings, fetchSecrets]);
+  }, [isAuthenticated, fetchSettings, fetchSecrets, fetchGlobalSecrets]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, isLoading, navigate]);
+
+  // Onboarding: trigger walkthrough on first authenticated visit
+  const { hasCompleted, start: startOnboarding } = useOnboardingStore();
+  useEffect(() => {
+    if (isAuthenticated && !hasCompleted) {
+      startOnboarding();
+    }
+  }, [isAuthenticated, hasCompleted, startOnboarding]);
 
   if (isLoading) {
     return (
@@ -62,6 +73,9 @@ export function MainLayout() {
 
       {/* Settings Panel — slides in from right, overlays chat */}
       <SettingsPanel />
+
+      {/* Onboarding Walkthrough */}
+      <OnboardingWalkthrough openSidebar={openSidebar} />
     </div>
   );
 }

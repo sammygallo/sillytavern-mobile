@@ -142,6 +142,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       useSettingsStore.setState({
         secrets: {},
+        globalSecrets: {},
+        globalSharingEnabled: false,
+        globalSharingSupported: false,
         activeProvider: 'openai',
         activeModel: 'gpt-4o',
         error: null,

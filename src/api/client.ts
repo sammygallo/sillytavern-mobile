@@ -859,6 +859,45 @@ export const settingsApi = {
       body: JSON.stringify(settings),
     });
   },
+
+  // --- Global secrets (owner-managed, shared with all users) ---
+
+  async getGlobalSecrets(): Promise<SecretsResponse> {
+    try {
+      return await apiRequest('/api/secrets/global/read', { method: 'POST' });
+    } catch {
+      return {};
+    }
+  },
+
+  async writeGlobalSecret(key: string, value: string, label?: string): Promise<void> {
+    await apiRequest('/api/secrets/global/write', {
+      method: 'POST',
+      body: JSON.stringify({ key, value, label }),
+    });
+  },
+
+  async deleteGlobalSecret(key: string, id?: string): Promise<void> {
+    await apiRequest('/api/secrets/global/delete', {
+      method: 'POST',
+      body: JSON.stringify({ key, id }),
+    });
+  },
+
+  async getGlobalSharingStatus(): Promise<{ enabled: boolean }> {
+    try {
+      return await apiRequest('/api/secrets/global/status', { method: 'POST' });
+    } catch {
+      return { enabled: false };
+    }
+  },
+
+  async setGlobalSharing(enabled: boolean): Promise<void> {
+    await apiRequest('/api/secrets/global/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  },
 };
 
 // Sprites/Expressions API

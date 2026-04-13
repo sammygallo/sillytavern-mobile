@@ -19,6 +19,7 @@ export type Action =
   | 'character:edit'        // edit existing characters
   | 'character:delete'      // delete characters
   | 'settings:view'         // access settings page
+  | 'settings:personal'     // manage own personal API keys
   | 'settings:api_keys'     // manage API keys / secrets
   | 'admin:panel';          // access admin panel / user management
 
@@ -30,7 +31,8 @@ const ACTION_MIN_ROLE: Record<Action, UserRole> = {
   'character:edit':    'contributor',
   'character:delete':  'contributor',
   'settings:view':     'admin',
-  'settings:api_keys': 'admin',
+  'settings:personal': 'end_user',
+  'settings:api_keys': 'end_user',
   'admin:panel':       'admin',
 };
 
