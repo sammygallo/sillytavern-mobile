@@ -8,3 +8,4 @@ export { DataBankPage } from './DataBankPage';
 export { GalleryPage } from './GalleryPage';
 export { PromptTemplatesPage } from './PromptTemplatesPage';
 export { ThemeEditorPage } from './ThemeEditorPage';
+export { CharacterManagementPage } from './CharacterManagementPage';
