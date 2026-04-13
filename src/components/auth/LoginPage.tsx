@@ -45,9 +45,11 @@ export function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo/Title */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[var(--color-text-primary)] mb-2">
-            GoodGirlsBotClub
-          </h1>
+          <img
+            src="/logo.png"
+            alt="Good Girls Bot Club"
+            className="w-64 h-auto mx-auto mb-3"
+          />
           <p className="text-[var(--color-text-secondary)]">
             Sign in to continue
           </p>

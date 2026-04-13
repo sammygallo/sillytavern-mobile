@@ -81,9 +81,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             )}
           </>
         ) : (
-          <h1 className="text-sm font-semibold text-[var(--color-text-primary)]">
-            GoodGirlsBotClub
-          </h1>
+          <img src="/logo.png" alt="Good Girls Bot Club" className="h-8 w-auto" />
         )}
       </div>
 
