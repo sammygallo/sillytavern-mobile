@@ -100,11 +100,6 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
     setGlobalKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
   };
 
-  const hasGlobalKey = (secretKey: string): boolean => {
-    const data = globalSecrets[secretKey];
-    return Array.isArray(data) && data.length > 0;
-  };
-
   const getGlobalSecretInfo = (secretKey: string): SecretState | null => {
     const data = globalSecrets[secretKey];
     if (Array.isArray(data) && data.length > 0) {
