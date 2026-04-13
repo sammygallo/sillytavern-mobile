@@ -26,7 +26,7 @@ function saveOwnership(map: Record<string, OwnershipEntry>) {
   }
 }
 
-interface CharacterOwnershipState {
+export interface CharacterOwnershipState {
   ownershipMap: Record<string, OwnershipEntry>;
 
   // Mutations

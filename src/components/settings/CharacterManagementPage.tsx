@@ -10,7 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
-import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
+import { useCharacterOwnershipStore, type CharacterOwnershipState } from '../../stores/characterOwnershipStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { can } from '../../utils/permissions';
@@ -221,7 +221,7 @@ interface CharacterRowProps {
   character: CharacterInfo;
   userHandle: string;
   userRole: string | undefined;
-  ownershipStore: ReturnType<typeof useCharacterOwnershipStore>;
+  ownershipStore: CharacterOwnershipState;
   onEdit: (avatar: string) => void;
   onDuplicate: (avatar: string) => void;
   onDelete: (avatar: string) => void;
