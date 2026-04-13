@@ -763,23 +763,22 @@ export const invitationsApi = {
     });
   },
 
+  async delete(id: string): Promise<void> {
+    return apiRequest('/api/invitations/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  },
+
   async validate(token: string): Promise<{ valid: boolean; role?: string; label?: string; error?: string }> {
     return apiRequest(`/api/invitations/validate/${encodeURIComponent(token)}`);
   },
 
   async accept(token: string, handle: string, name: string, password?: string): Promise<{ handle: string }> {
-    // /accept is a public endpoint — no session required, so we skip the CSRF
-    // token fetch (which would fail if not logged in) and call fetch directly.
-    const response = await fetch('/api/invitations/accept', {
+    return apiRequest('/api/invitations/accept', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, handle, name, password }),
     });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(err.error || `HTTP ${response.status}`);
-    }
-    return response.json();
   },
 };
 

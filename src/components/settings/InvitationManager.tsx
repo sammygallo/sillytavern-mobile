@@ -84,6 +84,15 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
     }
   };
 
+  const handleDelete = async (id: string) => {
+    try {
+      await invitationsApi.delete(id);
+      setInvitations(prev => prev.filter(i => i.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete invitation');
+    }
+  };
+
   const handleCopy = async (invite: Invitation) => {
     await navigator.clipboard.writeText(inviteUrl(invite.token));
     setCopiedId(invite.id);
@@ -221,6 +230,15 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
                             <Trash2 size={16} />
                           </button>
                         </>
+                      )}
+                      {invite.status !== 'pending' && (
+                        <button
+                          onClick={() => handleDelete(invite.id)}
+                          className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-red-400 hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                          aria-label="Delete invitation"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       )}
                     </div>
                   </div>
