@@ -1,73 +1,47 @@
-# React + TypeScript + Vite
+# SillyTavern Mobile
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A mobile-friendly React UI for SillyTavern, built with Vite + TypeScript + Tailwind CSS.
 
-Currently, two official plugins are available:
+## First-Time Admin Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+After a fresh installation, no real users exist yet. The app uses a temporary bootstrap account (`default-user`) to allow the first person to register as the owner/admin — no manual credential setup required.
 
-## React Compiler
+### Steps
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **Open the app** — you will be redirected to the login page.
+2. **Click "Create an account"** (visible at the bottom of the login form when no real users exist).
+3. **Fill in the registration form:**
+   - **Username** — at least 3 characters; letters, numbers, `_`, and `-` only.
+   - **Display Name** — your visible name inside the app.
+   - **Password** — optional, but recommended (minimum 4 characters if set).
+4. **Submit** — the app automatically:
+   - Logs in as the internal `default-user` bootstrap account (no password).
+   - Creates your account with the **owner** role and full admin privileges.
+   - Logs out the bootstrap account and logs you straight in.
+5. You are now signed in as the **owner/admin**. The "Create an account" link disappears for future visitors — further registrations require an admin invite.
 
-## Expanding the ESLint configuration
+> **Note:** If the "Create an account" link is not visible, a real user already exists. Log in with that account or ask the existing admin to invite you.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Role Hierarchy
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+| Role | Level | Description |
+|------|-------|-------------|
+| `end_user` | 0 | Read-only / limited access |
+| `contributor` | 1 | Standard user |
+| `admin` | 2 | Administrative access |
+| `owner` | 3 | Full control (first registrant) |
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Development
+
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Build
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
 ```
