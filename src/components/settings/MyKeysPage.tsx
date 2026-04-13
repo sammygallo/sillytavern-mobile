@@ -7,7 +7,6 @@ import { Button, Input } from '../ui';
 import {
   getThemeMode,
   setThemeMode,
-  getThemePreset,
   setThemePreset,
   applyTheme,
   PRESET_SWATCHES,
@@ -32,7 +31,6 @@ export function MyKeysPage(_props?: { params?: Record<string, string> }) {
 
   // Theme state
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
-  const [, setThemePresetState] = useState<ThemePreset>(() => getThemePreset());
   const [activePreset, setActivePresetState] = useState<ActivePreset>(() => getActivePreset());
 
   useEffect(() => {
@@ -73,9 +71,6 @@ export function MyKeysPage(_props?: { params?: Record<string, string> }) {
     }
     return null;
   };
-
-  const isProviderAvailable = (provider: typeof PROVIDERS[number]) =>
-    hasPersonalKey(provider.secretKey) || hasGlobalKey(provider.secretKey);
 
   const currentProvider = PROVIDERS.find((p) => p.id === activeProvider);
 
@@ -271,13 +266,12 @@ export function MyKeysPage(_props?: { params?: Record<string, string> }) {
                   key={preset}
                   onClick={() => {
                     setThemePreset(preset);
-                    setThemePresetState(preset);
-                    setActivePreset({ type: 'builtin', id: preset });
-                    setActivePresetState({ type: 'builtin', id: preset });
+                    setActivePreset(preset);
+                    setActivePresetState(preset);
                     applyTheme();
                   }}
                   className={`w-8 h-8 rounded-full transition-transform ${
-                    activePreset.type === 'builtin' && activePreset.id === preset ? 'ring-2 ring-white scale-110' : 'hover:scale-105'
+                    activePreset === preset ? 'ring-2 ring-white scale-110' : 'hover:scale-105'
                   }`}
                   style={{ backgroundColor: swatch }}
                   aria-label={`${preset} theme`}
