@@ -3,6 +3,21 @@
 
 import type { CharacterInfo } from '../api/client';
 
+/**
+ * Thrown when a JSON file turns out to be a lorebook / world-info export
+ * (`{ entries: { ... } }`) instead of a character card.
+ */
+export class LorebookDetectedError extends Error {
+  readonly entryCount: number;
+  constructor(entryCount: number) {
+    super(
+      `This file is a lorebook / world-info export with ${entryCount} entries, not a character card.`
+    );
+    this.name = 'LorebookDetectedError';
+    this.entryCount = entryCount;
+  }
+}
+
 // Character Book V2 spec format (embedded inside a character card).
 // This is the on-disk/wire format used by SillyTavern for
 // `data.character_book`. Our internal representation
@@ -482,6 +497,20 @@ export async function parseCharacterFromJSON(
     // Check if it's V2 format
     if (data.spec === 'chara_card_v2') {
       return data as CharacterCardV2;
+    }
+
+    // Detect lorebook / world-info exports: they have `entries` but no
+    // character card fields.  Throw a typed error so the UI can offer to
+    // import it as a lorebook instead of silently creating an empty character.
+    if (
+      data.entries &&
+      typeof data.entries === 'object' &&
+      !data.name &&
+      !data.first_mes &&
+      !data.char_name
+    ) {
+      const count = Object.keys(data.entries).length;
+      throw new LorebookDetectedError(count);
     }
 
     // Return as simple export format

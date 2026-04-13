@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
 import { Upload, FileImage, FileJson, X, BookOpen } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
+import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { Modal, Button, Input, TextArea, ImageUpload, TagInput } from '../ui';
 import type { CharacterInfo } from '../../api/client';
 import type { CharacterBookV2 } from '../../utils/characterCard';
+import { LorebookDetectedError } from '../../utils/characterCard';
 
 interface CharacterImportProps {
   isOpen: boolean;
@@ -22,12 +24,16 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     clearError,
     getAllTags,
   } = useCharacterStore();
+  const { importBookJson } = useWorldInfoStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importedData, setImportedData] = useState<Partial<CharacterInfo> | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [importedBook, setImportedBook] = useState<CharacterBookV2 | null>(null);
+  // Lorebook-only file detection
+  const [lorebookFile, setLorebookFile] = useState<{ text: string; name: string; entryCount: number } | null>(null);
+  const [lorebookImported, setLorebookImported] = useState(false);
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
@@ -55,6 +61,12 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     if (!file) return;
 
     clearError();
+    setLorebookFile(null);
+    setLorebookImported(false);
+
+    // Read the file text upfront so we can hand it to importBookJson if needed
+    const fileText = await file.text();
+
     const result = await importCharacter(file);
 
     if (result) {
@@ -79,6 +91,29 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         creator: result.data.data?.creator || '',
         tags: result.data.tags || result.data.data?.tags || [],
       });
+    } else {
+      // importCharacter returned null — check if this is a lorebook file.
+      // The LorebookDetectedError was caught by the store and turned into
+      // an error string; detect the format here to offer lorebook import.
+      try {
+        const parsed = JSON.parse(fileText);
+        if (
+          parsed?.entries &&
+          typeof parsed.entries === 'object' &&
+          !parsed.name &&
+          !parsed.first_mes
+        ) {
+          clearError();
+          const entryCount = Object.keys(parsed.entries).length;
+          setLorebookFile({
+            text: fileText,
+            name: file.name.replace(/\.json$/i, ''),
+            entryCount,
+          });
+        }
+      } catch {
+        // Not valid JSON — let the existing error from importCharacter stand
+      }
     }
 
     // Reset file input
@@ -141,6 +176,14 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     }
   };
 
+  const handleImportAsLorebook = () => {
+    if (!lorebookFile) return;
+    const book = importBookJson(lorebookFile.text, lorebookFile.name);
+    if (book) {
+      setLorebookImported(true);
+    }
+  };
+
   const handleClose = () => {
     // Clean up preview URL
     if (avatarPreview) {
@@ -150,6 +193,8 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     setImportedBook(null);
     setAvatarFile(null);
     setAvatarPreview(null);
+    setLorebookFile(null);
+    setLorebookImported(false);
     setFormData({
       name: '',
       description: '',
@@ -186,6 +231,10 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     }
 
     clearError();
+    setLorebookFile(null);
+    setLorebookImported(false);
+
+    const fileText = isJSON ? await file.text() : '';
     const result = await importCharacter(file);
 
     if (result) {
@@ -208,6 +257,26 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         creator: result.data.data?.creator || '',
         tags: result.data.tags || result.data.data?.tags || [],
       });
+    } else if (isJSON && fileText) {
+      try {
+        const parsed = JSON.parse(fileText);
+        if (
+          parsed?.entries &&
+          typeof parsed.entries === 'object' &&
+          !parsed.name &&
+          !parsed.first_mes
+        ) {
+          clearError();
+          const entryCount = Object.keys(parsed.entries).length;
+          setLorebookFile({
+            text: fileText,
+            name: file.name.replace(/\.json$/i, ''),
+            entryCount,
+          });
+        }
+      } catch {
+        // let existing error stand
+      }
     }
   };
 
@@ -260,6 +329,33 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
             </div>
           )}
 
+          {/* Lorebook Detection */}
+          {lorebookFile && !lorebookImported && (
+            <div className="p-4 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/40 rounded-lg space-y-3">
+              <div className="flex items-start gap-2.5 text-sm text-[var(--color-text-primary)]">
+                <BookOpen size={18} className="text-[var(--color-primary)] shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">This is a lorebook / world-info file</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mt-1">
+                    Contains {lorebookFile.entryCount} entr{lorebookFile.entryCount === 1 ? 'y' : 'ies'} — not a character card.
+                    You can import it as a lorebook and link it to a character later.
+                  </p>
+                </div>
+              </div>
+              <Button variant="primary" onClick={handleImportAsLorebook} className="w-full">
+                <BookOpen size={16} />
+                Import as Lorebook
+              </Button>
+            </div>
+          )}
+
+          {/* Lorebook Imported Success */}
+          {lorebookImported && (
+            <div className="p-3 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-sm">
+              Lorebook imported successfully! You can find it in Settings &rarr; World Info / Lorebook.
+            </div>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
@@ -270,7 +366,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
           {/* Cancel Button */}
           <div className="flex justify-end pt-4 border-t border-[var(--color-border)]">
             <Button variant="secondary" onClick={handleClose}>
-              Cancel
+              {lorebookImported ? 'Done' : 'Cancel'}
             </Button>
           </div>
         </div>
