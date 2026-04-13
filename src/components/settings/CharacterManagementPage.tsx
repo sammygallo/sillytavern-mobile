@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Copy,
+  Download,
   Edit3,
   Globe,
   Loader2,
   Lock,
   Search,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore, type CharacterOwnershipState } from '../../stores/characterOwnershipStore';
@@ -17,13 +19,20 @@ import { can } from '../../utils/permissions';
 import { api, type CharacterInfo } from '../../api/client';
 import { Button, ConfirmDialog } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
+import { CharacterImport } from '../character/CharacterImport';
 
 type FilterMode = 'all' | 'mine';
 
 export function CharacterManagementPage() {
   const { goBack } = useSettingsPanelStore();
-  const { characters, fetchCharacters, deleteCharacter, duplicateCharacter } =
-    useCharacterStore();
+  const {
+    characters,
+    fetchCharacters,
+    deleteCharacter,
+    duplicateCharacter,
+    exportCharacterAsPNG,
+    exportCharacterAsJSON,
+  } = useCharacterStore();
   const ownershipStore = useCharacterOwnershipStore();
   const currentUser = useAuthStore((s) => s.currentUser);
 
@@ -36,6 +45,8 @@ export function CharacterManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [exportingAvatar, setExportingAvatar] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCharacters();
@@ -97,6 +108,22 @@ export function CharacterManagementPage() {
     ownershipStore.setVisibility(avatar, current === 'global' ? 'personal' : 'global');
   };
 
+  const handleExport = async (avatar: string, format: 'png' | 'json') => {
+    setExportingAvatar(avatar);
+    try {
+      const full = await api.getCharacter(avatar);
+      if (format === 'png') {
+        await exportCharacterAsPNG(full);
+      } else {
+        exportCharacterAsJSON(full);
+      }
+    } catch {
+      // ignore — store sets its own error
+    } finally {
+      setExportingAvatar(null);
+    }
+  };
+
   const deleteTargetName =
     characters.find((c) => c.avatar === deleteTarget)?.name ?? 'this character';
 
@@ -133,6 +160,15 @@ export function CharacterManagementPage() {
               className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 shrink-0"
+          >
+            <Upload size={16} />
+            Import
+          </Button>
           <div className="flex rounded-lg overflow-hidden border border-[var(--color-border)]">
             {(['all', 'mine'] as const).map((mode) => (
               <button
@@ -180,6 +216,8 @@ export function CharacterManagementPage() {
                 onDuplicate={handleDuplicate}
                 onDelete={setDeleteTarget}
                 onToggleVisibility={handleToggleVisibility}
+                onExport={handleExport}
+                isExporting={exportingAvatar === char.avatar}
               />
             ))}
           </ul>
@@ -198,6 +236,16 @@ export function CharacterManagementPage() {
           }}
         />
       )}
+
+      {/* Import modal */}
+      <CharacterImport
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={() => {
+          setShowImport(false);
+          fetchCharacters();
+        }}
+      />
 
       {/* Delete confirmation */}
       <ConfirmDialog
@@ -226,6 +274,8 @@ interface CharacterRowProps {
   onDuplicate: (avatar: string) => void;
   onDelete: (avatar: string) => void;
   onToggleVisibility: (avatar: string) => void;
+  onExport: (avatar: string, format: 'png' | 'json') => void;
+  isExporting: boolean;
 }
 
 function CharacterRow({
@@ -237,6 +287,8 @@ function CharacterRow({
   onDuplicate,
   onDelete,
   onToggleVisibility,
+  onExport,
+  isExporting,
 }: CharacterRowProps) {
   const avatar = character.avatar;
   const visibility = ownershipStore.getVisibility(avatar);
@@ -249,6 +301,7 @@ function CharacterRow({
 
   const creator = character.creator || character.data?.creator || null;
   const thumbnailUrl = `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   return (
     <li className="px-4 py-3">
@@ -305,6 +358,37 @@ function CharacterRow({
               <Edit3 size={14} />
             </button>
           )}
+          {/* Export */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              disabled={isExporting}
+              className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
+              title="Export"
+              aria-label={`Export ${character.name}`}
+            >
+              {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-lg overflow-hidden min-w-[120px]">
+                  <button
+                    onClick={() => { setShowExportMenu(false); onExport(avatar, 'png'); }}
+                    className="w-full px-3 py-2 text-left text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  >
+                    Export as PNG
+                  </button>
+                  <button
+                    onClick={() => { setShowExportMenu(false); onExport(avatar, 'json'); }}
+                    className="w-full px-3 py-2 text-left text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  >
+                    Export as JSON
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {canDuplicate && (
             <button
               onClick={() => onDuplicate(avatar)}

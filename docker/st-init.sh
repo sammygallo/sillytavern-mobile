@@ -16,7 +16,7 @@ if [ ! -f "$CONFIG" ]; then
 # connects to localhost:8000 — ST always sees 127.0.0.1, which is
 # whitelisted. Port 8000 is never exposed externally.
 whitelistMode: true
-enableForwardedWhitelist: false
+enableForwardedWhitelist: true
 enableUserAccounts: true
 listen: true
 whitelist:
@@ -24,15 +24,46 @@ whitelist:
 EOF
 fi
 
-# Explicitly set enableForwardedWhitelist: false.
+# Explicitly set enableForwardedWhitelist: true.
 # If the key is absent, ST re-adds it on startup with its own default of true,
 # which would cause it to check X-Forwarded-For against the whitelist.
 # Setting it to false here (BEFORE ST starts) ensures ST reads the explicit
 # value and does not replace it with the default.
 if grep -q 'enableForwardedWhitelist' "$CONFIG"; then
-  sed -i 's/enableForwardedWhitelist:.*/enableForwardedWhitelist: false/' "$CONFIG"
+  sed -i 's/enableForwardedWhitelist:.*/enableForwardedWhitelist: true/' "$CONFIG"
 else
-  echo 'enableForwardedWhitelist: false' >> "$CONFIG"
+  echo 'enableForwardedWhitelist: true' >> "$CONFIG"
 fi
+
+# ST rewrites config.yaml during startup, overriding our values.
+# Run a background patcher that waits for ST to be listening, then
+# fixes the config and sends SIGHUP so ST re-reads it.
+(
+  # Wait for ST to be ready (up to 120s)
+  for i in $(seq 1 60); do
+    wget -q -O /dev/null http://127.0.0.1:${ST_PORT:-8000}/api/ping 2>/dev/null && break
+    sleep 2
+  done
+
+  CHANGED=0
+  if grep -q 'enableForwardedWhitelist: false' "$CONFIG"; then
+    sed -i 's/enableForwardedWhitelist: false/enableForwardedWhitelist: true/' "$CONFIG"
+    CHANGED=1
+  fi
+  if grep -q 'whitelistDockerHosts: true' "$CONFIG"; then
+    sed -i 's/whitelistDockerHosts: true/whitelistDockerHosts: false/' "$CONFIG"
+    CHANGED=1
+  fi
+  if grep -q 'basicAuthMode: true' "$CONFIG"; then
+    sed -i 's/basicAuthMode: true/basicAuthMode: false/' "$CONFIG"
+    CHANGED=1
+  fi
+
+  if [ "$CHANGED" = "1" ]; then
+    echo "[st-init] Patched config.yaml after startup"
+    # Restart ST so it picks up the patched config
+    kill -HUP 1 2>/dev/null || true
+  fi
+) &
 
 exec node /home/node/app/server.js "$@"
