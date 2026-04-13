@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
+import { Download, Key, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
@@ -121,6 +121,17 @@ export function Header({ onMenuClick }: HeaderProps) {
             onClick={() => useSettingsPanelStore.getState().open()}
           >
             <Settings size={20} />
+          </Button>
+        )}
+        {!canViewSettings && can(userRole, 'settings:personal') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-2"
+            aria-label="My API Keys"
+            onClick={() => useSettingsPanelStore.getState().openToPage('my-keys')}
+          >
+            <Key size={20} />
           </Button>
         )}
         <Button

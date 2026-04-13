@@ -1285,14 +1285,21 @@ async function generateGroupTurn(
 
 // Helper: get provider/model with auto-switch
 function getProviderAndModel(): { provider: string; model: string } {
-  const { activeProvider, activeModel, secrets } = useSettingsStore.getState();
+  const { activeProvider, activeModel, secrets, globalSecrets, globalSharingEnabled } = useSettingsStore.getState();
 
   let provider = activeProvider;
   let model = activeModel;
 
+  // Helper: check if a key exists in personal or global secrets
+  const hasKey = (key: string) => {
+    if (Array.isArray(secrets[key]) && secrets[key].length > 0) return true;
+    if (globalSharingEnabled && Array.isArray(globalSecrets[key]) && globalSecrets[key].length > 0) return true;
+    return false;
+  };
+
   if (!provider || provider === 'openai') {
-    const hasOpenAI = Array.isArray(secrets['api_key_openai']) && secrets['api_key_openai'].length > 0;
-    const hasClaude = Array.isArray(secrets['api_key_claude']) && secrets['api_key_claude'].length > 0;
+    const hasOpenAI = hasKey('api_key_openai');
+    const hasClaude = hasKey('api_key_claude');
     if (!hasOpenAI && hasClaude) {
       provider = 'claude';
       model = 'claude-sonnet-4-20250514';

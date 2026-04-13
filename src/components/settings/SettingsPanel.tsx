@@ -14,6 +14,7 @@ import { DataBankPage } from './DataBankPage';
 import { GalleryPage } from './GalleryPage';
 import { ThemeEditorPage } from './ThemeEditorPage';
 import { AISettingsPage } from './AISettingsPage';
+import { MyKeysPage } from './MyKeysPage';
 import { WorldInfoPage } from '../worldinfo';
 import { RegexScriptPage } from '../regexscripts';
 
@@ -23,6 +24,7 @@ import { RegexScriptPage } from '../regexscripts';
 
 const PAGE_COMPONENTS: Record<SettingsPageId, React.ComponentType<{ params?: Record<string, string> }>> = {
   main: SettingsPage,
+  'my-keys': MyKeysPage,
   ai: AISettingsPage,
   generation: GenerationSettingsPage,
   prompts: PromptTemplatesPage,

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type SettingsPageId =
   | 'main'
+  | 'my-keys'
   | 'ai'
   | 'generation'
   | 'prompts'
@@ -30,6 +31,7 @@ interface SettingsPanelState {
   pushPage: (page: SettingsPageId, params?: Record<string, string>) => void;
   goBack: () => void;
   currentPage: () => SettingsStackEntry;
+  openToPage: (page: SettingsPageId, params?: Record<string, string>) => void;
 }
 
 export const useSettingsPanelStore = create<SettingsPanelState>((set, get) => ({
@@ -58,4 +60,6 @@ export const useSettingsPanelStore = create<SettingsPanelState>((set, get) => ({
     const { pageStack } = get();
     return pageStack[pageStack.length - 1];
   },
+
+  openToPage: (page, params) => set({ isOpen: true, pageStack: [{ page: 'main' }, { page, params }] }),
 }));
