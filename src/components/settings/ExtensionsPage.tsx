@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useExtensionStore } from '../../stores/extensionStore';
 import { extensionRegistry } from '../../extensions/registry';
+import { ServerExtensionsSection } from './ServerExtensionsSection';
 import type { ExtensionManifest } from '../../extensions/types';
 
 function ExtensionCard({ ext }: { ext: ExtensionManifest }) {
@@ -78,11 +79,15 @@ export function ExtensionsPage(_props?: { params?: Record<string, string> }) {
         </button>
         <div>
           <h1 className="text-base font-semibold text-[var(--color-text-primary)]">Extensions</h1>
-          <p className="text-xs text-[var(--color-text-secondary)]">Enable or disable built-in features</p>
+          <p className="text-xs text-[var(--color-text-secondary)]">Manage built-in and server extensions</p>
         </div>
       </div>
 
       <div className="p-4 space-y-3 max-w-xl mx-auto">
+        {/* Built-in extensions */}
+        <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          Built-in Extensions
+        </h2>
         <p className="text-xs text-[var(--color-text-secondary)] pb-1">
           Toggle built-in extensions on or off. Disabled extensions are hidden throughout the app.
         </p>
@@ -90,6 +95,12 @@ export function ExtensionsPage(_props?: { params?: Record<string, string> }) {
         {extensions.map((ext) => (
           <ExtensionCard key={ext.id} ext={ext} />
         ))}
+
+        {/* Divider */}
+        <div className="border-t border-[var(--color-border)] !my-5" />
+
+        {/* Server extensions */}
+        <ServerExtensionsSection />
       </div>
     </div>
   );
