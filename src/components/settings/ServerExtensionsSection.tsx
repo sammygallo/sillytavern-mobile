@@ -285,7 +285,8 @@ function AvailableCard({
     if (success) {
       showToastGlobal(`Installed ${ext.name}`, 'success');
     } else {
-      showToastGlobal(`Failed to install ${ext.name}`, 'error');
+      const storeError = useServerExtensionStore.getState().error;
+      showToastGlobal(storeError || `Failed to install ${ext.name}`, 'error');
     }
   }
 
@@ -435,6 +436,11 @@ export function ServerExtensionsSection() {
           <AlertCircle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-red-400">{error}</p>
+            {/already (installed|exists)/i.test(error) && (
+              <p className="text-xs text-red-300 mt-1 opacity-80">
+                A previous failed install may have left a partial folder. Delete the extension first, then retry.
+              </p>
+            )}
           </div>
           <button
             type="button"

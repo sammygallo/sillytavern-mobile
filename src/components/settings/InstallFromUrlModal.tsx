@@ -28,7 +28,8 @@ export function InstallFromUrlModal({ isOpen, onClose }: InstallFromUrlModalProp
       setUrl('');
       onClose();
     } else {
-      showToastGlobal('Failed to install extension', 'error');
+      const storeError = useServerExtensionStore.getState().error;
+      showToastGlobal(storeError || 'Failed to install extension', 'error');
     }
   }
 
