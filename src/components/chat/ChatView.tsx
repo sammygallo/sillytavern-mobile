@@ -49,6 +49,7 @@ import {
   setCostume,
   clearCostume,
 } from '../../hooks/displayPreferences';
+import { fireSandboxLifecycleEvent } from '../../extensions/sandbox/sandboxEventBus';
 
 export function ChatView() {
   const routerNavigate = useNavigate();
@@ -323,6 +324,11 @@ export function ChatView() {
     }
     return result; // result[0] = most recent speaker
   }, [messages, isGroupChatMode]);
+
+  // Tier 3: notify sandboxed extension iframes whenever the active chat changes.
+  useEffect(() => {
+    fireSandboxLifecycleEvent('chatChanged', [currentChatFile]);
+  }, [currentChatFile]);
 
   useEffect(() => {
     if (!selectedCharacter) return;

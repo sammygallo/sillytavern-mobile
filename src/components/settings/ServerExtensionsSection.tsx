@@ -11,7 +11,9 @@ import {
   Check,
   Info,
   AlertCircle,
+  LayoutPanelLeft,
 } from 'lucide-react';
+import { ExtensionFrame } from '../../extensions/sandbox/ExtensionFrame';
 import { Button } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useServerExtensionStore } from '../../stores/serverExtensionStore';
@@ -25,6 +27,12 @@ import type { InstalledExtensionInfo } from '../../stores/serverExtensionStore';
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+/** ST backend URL for an extension's index.js */
+function extensionScriptUrl(extName: string): string {
+  const base = extName.replace(/^third-party\//, '');
+  return `/scripts/extensions/third-party/${base}/index.js`;
+}
 
 function InstalledCard({
   ext,
@@ -40,6 +48,15 @@ function InstalledCard({
   const deleteExtension = useServerExtensionStore((s) => s.deleteExtension);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Sandbox UI panel state
+  const [uiExpanded, setUiExpanded] = useState(false);
+  const [frameEverMounted, setFrameEverMounted] = useState(false);
+  const [hasUi, setHasUi] = useState(false);
+
+  function handleOpenUi() {
+    if (!frameEverMounted) setFrameEverMounted(true);
+    setUiExpanded((v) => !v);
+  }
 
   const op = operationInProgress[ext.name];
   const folderName = ext.name.replace(/^third-party\//, '');
@@ -49,6 +66,7 @@ function InstalledCard({
   const slashCommands = manifest?.slash_commands ?? [];
   const hasInterceptor = manifest?.generate_interceptor === true;
   const hasCapabilities = slashCommands.length > 0 || hasInterceptor;
+  const scriptUrl = extensionScriptUrl(ext.name);
 
   async function handleUpdate() {
     const success = await updateExtension(ext.name, isGlobal);
@@ -110,10 +128,28 @@ function InstalledCard({
                   Gen hook
                 </span>
               )}
+              {hasUi && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-violet-500/15 text-violet-400">
+                  UI
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Sandboxed UI toggle — always present; badge appears once content detected */}
+            <button
+              type="button"
+              onClick={handleOpenUi}
+              className={`p-1.5 rounded-lg transition-colors ${
+                uiExpanded
+                  ? 'bg-violet-500/20 text-violet-400'
+                  : 'hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+              title={uiExpanded ? 'Hide extension UI' : 'Show extension UI'}
+            >
+              <LayoutPanelLeft size={16} />
+            </button>
             {hasCapabilities && (
               <button
                 type="button"
@@ -194,6 +230,26 @@ function InstalledCard({
                 Hooks into generation pipeline (generate interceptor)
               </p>
             )}
+          </div>
+        )}
+
+        {/* Sandboxed extension UI panel */}
+        {frameEverMounted && (
+          <div
+            className={`border-t border-[var(--color-border)] transition-all duration-200 ${
+              uiExpanded ? 'max-h-[600px] overflow-y-auto' : 'max-h-0 overflow-hidden'
+            }`}
+          >
+            {uiExpanded && !hasUi && (
+              <p className="px-4 py-3 text-xs text-[var(--color-text-secondary)] italic">
+                Loading extension UI…
+              </p>
+            )}
+            <ExtensionFrame
+              extensionName={ext.name}
+              scriptUrl={scriptUrl}
+              onHasContent={(yes) => setHasUi(yes)}
+            />
           </div>
         )}
       </div>
