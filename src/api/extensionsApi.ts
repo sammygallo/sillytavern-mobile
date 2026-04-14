@@ -4,6 +4,30 @@ import { apiRequest, apiRequestText } from './client';
 // Types
 // ---------------------------------------------------------------------------
 
+/** A slash command declared in an extension manifest.json. */
+export interface SlashCommandDeclaration {
+  name: string;
+  description?: string;
+  aliases?: string[];
+  named_args?: { name: string; description: string }[];
+}
+
+/** Shape of an extension's manifest.json, as returned by the ST backend. */
+export interface ExtensionManifestData {
+  display_name?: string;
+  version?: string;
+  author?: string;
+  homePage?: string;
+  description?: string;
+  tags?: string[];
+  keywords?: string[];
+  requires?: string[];
+  /** Slash commands this extension exposes to the mobile STscript engine. */
+  slash_commands?: SlashCommandDeclaration[];
+  /** When true, the extension exposes a POST /api/plugins/<name>/generate-interceptors endpoint. */
+  generate_interceptor?: boolean;
+}
+
 /** Entry shape from the SillyTavern-Content extensions.json registry. */
 export interface RegistryExtension {
   id: string;
@@ -102,5 +126,12 @@ export const extensionsApi = {
       method: 'POST',
       body: JSON.stringify({ extensionName, global }),
     });
+  },
+
+  /** Fetch the manifest.json for an installed extension. */
+  async getManifest(extensionName: string, global?: boolean): Promise<ExtensionManifestData> {
+    const params = new URLSearchParams({ extensionName });
+    if (global) params.set('global', 'true');
+    return apiRequest<ExtensionManifestData>(`/api/extensions/manifest?${params}`);
   },
 };

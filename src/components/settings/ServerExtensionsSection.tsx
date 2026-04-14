@@ -19,23 +19,36 @@ import { useAuthStore } from '../../stores/authStore';
 import { hasMinRole } from '../../utils/permissions';
 import { showToastGlobal } from '../ui/Toast';
 import { InstallFromUrlModal } from './InstallFromUrlModal';
-import type { RegistryExtension } from '../../api/extensionsApi';
+import type { RegistryExtension, ExtensionManifestData } from '../../api/extensionsApi';
 import type { InstalledExtensionInfo } from '../../stores/serverExtensionStore';
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function InstalledCard({ ext, isAdmin }: { ext: InstalledExtensionInfo; isAdmin: boolean }) {
+function InstalledCard({
+  ext,
+  manifest,
+  isAdmin,
+}: {
+  ext: InstalledExtensionInfo;
+  manifest?: ExtensionManifestData;
+  isAdmin: boolean;
+}) {
   const operationInProgress = useServerExtensionStore((s) => s.operationInProgress);
   const updateExtension = useServerExtensionStore((s) => s.updateExtension);
   const deleteExtension = useServerExtensionStore((s) => s.deleteExtension);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const op = operationInProgress[ext.name];
-  const displayName = ext.name.replace(/^third-party\//, '');
+  const folderName = ext.name.replace(/^third-party\//, '');
+  const displayName = manifest?.display_name ?? folderName;
   const commitShort = ext.version?.currentCommitHash?.slice(0, 7);
   const isGlobal = ext.type === 'global';
+  const slashCommands = manifest?.slash_commands ?? [];
+  const hasInterceptor = manifest?.generate_interceptor === true;
+  const hasCapabilities = slashCommands.length > 0 || hasInterceptor;
 
   async function handleUpdate() {
     const success = await updateExtension(ext.name, isGlobal);
@@ -66,6 +79,11 @@ function InstalledCard({ ext, isAdmin }: { ext: InstalledExtensionInfo; isAdmin:
             <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
               {displayName}
             </p>
+            {displayName !== folderName && (
+              <p className="text-[10px] font-mono text-[var(--color-text-secondary)] opacity-60 truncate">
+                {folderName}
+              </p>
+            )}
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               {commitShort && (
                 <span className="text-[10px] font-mono text-[var(--color-text-secondary)]">
@@ -82,40 +100,102 @@ function InstalledCard({ ext, isAdmin }: { ext: InstalledExtensionInfo; isAdmin:
                   Global
                 </span>
               )}
+              {slashCommands.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-500/15 text-purple-400">
+                  {slashCommands.length} command{slashCommands.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {hasInterceptor && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-500/15 text-green-400">
+                  Gen hook
+                </span>
+              )}
             </div>
           </div>
 
-          {isAdmin && (
-            <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {hasCapabilities && (
               <button
                 type="button"
-                onClick={handleUpdate}
-                disabled={!!op}
-                className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Update"
+                onClick={() => setExpanded((v) => !v)}
+                className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+                title={expanded ? 'Hide details' : 'Show capabilities'}
               >
-                {op === 'updating' ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <RefreshCw size={16} />
-                )}
+                <Info size={16} />
               </button>
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={!!op}
-                className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-red-400 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Delete"
-              >
-                {op === 'deleting' ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Trash2 size={16} />
-                )}
-              </button>
-            </div>
-          )}
+            )}
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleUpdate}
+                  disabled={!!op}
+                  className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Update"
+                >
+                  {op === 'updating' ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={!!op}
+                  className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-red-400 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Delete"
+                >
+                  {op === 'deleting' ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Expanded: manifest description + slash commands */}
+        {expanded && hasCapabilities && (
+          <div className="border-t border-[var(--color-border)] px-4 pb-3 pt-2 space-y-2">
+            {manifest?.description && (
+              <p className="text-xs text-[var(--color-text-secondary)]">{manifest.description}</p>
+            )}
+            {manifest?.author && (
+              <p className="text-[10px] text-[var(--color-text-secondary)] opacity-60">
+                by {manifest.author}
+              </p>
+            )}
+            {slashCommands.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">
+                  Slash Commands
+                </p>
+                <div className="space-y-1">
+                  {slashCommands.map((cmd) => (
+                    <div key={cmd.name} className="flex items-start gap-2">
+                      <span className="text-xs font-mono text-[var(--color-primary)] shrink-0">
+                        /{cmd.name}
+                      </span>
+                      {cmd.description && (
+                        <span className="text-xs text-[var(--color-text-secondary)] opacity-70">
+                          {cmd.description}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {hasInterceptor && (
+              <p className="text-xs text-green-400 opacity-80">
+                Hooks into generation pipeline (generate interceptor)
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
@@ -220,6 +300,7 @@ export function ServerExtensionsSection() {
   const {
     registry,
     installed,
+    manifests,
     isLoadingRegistry,
     isLoadingInstalled,
     error,
@@ -285,8 +366,10 @@ export function ServerExtensionsSection() {
       <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
         <Info size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
         <p className="text-xs text-blue-400">
-          Server extensions run on the backend and affect prompt processing, slash commands, and
-          server features. UI integration is not yet available in this app.
+          Server extensions run on the backend. Extensions that declare slash commands in their
+          manifest are automatically available in the chat input. Use{' '}
+          <span className="font-mono">/plugin</span> to call any extension's server API from
+          STscript.
         </p>
       </div>
 
@@ -361,7 +444,12 @@ export function ServerExtensionsSection() {
                 </p>
               )}
               {installed.map((ext) => (
-                <InstalledCard key={ext.name} ext={ext} isAdmin={isAdmin} />
+                <InstalledCard
+                  key={ext.name}
+                  ext={ext}
+                  manifest={manifests[ext.name]}
+                  isAdmin={isAdmin}
+                />
               ))}
             </>
           )}

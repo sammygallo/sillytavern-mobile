@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   api,
+  apiRequest,
   type CharacterInfo,
   type GenerationOptions,
   type GenerationImage,
@@ -1219,7 +1220,10 @@ async function generateGroupTurn(
     groupCardMode
   );
 
-  const finalContext = maybeApplyInstructMode(context);
+  const finalContext = await runGenerateInterceptors(
+    maybeApplyInstructMode(context),
+    character.name,
+  );
   const stream = await api.generateMessage(
     finalContext,
     character.name,
@@ -1358,6 +1362,42 @@ function maybeApplyInstructMode(
 /** Phase 10.3: returns true when the user has selected text completion mode. */
 function isTextCompletionMode(): boolean {
   return useGenerationStore.getState().instruct.completionMode === 'text';
+}
+
+type ContextMessage = { role: 'user' | 'assistant' | 'system'; content: string };
+
+/**
+ * Run installed server extensions' generate-interceptors before AI generation.
+ * Extensions that declare `generate_interceptor: true` in manifest.json are called
+ * at POST /api/plugins/<name>/generate-interceptors. Fails silently per-extension.
+ */
+async function runGenerateInterceptors(
+  context: ContextMessage[],
+  characterName: string,
+): Promise<ContextMessage[]> {
+  let result = context;
+  try {
+    const { useServerExtensionStore } = await import('./serverExtensionStore');
+    const { installed, manifests } = useServerExtensionStore.getState();
+    const interceptors = installed.filter((e) => manifests[e.name]?.generate_interceptor === true);
+    for (const ext of interceptors) {
+      const extName = ext.name.replace(/^third-party\//, '');
+      try {
+        const resp = await apiRequest<{ messages?: ContextMessage[] } | null>(
+          `/api/plugins/${encodeURIComponent(extName)}/generate-interceptors`,
+          { method: 'POST', body: JSON.stringify({ messages: result, character: characterName }) },
+        );
+        if (resp?.messages && Array.isArray(resp.messages)) {
+          result = resp.messages;
+        }
+      } catch {
+        // Extension doesn't implement this endpoint — skip silently
+      }
+    }
+  } catch {
+    // Store not available — skip
+  }
+  return result;
 }
 
 // Helper: save chat to backend
@@ -2059,7 +2099,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }, ragCtx ?? undefined);
       const { provider, model } = getProviderAndModel();
 
-      const finalContext = maybeApplyInstructMode(context);
+      const finalContext = await runGenerateInterceptors(
+        maybeApplyInstructMode(context),
+        character.name,
+      );
       const stream = await api.generateMessage(
         finalContext,
         character.name,
@@ -2149,7 +2192,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       const { provider, model } = getProviderAndModel();
-      const finalContext = maybeApplyInstructMode(context);
+      const finalContext = await runGenerateInterceptors(
+        maybeApplyInstructMode(context),
+        character.name,
+      );
       const stream = await api.generateMessage(
         finalContext,
         character.name,
@@ -2220,7 +2266,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       const { provider, model } = getProviderAndModel();
-      const finalContext = maybeApplyInstructMode(context);
+      const finalContext = await runGenerateInterceptors(
+        maybeApplyInstructMode(context),
+        character.name,
+      );
       const stream = await api.generateMessage(finalContext, character.name, provider, model, abortController.signal, getGenerationOptions(), undefined, isTextCompletionMode());
       if (!stream) return '';
 
@@ -2359,7 +2408,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activated: wiTimerActivated,
       }, ragCtx ?? undefined);
 
-      const finalContext = maybeApplyInstructMode(context);
+      const finalContext = await runGenerateInterceptors(
+        maybeApplyInstructMode(context),
+        character.name,
+      );
       const stream = await api.generateMessage(
         finalContext,
         character.name,
@@ -2693,7 +2745,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }, ragCtx ?? undefined);
       const { provider, model } = getProviderAndModel();
 
-      const finalContext = maybeApplyInstructMode(context);
+      const finalContext = await runGenerateInterceptors(
+        maybeApplyInstructMode(context),
+        character.name,
+      );
       const stream = await api.generateMessage(
         finalContext,
         character.name,

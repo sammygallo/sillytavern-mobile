@@ -4,6 +4,7 @@ import {
   type RegistryExtension,
   type DiscoveredExtension,
   type ExtensionVersionInfo,
+  type ExtensionManifestData,
 } from '../api/extensionsApi';
 
 // ---------------------------------------------------------------------------
@@ -20,6 +21,8 @@ interface ServerExtensionState {
   // Data
   registry: RegistryExtension[];
   installed: InstalledExtensionInfo[];
+  /** Cached manifest.json data keyed by extension full name (e.g. "third-party/vectors"). */
+  manifests: Record<string, ExtensionManifestData>;
 
   // Loading / error states
   isLoadingRegistry: boolean;
@@ -32,6 +35,8 @@ interface ServerExtensionState {
   // Actions
   fetchRegistry: () => Promise<void>;
   fetchInstalled: () => Promise<void>;
+  /** Fetch manifest.json for all installed extensions and register their slash commands. */
+  fetchManifests: () => Promise<void>;
   installExtension: (url: string) => Promise<boolean>;
   updateExtension: (name: string, global?: boolean) => Promise<boolean>;
   deleteExtension: (name: string, global?: boolean) => Promise<boolean>;
@@ -54,6 +59,7 @@ function baseName(name: string): string {
 export const useServerExtensionStore = create<ServerExtensionState>((set, get) => ({
   registry: [],
   installed: [],
+  manifests: {},
   isLoadingRegistry: false,
   isLoadingInstalled: false,
   error: null,
@@ -95,11 +101,37 @@ export const useServerExtensionStore = create<ServerExtensionState>((set, get) =
       );
 
       set({ installed: withVersions, isLoadingInstalled: false });
+      // Fire-and-forget: fetch manifests and register bridge commands
+      get().fetchManifests();
     } catch (err) {
       set({
         isLoadingInstalled: false,
         error: err instanceof Error ? err.message : 'Failed to fetch installed extensions',
       });
+    }
+  },
+
+  async fetchManifests() {
+    const { installed } = get();
+    const results: Record<string, ExtensionManifestData> = {};
+    await Promise.all(
+      installed.map(async (ext) => {
+        try {
+          const name = baseName(ext.name);
+          const manifest = await extensionsApi.getManifest(name, ext.type === 'global');
+          results[ext.name] = manifest;
+        } catch {
+          // Manifest fetch is best-effort; ignore per-extension errors
+        }
+      }),
+    );
+    set({ manifests: results });
+    // Register manifest-declared slash commands in the STscript registry
+    try {
+      const { registerServerExtensionCommands } = await import('../extensions/serverCommandBridge');
+      registerServerExtensionCommands(results, get().installed);
+    } catch {
+      // Bridge not available
     }
   },
 

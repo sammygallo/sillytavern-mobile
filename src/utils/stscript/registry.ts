@@ -15,6 +15,10 @@ export function getCommand(name: string): CommandDefinition | undefined {
   return commands.get(name.toLowerCase());
 }
 
+export function unregisterCommand(name: string): void {
+  commands.delete(name.toLowerCase());
+}
+
 /** All unique commands (deduped across aliases), sorted by name. */
 export function getAllCommands(): CommandDefinition[] {
   const seen = new Set<CommandHandler>();

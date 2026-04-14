@@ -11,6 +11,7 @@ import './commands/character';
 import './commands/quickreply';
 import './commands/system';
 import './commands/display';
+import './commands/plugins';
 
 export { executeSlashCommand, buildExecutionContext } from './executor';
 export { getAllCommands, getCommand } from './registry';
