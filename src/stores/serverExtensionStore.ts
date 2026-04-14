@@ -23,6 +23,8 @@ interface ServerExtensionState {
   installed: InstalledExtensionInfo[];
   /** Cached manifest.json data keyed by extension full name (e.g. "third-party/vectors"). */
   manifests: Record<string, ExtensionManifestData>;
+  /** Extensions confirmed to have no manifest.json — skip re-fetching within the session. */
+  noManifestExtensions: Set<string>;
 
   // Loading / error states
   isLoadingRegistry: boolean;
@@ -60,6 +62,7 @@ export const useServerExtensionStore = create<ServerExtensionState>((set, get) =
   registry: [],
   installed: [],
   manifests: {},
+  noManifestExtensions: new Set<string>(),
   isLoadingRegistry: false,
   isLoadingInstalled: false,
   error: null,
@@ -112,20 +115,24 @@ export const useServerExtensionStore = create<ServerExtensionState>((set, get) =
   },
 
   async fetchManifests() {
-    const { installed } = get();
+    const { installed, noManifestExtensions } = get();
     const results: Record<string, ExtensionManifestData> = {};
+    const newNoManifest = new Set(noManifestExtensions);
     await Promise.all(
       installed.map(async (ext) => {
+        // Skip extensions already confirmed to have no manifest this session
+        if (noManifestExtensions.has(ext.name)) return;
         try {
           const name = baseName(ext.name);
           const manifest = await extensionsApi.getManifest(name, ext.type === 'global');
           results[ext.name] = manifest;
         } catch {
-          // Manifest fetch is best-effort; ignore per-extension errors
+          // Record as no-manifest so we don't re-fetch until page reload
+          newNoManifest.add(ext.name);
         }
       }),
     );
-    set({ manifests: results });
+    set({ manifests: results, noManifestExtensions: newNoManifest });
     // Register manifest-declared slash commands in the STscript registry
     try {
       const { registerServerExtensionCommands } = await import('../extensions/serverCommandBridge');
@@ -199,7 +206,10 @@ export const useServerExtensionStore = create<ServerExtensionState>((set, get) =
       await extensionsApi.remove(baseName(name), global);
       set((s) => {
         const { [key]: _, ...rest } = s.operationInProgress;
-        return { operationInProgress: rest };
+        // Clear from no-manifest cache so a fresh install can fetch its manifest
+        const newNoManifest = new Set(s.noManifestExtensions);
+        newNoManifest.delete(name);
+        return { operationInProgress: rest, noManifestExtensions: newNoManifest };
       });
       // Refresh installed list
       await get().fetchInstalled();
