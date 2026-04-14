@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore, type CharacterOwnershipState } from '../../stores/characterOwnershipStore';
+import type { UserRole } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { can } from '../../utils/permissions';
@@ -86,13 +87,11 @@ export function CharacterManagementPage() {
   };
 
   const handleDuplicate = async (avatar: string) => {
-    const newAvatar = await duplicateCharacter(avatar);
-    if (newAvatar) {
-      // Copy original visibility to the duplicate
-      const originalVisibility = ownershipStore.getVisibility(avatar);
-      ownershipStore.setOwner(newAvatar, userHandle);
-      ownershipStore.setVisibility(newAvatar, originalVisibility);
-    }
+    // Server-side: duplicating always creates a new personal copy in the
+    // caller's directory. Visibility and ownership for the new copy are
+    // left at their defaults (personal, unowned) — the caller can promote
+    // the copy to global afterwards if desired.
+    await duplicateCharacter(avatar);
   };
 
   const handleDelete = async () => {
@@ -103,9 +102,22 @@ export function CharacterManagementPage() {
     setIsDeleting(false);
   };
 
-  const handleToggleVisibility = (avatar: string) => {
+  const [visibilityBusy, setVisibilityBusy] = useState<string | null>(null);
+
+  const handleToggleVisibility = async (avatar: string) => {
     const current = ownershipStore.getVisibility(avatar);
-    ownershipStore.setVisibility(avatar, current === 'global' ? 'personal' : 'global');
+    const next = current === 'global' ? 'personal' : 'global';
+    setVisibilityBusy(avatar);
+    try {
+      await ownershipStore.setVisibility(avatar, next);
+      // Server physically moved the file between directories — refresh the
+      // character list so subsequent API calls target the right scope.
+      await fetchCharacters();
+    } catch (err) {
+      console.error('Failed to change character visibility', err);
+    } finally {
+      setVisibilityBusy(null);
+    }
   };
 
   const handleExport = async (avatar: string, format: 'png' | 'json') => {
@@ -218,6 +230,7 @@ export function CharacterManagementPage() {
                 onToggleVisibility={handleToggleVisibility}
                 onExport={handleExport}
                 isExporting={exportingAvatar === char.avatar}
+                isVisibilityBusy={visibilityBusy === char.avatar}
               />
             ))}
           </ul>
@@ -268,7 +281,7 @@ export function CharacterManagementPage() {
 interface CharacterRowProps {
   character: CharacterInfo;
   userHandle: string;
-  userRole: string | undefined;
+  userRole: UserRole | undefined;
   ownershipStore: CharacterOwnershipState;
   onEdit: (avatar: string) => void;
   onDuplicate: (avatar: string) => void;
@@ -276,6 +289,7 @@ interface CharacterRowProps {
   onToggleVisibility: (avatar: string) => void;
   onExport: (avatar: string, format: 'png' | 'json') => void;
   isExporting: boolean;
+  isVisibilityBusy: boolean;
 }
 
 function CharacterRow({
@@ -289,15 +303,16 @@ function CharacterRow({
   onToggleVisibility,
   onExport,
   isExporting,
+  isVisibilityBusy,
 }: CharacterRowProps) {
   const avatar = character.avatar;
   const visibility = ownershipStore.getVisibility(avatar);
   const isOwned = ownershipStore.isOwnedBy(avatar, userHandle);
   const ownerHandle = ownershipStore.getOwner(avatar);
 
-  const canEdit = ownershipStore.canEditCharacter(avatar, userHandle, userRole as any);
-  const canDelete = ownershipStore.canDeleteCharacter(avatar, userHandle, userRole as any);
-  const canDuplicate = can(userRole as any, 'character:create');
+  const canEdit = ownershipStore.canEditCharacter(avatar, userHandle, userRole);
+  const canDelete = ownershipStore.canDeleteCharacter(avatar, userHandle, userRole);
+  const canDuplicate = can(userRole, 'character:create');
 
   const creator = character.creator || character.data?.creator || null;
   const thumbnailUrl = `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
@@ -399,14 +414,21 @@ function CharacterRow({
               <Copy size={14} />
             </button>
           )}
-          {isOwned && (
+          {userRole === 'owner' && (
             <button
               onClick={() => onToggleVisibility(avatar)}
-              className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+              disabled={isVisibilityBusy}
+              className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
               title={visibility === 'global' ? 'Make personal' : 'Make global'}
               aria-label={`Toggle visibility for ${character.name}`}
             >
-              {visibility === 'global' ? <Globe size={14} /> : <Lock size={14} />}
+              {isVisibilityBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : visibility === 'global' ? (
+                <Globe size={14} />
+              ) : (
+                <Lock size={14} />
+              )}
             </button>
           )}
           {canDelete && (

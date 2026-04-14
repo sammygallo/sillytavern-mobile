@@ -1,85 +1,97 @@
 import { create } from 'zustand';
+import { api, type CharacterMetadataMap } from '../api/client';
 import type { UserRole } from '../types';
 
-const OWNERSHIP_KEY = 'sillytavern_character_ownership';
+/**
+ * Server-backed character ownership and visibility.
+ *
+ * Ownership and the personal/global visibility flag are stored in
+ * `_global/character-metadata.json` on the SillyTavern backend and exposed
+ * via `POST /api/characters/metadata`. Mutations go through
+ * `POST /api/characters/set-visibility`, which physically moves the PNG
+ * between a user's personal directory and `_global/characters/`.
+ *
+ * This store is a thin cache over the server map. It exposes synchronous
+ * query helpers (used widely in render paths like `CharacterRow`) plus async
+ * mutations that hit the server and refresh the cache.
+ *
+ * Anything not tracked in the server map defaults to `visibility: 'personal'`
+ * with no owner. The GLOBAL vs PERSONAL badge in the UI reflects the server's
+ * authoritative state — if it says global, the file physically lives in the
+ * shared directory and every user will see it.
+ */
 
 export interface OwnershipEntry {
   ownerHandle: string;
   visibility: 'global' | 'personal';
 }
 
-function loadOwnership(): Record<string, OwnershipEntry> {
-  try {
-    const raw = localStorage.getItem(OWNERSHIP_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function saveOwnership(map: Record<string, OwnershipEntry>) {
-  try {
-    localStorage.setItem(OWNERSHIP_KEY, JSON.stringify(map));
-  } catch {
-    // ignore quota/security errors
-  }
-}
-
 export interface CharacterOwnershipState {
   ownershipMap: Record<string, OwnershipEntry>;
+  isLoading: boolean;
+  error: string | null;
 
-  // Mutations
-  setOwner: (avatar: string, ownerHandle: string) => void;
-  setVisibility: (avatar: string, visibility: 'global' | 'personal') => void;
-  removeOwnership: (avatar: string) => void;
+  // Fetch the current map from the server. Idempotent — safe to call on every
+  // character refresh.
+  fetchOwnership: () => Promise<void>;
 
-  // Queries
+  // Mutations — these hit the server. On success the cache is updated in
+  // place; on failure the error field is set and the cache is left alone.
+  setVisibility: (avatar: string, visibility: 'global' | 'personal') => Promise<void>;
+
+  // Queries — synchronous against the in-memory cache.
   getOwner: (avatar: string) => string | null;
   getVisibility: (avatar: string) => 'global' | 'personal';
   isOwnedBy: (avatar: string, handle: string) => boolean;
 
   // Permission helpers
-  canEditCharacter: (avatar: string, userHandle: string, userRole: UserRole) => boolean;
-  canDeleteCharacter: (avatar: string, userHandle: string, userRole: UserRole) => boolean;
+  canEditCharacter: (avatar: string, userHandle: string, userRole: UserRole | undefined) => boolean;
+  canDeleteCharacter: (avatar: string, userHandle: string, userRole: UserRole | undefined) => boolean;
+}
+
+function toOwnershipMap(serverMap: CharacterMetadataMap): Record<string, OwnershipEntry> {
+  const result: Record<string, OwnershipEntry> = {};
+  for (const [avatar, entry] of Object.entries(serverMap)) {
+    if (!entry || typeof entry !== 'object') continue;
+    result[avatar] = {
+      ownerHandle: entry.ownerHandle,
+      visibility: entry.visibility === 'global' ? 'global' : 'personal',
+    };
+  }
+  return result;
 }
 
 export const useCharacterOwnershipStore = create<CharacterOwnershipState>((set, get) => ({
-  ownershipMap: loadOwnership(),
+  ownershipMap: {},
+  isLoading: false,
+  error: null,
 
-  setOwner: (avatar, ownerHandle) => {
-    const { ownershipMap } = get();
-    const existing = ownershipMap[avatar];
-    const updated = {
-      ...ownershipMap,
-      [avatar]: {
-        ownerHandle,
-        visibility: existing?.visibility ?? 'global' as const,
-      },
-    };
-    saveOwnership(updated);
-    set({ ownershipMap: updated });
+  fetchOwnership: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const serverMap = await api.getCharacterMetadata();
+      set({ ownershipMap: toOwnershipMap(serverMap), isLoading: false });
+    } catch (err) {
+      set({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to load character ownership',
+      });
+    }
   },
 
-  setVisibility: (avatar, visibility) => {
-    const { ownershipMap } = get();
-    const existing = ownershipMap[avatar];
-    if (!existing) return;
-    const updated = {
-      ...ownershipMap,
-      [avatar]: { ...existing, visibility },
-    };
-    saveOwnership(updated);
-    set({ ownershipMap: updated });
-  },
-
-  removeOwnership: (avatar) => {
-    const { ownershipMap } = get();
-    if (!ownershipMap[avatar]) return;
-    const updated = { ...ownershipMap };
-    delete updated[avatar];
-    saveOwnership(updated);
-    set({ ownershipMap: updated });
+  setVisibility: async (avatar, visibility) => {
+    set({ error: null });
+    try {
+      await api.setCharacterVisibility(avatar, visibility);
+      // Refetch the map so we pick up the server's authoritative state
+      // (owner handle, claimedAt, and any file-move side effects).
+      await get().fetchOwnership();
+    } catch (err) {
+      set({
+        error: err instanceof Error ? err.message : 'Failed to update visibility',
+      });
+      throw err;
+    }
   },
 
   getOwner: (avatar) => {
@@ -87,7 +99,7 @@ export const useCharacterOwnershipStore = create<CharacterOwnershipState>((set, 
   },
 
   getVisibility: (avatar) => {
-    return get().ownershipMap[avatar]?.visibility ?? 'global';
+    return get().ownershipMap[avatar]?.visibility ?? 'personal';
   },
 
   isOwnedBy: (avatar, handle) => {
@@ -96,11 +108,19 @@ export const useCharacterOwnershipStore = create<CharacterOwnershipState>((set, 
 
   canEditCharacter: (avatar, userHandle, userRole) => {
     if (userRole === 'owner') return true;
-    return get().ownershipMap[avatar]?.ownerHandle === userHandle;
+    const entry = get().ownershipMap[avatar];
+    // No entry → character is unowned personal. Only the app owner can claim
+    // it; regular users cannot edit it through this path. The main character
+    // list still gates edits via the character endpoints, which are the
+    // authoritative check.
+    if (!entry) return false;
+    return entry.ownerHandle === userHandle;
   },
 
   canDeleteCharacter: (avatar, userHandle, userRole) => {
     if (userRole === 'owner') return true;
-    return get().ownershipMap[avatar]?.ownerHandle === userHandle;
+    const entry = get().ownershipMap[avatar];
+    if (!entry) return false;
+    return entry.ownerHandle === userHandle;
   },
 }));

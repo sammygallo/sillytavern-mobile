@@ -77,6 +77,16 @@ export interface UserInfo {
   created?: number;
 }
 
+export type CharacterVisibility = 'global' | 'personal';
+
+export interface CharacterMetadataEntry {
+  ownerHandle: string;
+  visibility: CharacterVisibility;
+  claimedAt: number;
+}
+
+export type CharacterMetadataMap = Record<string, CharacterMetadataEntry>;
+
 export interface CharacterInfo {
   name: string;
   avatar: string; // filename like "CharacterName.png"
@@ -91,6 +101,10 @@ export interface CharacterInfo {
   chat_size?: number;
   fav?: boolean;
   tags?: string[];
+  // Global character sharing (populated by the server; may be absent on older
+  // backends, in which case callers treat as 'personal' / null).
+  visibility?: CharacterVisibility;
+  owner_handle?: string | null;
   // Advanced Character Card V2 fields
   alternate_greetings?: string[];
   system_prompt?: string;
@@ -442,6 +456,36 @@ export const api = {
     } catch {
       return text;
     }
+  },
+
+  // --- Global character sharing ---
+
+  /**
+   * Fetches the character ownership/visibility map from the server.
+   * Returns {} on older backends that don't yet expose the endpoint, so
+   * callers can treat every character as personal/unowned.
+   */
+  async getCharacterMetadata(): Promise<CharacterMetadataMap> {
+    try {
+      const response = await apiRequest<CharacterMetadataMap>('/api/characters/metadata', {
+        method: 'POST',
+      });
+      return response || {};
+    } catch {
+      return {};
+    }
+  },
+
+  /**
+   * Moves a character between global and personal scope. OWNER-only on the
+   * server. On success, the caller should refetch characters + metadata —
+   * the file has physically moved directories.
+   */
+  async setCharacterVisibility(avatarUrl: string, visibility: CharacterVisibility): Promise<void> {
+    await apiRequest('/api/characters/set-visibility', {
+      method: 'POST',
+      body: JSON.stringify({ avatar_url: avatarUrl, visibility }),
+    });
   },
 
   // Chat endpoints - use avatar filename directly for consistency
