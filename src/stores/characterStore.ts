@@ -18,7 +18,6 @@ import {
   bookToCharacterBookV2,
 } from './worldInfoStore';
 import { useCharacterOwnershipStore } from './characterOwnershipStore';
-import { useAuthStore } from './authStore';
 
 const FAVORITES_KEY = 'sillytavern_character_favorites';
 const LINKED_BOOKS_KEY = 'sillytavern_character_linked_books_v1';
@@ -157,7 +156,12 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   fetchCharacters: async () => {
     set({ isLoading: true, error: null });
     try {
-      const characters = await api.getCharacters();
+      // Fetch characters and ownership metadata in parallel — they're
+      // independent but both need to be fresh before UI renders badges.
+      const [characters] = await Promise.all([
+        api.getCharacters(),
+        useCharacterOwnershipStore.getState().fetchOwnership(),
+      ]);
       set({ characters, isLoading: false });
     } catch (error) {
       set({
@@ -206,14 +210,10 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     set({ isCreating: true, error: null });
     try {
       const avatarUrl = await api.createCharacter(data, avatarFile);
-      // Record ownership for the creating user
-      if (avatarUrl) {
-        const currentUser = useAuthStore.getState().currentUser;
-        if (currentUser) {
-          useCharacterOwnershipStore.getState().setOwner(avatarUrl, currentUser.handle);
-        }
-      }
-      // Refresh the character list
+      // Ownership is recorded server-side when a character is flipped to
+      // global. Newly-created characters start personal with no metadata
+      // entry, which is the correct default.
+      // Refresh the character list (also refetches ownership).
       await get().fetchCharacters();
       set({ isCreating: false });
       return avatarUrl;
@@ -265,8 +265,9 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         saveFavorites(newFavorites);
         set({ favorites: newFavorites });
       }
-      // Clean up ownership data
-      useCharacterOwnershipStore.getState().removeOwnership(avatar);
+      // Ownership cleanup happens server-side as part of /api/characters/delete
+      // when the target is a global character. For personal characters there's
+      // no metadata entry to clean up.
       // Clean up character-embedded lorebook and linked-book references
       useWorldInfoStore.getState().deleteCharacterBook(avatar);
       if (linkedBookIdsByAvatar[avatar]) {
@@ -291,17 +292,9 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     set({ isDuplicating: true, error: null });
     try {
       const newAvatar = await api.duplicateCharacter(avatar);
-      // Record the duplicating user as owner of the new copy
-      if (newAvatar) {
-        const currentUser = useAuthStore.getState().currentUser;
-        if (currentUser) {
-          const ownershipStore = useCharacterOwnershipStore.getState();
-          const originalVisibility = ownershipStore.getVisibility(avatar);
-          ownershipStore.setOwner(newAvatar, currentUser.handle);
-          ownershipStore.setVisibility(newAvatar, originalVisibility);
-        }
-      }
-      // Refresh list to show the new character
+      // Server-side: duplicating a global character produces a personal
+      // copy in the caller's directory. No metadata to record client-side.
+      // Refresh list to show the new character (also refetches ownership).
       await get().fetchCharacters();
       set({ isDuplicating: false });
       return newAvatar;
