@@ -25,7 +25,7 @@ import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { usePersonaStore } from '../../stores/personaStore';
 import { useAuthStore } from '../../stores/authStore';
-import { showToastGlobal } from '../ui/Toast';
+import { showToastGlobal } from '../../components/ui/Toast';
 
 // ---------------------------------------------------------------------------
 // Types
