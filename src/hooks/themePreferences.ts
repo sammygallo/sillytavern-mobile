@@ -201,6 +201,11 @@ export function saveCustomTheme(theme: CustomTheme): void {
   saveCustomThemes(themes);
 }
 
+/** Replace the entire custom theme list (used by server-sync on login). */
+export function replaceCustomThemes(themes: CustomTheme[]): void {
+  saveCustomThemes(themes);
+}
+
 export function deleteCustomTheme(id: string): void {
   const themes = getCustomThemes().filter(t => t.id !== id);
   saveCustomThemes(themes);

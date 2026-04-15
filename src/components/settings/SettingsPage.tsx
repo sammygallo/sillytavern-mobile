@@ -35,21 +35,12 @@ import {
   type AvatarShape,
 } from '../../hooks/displayPreferences';
 import {
-  getThemeMode,
-  setThemeMode,
-  getThemePreset,
-  setThemePreset,
-  applyTheme,
   THEME_PRESETS,
   PRESET_SWATCHES,
   type ThemeMode,
   type ThemePreset,
-  type ActivePreset,
-  getActivePreset,
-  setActivePreset,
-  getCustomThemes,
-  deleteCustomTheme,
 } from '../../hooks/themePreferences';
+import { useThemeStore } from '../../stores/themeStore';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 import { useTranslateStore } from '../../stores/translateStore';
@@ -72,12 +63,15 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
   const [speechLang, setSpeechLangState] = useState<string>(() => getSpeechLanguage());
   const { isSupported: isSpeechSupported } = useSpeechRecognition();
 
-  // Phase 7.4: Theme preferences
-  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
-  const [themePresetVal, setThemePresetState] = useState<ThemePreset>(() => getThemePreset());
-  // Phase 6.1: Custom themes
-  const [activePreset, setActivePresetState] = useState<ActivePreset>(() => getActivePreset());
-  const [customThemes, setCustomThemes] = useState(() => getCustomThemes());
+  // Phase 7.4 + 6.1: Theme preferences (server-synced via themeStore)
+  const themeMode = useThemeStore(s => s.mode);
+  const activePreset = useThemeStore(s => s.activePreset);
+  const customThemes = useThemeStore(s => s.customThemes);
+  const setThemeMode = useThemeStore(s => s.setMode);
+  const setThemePreset = useThemeStore(s => s.setPreset);
+  const deleteCustomTheme = useThemeStore(s => s.deleteCustomTheme);
+  // Derived: built-in preset name for seeding the theme editor's base colors.
+  const themePresetVal = (activePreset.startsWith('custom:') ? 'cyberpunk' : activePreset) as ThemePreset;
 
   // Phase 7.3: Chat display preferences
   const [layoutMode, setLayoutModeState] = useState<ChatLayoutMode>(() => getChatLayoutMode());
@@ -441,11 +435,7 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                 ] as const).map((opt) => (
                   <button
                     key={opt.value}
-                    onClick={() => {
-                      setThemeModeState(opt.value);
-                      setThemeMode(opt.value);
-                      applyTheme();
-                    }}
+                    onClick={() => setThemeMode(opt.value)}
                     className={`p-2.5 rounded-lg text-center text-xs font-medium transition-all ${
                       themeMode === opt.value
                         ? 'bg-[var(--color-primary)] text-white'
@@ -465,12 +455,7 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                 {THEME_PRESETS.map((preset) => (
                   <button
                     key={preset}
-                    onClick={() => {
-                      setThemePresetState(preset);
-                      setThemePreset(preset);
-                      setActivePresetState(preset);
-                      applyTheme();
-                    }}
+                    onClick={() => setThemePreset(preset)}
                     className={`w-8 h-8 rounded-full transition-all ${
                       activePreset === preset
                         ? 'ring-2 ring-offset-2 ring-offset-[var(--color-bg-secondary)] ring-[var(--color-primary)] scale-110'
@@ -502,11 +487,7 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                             ? 'bg-[var(--color-bg-tertiary)] ring-1 ring-[var(--color-primary)]'
                             : 'hover:bg-[var(--color-bg-tertiary)]'
                         }`}
-                        onClick={() => {
-                          setActivePreset(`custom:${ct.id}`);
-                          setActivePresetState(`custom:${ct.id}`);
-                          applyTheme();
-                        }}
+                        onClick={() => setThemePreset(`custom:${ct.id}`)}
                       >
                         {/* Mini swatch preview */}
                         <div className="flex gap-0.5 shrink-0">
@@ -526,8 +507,6 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                           onClick={(e) => {
                             e.stopPropagation();
                             deleteCustomTheme(ct.id);
-                            setCustomThemes(getCustomThemes());
-                            setActivePresetState(getActivePreset());
                           }}
                           className="p-1 text-[var(--color-text-secondary)] hover:text-red-400"
                           title="Delete"

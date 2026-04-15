@@ -7,19 +7,15 @@ import {
   type CustomTheme,
   type CustomThemeExport,
   type ThemePreset,
-  type ActivePreset,
   applyColors,
   applyTheme,
-  getCustomThemes,
   getPresetColors,
-  getThemeMode,
   generateThemeId,
   isValidThemeColors,
   resolveMode,
-  saveCustomTheme,
-  setActivePreset,
   THEME_PRESETS,
 } from '../../hooks/themePreferences';
+import { useThemeStore } from '../../stores/themeStore';
 
 // ---------------------------------------------------------------------------
 // CSS variable label mapping
@@ -44,15 +40,17 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
   const { goBack } = useSettingsPanelStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const { mode: themeMode, saveCustomTheme, setPreset: setActivePreset } = useThemeStore();
+
   const editId = pageParams?.id ?? null;
   const fromPreset = (pageParams?.from ?? null) as ThemePreset | null;
-  const resolved = resolveMode(getThemeMode());
+  const resolved = resolveMode(themeMode);
 
   // Load initial colors
   const [themeId] = useState(() => editId ?? generateThemeId());
   const [themeName, setThemeName] = useState(() => {
     if (editId) {
-      const existing = getCustomThemes().find(t => t.id === editId);
+      const existing = useThemeStore.getState().customThemes.find(t => t.id === editId);
       if (existing) return existing.name;
     }
     if (fromPreset) return `${fromPreset.charAt(0).toUpperCase() + fromPreset.slice(1)} (custom)`;
@@ -61,7 +59,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
 
   const getInitialColors = useCallback((): { dark: ThemeColors; light: ThemeColors } => {
     if (editId) {
-      const existing = getCustomThemes().find(t => t.id === editId);
+      const existing = useThemeStore.getState().customThemes.find(t => t.id === editId);
       if (existing) return { dark: { ...existing.dark }, light: { ...existing.light } };
     }
     const base = fromPreset && THEME_PRESETS.includes(fromPreset) ? fromPreset : 'purple';
@@ -101,8 +99,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
   const handleSave = () => {
     const theme: CustomTheme = { id: themeId, name: themeName.trim() || 'Untitled', dark: darkColors, light: lightColors };
     saveCustomTheme(theme);
-    setActivePreset(`custom:${themeId}` as ActivePreset);
-    applyTheme();
+    setActivePreset(`custom:${themeId}`);
     goBack();
   };
 
