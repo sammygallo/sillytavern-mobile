@@ -11,6 +11,7 @@ export type SettingsPageId =
   | 'regex'
   | 'invitations'
   | 'users'
+  | 'permission-groups'
   | 'characters'
   | 'quickreplies'
   | 'extensions'

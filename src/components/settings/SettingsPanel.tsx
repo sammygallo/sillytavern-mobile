@@ -7,6 +7,7 @@ import { GenerationSettingsPage } from './GenerationSettingsPage';
 import { PromptTemplatesPage } from './PromptTemplatesPage';
 import { InvitationManager } from './InvitationManager';
 import { UserManagementPage } from './UserManagementPage';
+import { PermissionGroupsPage } from './PermissionGroupsPage';
 import { QuickReplyPage } from './QuickReplyPage';
 import { ExtensionsPage } from './ExtensionsPage';
 import { CharacterManagementPage } from './CharacterManagementPage';
@@ -34,6 +35,7 @@ const PAGE_COMPONENTS: Record<SettingsPageId, React.ComponentType<{ params?: Rec
   regex: RegexScriptPage,
   invitations: InvitationManager,
   users: UserManagementPage,
+  'permission-groups': PermissionGroupsPage,
   characters: CharacterManagementPage,
   quickreplies: QuickReplyPage,
   extensions: ExtensionsPage,

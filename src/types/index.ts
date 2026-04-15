@@ -1,12 +1,39 @@
 // User types
+/** @deprecated Use `permissions` array + `groupId` instead. Kept for backward compat during transition. */
 export type UserRole = 'owner' | 'admin' | 'contributor' | 'end_user';
+
+/** A permission string matching the backend vocabulary in `SillyTavern/src/permissions.js`. */
+export type Permission = string;
+
+export interface PermissionGroup {
+  id: string;
+  name: string;
+  description: string;
+  permissions: Permission[];
+  /** True for the four seeded default groups. Cannot be deleted. */
+  system: boolean;
+  /** True for exactly one group (the Owner default). Perm set locked to full vocabulary. */
+  systemOwner: boolean;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+  /** Included on list responses when the caller has `admin:users:view`. */
+  memberCount?: number;
+  enabledMemberCount?: number;
+}
 
 export interface User {
   handle: string;
   name: string;
-  admin: boolean;
-  role: UserRole;
   avatar?: string;
+  /** Current permission group id. Source of truth for authorization. */
+  groupId?: string;
+  /** Resolved permission list from the user's group, included in /me responses. */
+  permissions?: Permission[];
+  /** @deprecated Shim derived from groupId. Use `permissions` instead. */
+  admin?: boolean;
+  /** @deprecated Shim derived from groupId. Use `permissions` instead. */
+  role?: UserRole;
 }
 
 // Character types

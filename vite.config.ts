@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// Backend URL can be overridden via ST_BACKEND for local dev when the
+// default port is already in use (e.g. running two worktrees in parallel).
+const BACKEND = process.env.ST_BACKEND || 'http://localhost:8000'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -9,19 +13,19 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: BACKEND,
         changeOrigin: true,
       },
       '/csrf-token': {
-        target: 'http://localhost:8000',
+        target: BACKEND,
         changeOrigin: true,
       },
       '/thumbnail': {
-        target: 'http://localhost:8000',
+        target: BACKEND,
         changeOrigin: true,
       },
       '/characters': {
-        target: 'http://localhost:8000',
+        target: BACKEND,
         changeOrigin: true,
       },
     },

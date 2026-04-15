@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, ChevronRight, Database, Edit3, FileText, Image, Languages, Loader2, MessageSquare, Mic, Palette, Plus, Replace, Sliders, Sparkles, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronRight, Database, Edit3, FileText, Image, Languages, Loader2, MessageSquare, Mic, Palette, Plus, Replace, Shield, Sliders, Sparkles, Trash2, UserPlus, Users, Volume2, Zap } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useOnboardingStore } from '../../stores/onboardingStore';
+import { useAuthStore } from '../../stores/authStore';
+import { hasPermission } from '../../utils/permissions';
 // PROVIDERS moved to AISettingsPage
 import { Button } from '../ui';
 import {
@@ -54,6 +56,10 @@ import { useTranslateStore } from '../../stores/translateStore';
 import { TRANSLATE_PROVIDERS, TRANSLATE_LANGUAGES, type TranslateProvider } from '../../api/translateApi';
 export function SettingsPage(_props?: { params?: Record<string, string> }) {
   const { pushPage, goBack } = useSettingsPanelStore();
+  const { currentUser } = useAuthStore();
+  const canManageInvitations = hasPermission(currentUser, 'admin:invitations:manage');
+  const canManageUsers = hasPermission(currentUser, 'admin:users:view');
+  const canManageGroups = hasPermission(currentUser, 'admin:groups:manage');
   const {
     isLoading,
     error,
@@ -249,46 +255,73 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
             </section>
 
             {/* Invitations */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
-              <button
-                onClick={() => pushPage('invitations')}
-                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
-              >
-                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
-                  <UserPlus size={20} className="text-[var(--color-primary)]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    Invitations
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-secondary)]">
-                    Create invite links for new users
-                  </p>
-                </div>
-                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
-              </button>
-            </section>
+            {canManageInvitations && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
+                <button
+                  onClick={() => pushPage('invitations')}
+                  className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                    <UserPlus size={20} className="text-[var(--color-primary)]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      Invitations
+                    </h3>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Create invite links for new users
+                    </p>
+                  </div>
+                  <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+                </button>
+              </section>
+            )}
 
             {/* Users (Phase 3.1) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
-              <button
-                onClick={() => pushPage('users')}
-                className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
-              >
-                <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
-                  <Users size={20} className="text-[var(--color-primary)]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    Users
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-secondary)]">
-                    Manage accounts, roles, and access
-                  </p>
-                </div>
-                <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
-              </button>
-            </section>
+            {canManageUsers && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
+                <button
+                  onClick={() => pushPage('users')}
+                  className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                    <Users size={20} className="text-[var(--color-primary)]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      Users
+                    </h3>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Manage accounts, groups, and access
+                    </p>
+                  </div>
+                  <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+                </button>
+              </section>
+            )}
+
+            {/* Permission Groups (owner-only) */}
+            {canManageGroups && (
+              <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">
+                <button
+                  onClick={() => pushPage('permission-groups')}
+                  className="w-full flex items-center gap-3 p-4 hover:bg-[var(--color-bg-tertiary)] transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                    <Shield size={20} className="text-[var(--color-primary)]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      Permission Groups
+                    </h3>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Create custom roles with fine-grained permissions
+                    </p>
+                  </div>
+                  <ChevronRight size={20} className="text-[var(--color-text-secondary)]" />
+                </button>
+              </section>
+            )}
 
             {/* Character Management */}
             <section className="bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden cyberpunk-card">

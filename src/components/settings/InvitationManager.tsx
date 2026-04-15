@@ -1,15 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, Copy, Check, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
-import { invitationsApi, type Invitation } from '../../api/client';
+import { invitationsApi, permissionGroupsApi, type Invitation } from '../../api/client';
+import { useAuthStore } from '../../stores/authStore';
 import { Button } from '../ui';
-import type { UserRole } from '../../types';
-
-const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: 'end_user', label: 'User' },
-  { value: 'contributor', label: 'Contributor' },
-  { value: 'admin', label: 'Admin' },
-];
+import type { PermissionGroup } from '../../types';
 
 const STATUS_COLOR: Record<Invitation['status'], string> = {
   pending: 'text-green-400',
@@ -33,12 +28,14 @@ function timeAgo(ts: number): string {
 
 export function InvitationManager(_props?: { params?: Record<string, string> }) {
   const { goBack } = useSettingsPanelStore();
+  const { currentUser } = useAuthStore();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Create form state
-  const [createRole, setCreateRole] = useState<UserRole>('end_user');
+  const [createGroupId, setCreateGroupId] = useState<string>('end-user-default');
   const [createLabel, setCreateLabel] = useState('');
   const [createExpiry, setCreateExpiry] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -46,10 +43,23 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
   // Per-invite copy feedback
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const loadInvitations = useCallback(async () => {
+  const actorPermSet = useMemo(
+    () => new Set(currentUser?.permissions ?? []),
+    [currentUser?.permissions],
+  );
+
+  // A group is assignable iff the inviter holds every permission in the group.
+  const isGroupAssignable = (group: PermissionGroup) =>
+    group.permissions.every(p => actorPermSet.has(p));
+
+  const load = useCallback(async () => {
     try {
-      const list = await invitationsApi.list();
+      const [list, groupList] = await Promise.all([
+        invitationsApi.list(),
+        permissionGroupsApi.list(),
+      ]);
       setInvitations(list);
+      setGroups(groupList);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load invitations');
     } finally {
@@ -57,14 +67,17 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
     }
   }, []);
 
-  useEffect(() => { loadInvitations(); }, [loadInvitations]);
+  useEffect(() => { load(); }, [load]);
+
+  const groupName = (id: string | undefined) =>
+    (id && groups.find(g => g.id === id)?.name) || id || 'unknown';
 
   const handleCreate = async () => {
     setIsCreating(true);
     setError(null);
     try {
       const expiresIn = createExpiry ? Number(createExpiry) : undefined;
-      const invite = await invitationsApi.create(createRole, createLabel.trim(), expiresIn);
+      const invite = await invitationsApi.create(createGroupId, createLabel.trim(), expiresIn);
       setInvitations(prev => [invite, ...prev]);
       setCreateLabel('');
       setCreateExpiry('');
@@ -122,13 +135,18 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
 
           <div className="flex gap-2">
             <select
-              value={createRole}
-              onChange={e => setCreateRole(e.target.value as UserRole)}
+              value={createGroupId}
+              onChange={e => setCreateGroupId(e.target.value)}
               className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             >
-              {ROLE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
+              {groups.map(g => {
+                const assignable = isGroupAssignable(g);
+                return (
+                  <option key={g.id} value={g.id} disabled={!assignable}>
+                    {g.name}{!assignable ? ' (requires more perms)' : ''}
+                  </option>
+                );
+              })}
             </select>
 
             <select
@@ -183,8 +201,8 @@ export function InvitationManager(_props?: { params?: Record<string, string> }) 
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-medium text-[var(--color-text-primary)] capitalize">
-                          {invite.role.replace('_', ' ')}
+                        <span className="text-xs font-medium text-[var(--color-text-primary)]">
+                          {groupName(invite.groupId)}
                         </span>
                         <span className={`text-xs capitalize ${STATUS_COLOR[invite.status]}`}>
                           {invite.status}
