@@ -3,12 +3,22 @@ import { api, clearCsrfToken, type UserInfo } from '../api/client';
 import { useCharacterStore } from './characterStore';
 import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
-import type { UserRole } from '../types';
+import type { UserRole, Permission } from '../types';
+
+interface CurrentUser {
+  handle: string;
+  name: string;
+  /** @deprecated Legacy role shim. Use `permissions` instead. */
+  role: UserRole;
+  avatar?: string;
+  groupId?: string;
+  permissions?: Permission[];
+}
 
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  currentUser: { handle: string; name: string; role: UserRole; avatar?: string } | null;
+  currentUser: CurrentUser | null;
   availableUsers: UserInfo[];
   error: string | null;
   canSelfRegister: boolean;
@@ -39,7 +49,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (user) {
         set({
           isAuthenticated: true,
-          currentUser: { handle: user.handle, name: user.name, role: user.role, avatar: user.avatar },
+          currentUser: {
+            handle: user.handle,
+            name: user.name,
+            role: user.role,
+            avatar: user.avatar,
+            groupId: user.groupId,
+            permissions: user.permissions,
+          },
           isLoading: false,
         });
       } else {
@@ -93,12 +110,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       await api.login(handle, password);
-      // Fetch real user data so role and display name are correct.
+      // Fetch real user data so role, permissions, and display name are correct.
       const user = await api.getCurrentUser();
       set({
         isAuthenticated: true,
         currentUser: user
-          ? { handle: user.handle, name: user.name, role: user.role, avatar: user.avatar }
+          ? {
+              handle: user.handle,
+              name: user.name,
+              role: user.role,
+              avatar: user.avatar,
+              groupId: user.groupId,
+              permissions: user.permissions,
+            }
           : { handle, name: handle, role: 'end_user' },
         isLoading: false,
       });

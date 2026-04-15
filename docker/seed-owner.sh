@@ -70,11 +70,14 @@ CSRF=$($WGET -O- \
 
 OWNER_NAME="${OWNER_NAME:-$OWNER_HANDLE}"
 
-# Create the owner account
+# Create the owner account. The backend uses permission groups as the source
+# of truth; the { admin, role } shape is still accepted for backward compat
+# but we send the new groupId shape to stay current. The owner-default group
+# is guaranteed to exist after the server-side migration runs on first boot.
 CREATE=$($WGET -O- \
   --header="Content-Type: application/json" \
   --header="X-CSRF-Token: $CSRF" \
-  --post-data="{\"handle\":\"$OWNER_HANDLE\",\"name\":\"$OWNER_NAME\",\"password\":\"$OWNER_PASSWORD\",\"admin\":true,\"role\":\"owner\"}" \
+  --post-data="{\"handle\":\"$OWNER_HANDLE\",\"name\":\"$OWNER_NAME\",\"password\":\"$OWNER_PASSWORD\",\"groupId\":\"owner-default\"}" \
   --load-cookies=/tmp/st-cookies.txt \
   "$ST/api/users/create" 2>/dev/null) || true
 

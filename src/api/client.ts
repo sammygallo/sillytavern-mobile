@@ -212,14 +212,36 @@ export const api = {
     await apiRequest('/api/users/logout', { method: 'POST' });
   },
 
-  async getCurrentUser(): Promise<{ handle: string; name: string; role: import('../types').UserRole; avatar?: string } | null> {
+  async getCurrentUser(): Promise<{
+    handle: string;
+    name: string;
+    role: import('../types').UserRole;
+    avatar?: string;
+    groupId?: string;
+    permissions?: import('../types').Permission[];
+  } | null> {
     try {
-      const user = await apiRequest<{ handle: string; name: string; admin: boolean; role?: string; avatar?: string }>('/api/users/me');
+      const user = await apiRequest<{
+        handle: string;
+        name: string;
+        admin: boolean;
+        role?: string;
+        avatar?: string;
+        groupId?: string;
+        permissions?: string[];
+      }>('/api/users/me');
       // Derive role: backend may return role directly (Phase 1 backend),
       // or fall back to admin boolean for older servers.
       const role = (user.role as import('../types').UserRole) ||
         (user.admin ? 'admin' : 'end_user');
-      return { handle: user.handle, name: user.name, role, avatar: user.avatar };
+      return {
+        handle: user.handle,
+        name: user.name,
+        role,
+        avatar: user.avatar,
+        groupId: user.groupId,
+        permissions: user.permissions,
+      };
     } catch {
       return null;
     }
@@ -264,10 +286,12 @@ export const api = {
     }
 
     // Now create the new user (we're logged in as default-user/admin)
-    // First registrant gets owner role + admin flag for backward compat
+    // First registrant gets the Owner group; the backend also accepts the
+    // legacy { admin, role } shape during the transition window, but we send
+    // the new shape to avoid the deprecation warning.
     const result = await apiRequest<{ handle: string }>('/api/users/create', {
       method: 'POST',
-      body: JSON.stringify({ handle, name, password, admin: true, role: 'owner' }),
+      body: JSON.stringify({ handle, name, password, groupId: 'owner-default' }),
     });
 
     // Logout default-user
@@ -733,8 +757,14 @@ export interface AdminUserInfo {
   handle: string;
   name: string;
   avatar: string;
+  /** @deprecated Shim derived from groupId. Use `permissions` instead. */
   admin: boolean;
+  /** @deprecated Shim derived from groupId. Use `permissions` instead. */
   role: import('../types').UserRole;
+  /** Current permission group id. */
+  groupId: string | null;
+  /** Resolved permission list. */
+  permissions?: import('../types').Permission[];
   enabled: boolean;
   created?: number;
   password: boolean;
@@ -745,10 +775,22 @@ export const adminApi = {
     return apiRequest('/api/users/get', { method: 'POST' });
   },
 
+  /**
+   * @deprecated Use `setUserGroup` instead. Kept so older UI code that still
+   *   reads the role dropdown keeps working while the UI is being migrated.
+   */
   async setRole(handle: string, role: import('../types').UserRole): Promise<void> {
     await apiRequest('/api/users/set-role', {
       method: 'POST',
       body: JSON.stringify({ handle, role }),
+    });
+  },
+
+  /** Assigns `handle` to a permission group. */
+  async setUserGroup(handle: string, groupId: string): Promise<void> {
+    await apiRequest('/api/users/set-group', {
+      method: 'POST',
+      body: JSON.stringify({ handle, groupId }),
     });
   },
 
@@ -774,11 +816,62 @@ export const adminApi = {
   },
 };
 
+// Permission groups API
+export const permissionGroupsApi = {
+  /** List every permission group (id, name, perms, etc.). */
+  async list(): Promise<import('../types').PermissionGroup[]> {
+    return apiRequest('/api/permission-groups', { method: 'GET' });
+  },
+
+  /** Fetch the master permission vocabulary, grouped by category. */
+  async getVocabulary(): Promise<{
+    permissions: import('../types').Permission[];
+    categories: Record<string, import('../types').Permission[]>;
+  }> {
+    return apiRequest('/api/permissions', { method: 'GET' });
+  },
+
+  async create(input: {
+    name: string;
+    description: string;
+    permissions: import('../types').Permission[];
+  }): Promise<import('../types').PermissionGroup> {
+    return apiRequest('/api/permission-groups/create', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async update(
+    id: string,
+    patch: {
+      name?: string;
+      description?: string;
+      permissions?: import('../types').Permission[];
+    },
+  ): Promise<import('../types').PermissionGroup> {
+    return apiRequest('/api/permission-groups/update', {
+      method: 'POST',
+      body: JSON.stringify({ id, ...patch }),
+    });
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiRequest('/api/permission-groups/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  },
+};
+
 // Invitation types
 export interface Invitation {
   id: string;
   token: string;
-  role: import('../types').UserRole;
+  /** Permission group id to assign on accept. */
+  groupId: string;
+  /** @deprecated Shim derived from groupId. */
+  role?: import('../types').UserRole;
   label: string;
   createdBy: string;
   createdAt: number;
@@ -789,10 +882,10 @@ export interface Invitation {
 }
 
 export const invitationsApi = {
-  async create(role: string, label?: string, expiresIn?: number): Promise<Invitation> {
+  async create(groupId: string, label?: string, expiresIn?: number): Promise<Invitation> {
     return apiRequest('/api/invitations/create', {
       method: 'POST',
-      body: JSON.stringify({ role, label: label ?? '', expiresIn }),
+      body: JSON.stringify({ groupId, label: label ?? '', expiresIn }),
     });
   },
 
@@ -814,7 +907,14 @@ export const invitationsApi = {
     });
   },
 
-  async validate(token: string): Promise<{ valid: boolean; role?: string; label?: string; error?: string }> {
+  async validate(token: string): Promise<{
+    valid: boolean;
+    groupId?: string;
+    groupName?: string;
+    role?: string;
+    label?: string;
+    error?: string;
+  }> {
     return apiRequest(`/api/invitations/validate/${encodeURIComponent(token)}`);
   },
 
