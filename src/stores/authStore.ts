@@ -4,6 +4,7 @@ import { useCharacterStore } from './characterStore';
 import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
 import { useWorldInfoStore } from './worldInfoStore';
+import { useThemeStore } from './themeStore';
 import type { UserRole, Permission } from '../types';
 
 interface CurrentUser {
@@ -61,6 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           },
           isLoading: false,
         });
+        useThemeStore.getState().fetchTheme();
       } else {
         set({ isAuthenticated: false, currentUser: null, isLoading: false });
       }
@@ -130,6 +132,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           : { handle, name: handle, role: 'end_user' },
         isLoading: false,
       });
+      useThemeStore.getState().fetchTheme();
       return true;
     } catch (error) {
       set({
