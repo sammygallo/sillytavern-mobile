@@ -9,6 +9,11 @@ dist/
 .env.local
 .env.*.local
 
+# Local docker compose overrides (host-specific port bindings, dev tweaks, etc.)
+# The production droplet uses this to bind frontend to 127.0.0.1:8080.
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # Editor directories and files
 .idea/
 .vscode/
