@@ -25,6 +25,7 @@ import {
   BUILTIN_CATALOG,
   type CatalogProvider,
   type ProviderCategory,
+  type UserProvider,
 } from '../../api/providerCatalog';
 import { InstallProviderFromUrlModal } from './InstallProviderFromUrlModal';
 
@@ -134,7 +135,7 @@ function UserProviderCard({
   isActive,
   onDelete,
 }: {
-  provider: ReturnType<typeof useCustomProviderStore>['list'][number];
+  provider: UserProvider;
   isActive: boolean;
   onDelete: () => void;
 }) {
