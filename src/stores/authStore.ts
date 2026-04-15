@@ -3,6 +3,7 @@ import { api, clearCsrfToken, type UserInfo } from '../api/client';
 import { useCharacterStore } from './characterStore';
 import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
+import { useWorldInfoStore } from './worldInfoStore';
 import type { UserRole, Permission } from '../types';
 
 interface CurrentUser {
@@ -47,6 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await api.getCurrentUser();
       if (user) {
+        useWorldInfoStore.getState().initForUser(user.handle);
         set({
           isAuthenticated: true,
           currentUser: {
@@ -91,6 +93,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const result = await api.register(handle, name, password);
       // After successful registration, log the user in
       const loginResult = await api.login(result.handle, password);
+      useWorldInfoStore.getState().initForUser(loginResult.handle);
       set({
         isAuthenticated: true,
         currentUser: { handle: loginResult.handle, name, role: 'end_user' },
@@ -112,6 +115,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api.login(handle, password);
       // Fetch real user data so role, permissions, and display name are correct.
       const user = await api.getCurrentUser();
+      useWorldInfoStore.getState().initForUser(user?.handle ?? handle);
       set({
         isAuthenticated: true,
         currentUser: user
@@ -174,6 +178,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: null,
         successMessage: null,
       });
+      useWorldInfoStore.getState().resetUser();
 
       // Clear persisted localStorage data
       localStorage.removeItem('sillytavern_group_chats');

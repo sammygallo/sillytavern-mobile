@@ -93,6 +93,15 @@ const MAX_RECURSION_KEY = 'sillytavern_worldinfo_max_recursion_v1';
 const TOKEN_BUDGET_KEY = 'sillytavern_worldinfo_token_budget_v1';
 const WI_TIMERS_KEY = 'sillytavern_wi_timers_v1';
 
+// Module-level handle tracking so save functions stay signature-compatible.
+// Set by initForUser, cleared by resetUser.
+let _currentHandle: string | null = null;
+
+function scopedKey(base: string, handle?: string | null): string {
+  const h = handle !== undefined ? handle : _currentHandle;
+  return h ? `${base}_${h}` : base;
+}
+
 const DEFAULT_SCAN_DEPTH = 4;
 const DEFAULT_MAX_RECURSION = 3;
 const DEFAULT_TOKEN_BUDGET = 1024;
@@ -126,24 +135,41 @@ export const DEFAULT_ENTRY: Omit<
   delay: 0,
 };
 
-function loadBooks(): WorldInfoBook[] {
+function parseBooks(raw: string): WorldInfoBook[] {
+  const list = JSON.parse(raw) as WorldInfoBook[];
+  // Backfill fields added after initial release so old stored data works.
+  return list.map((b) => ({
+    ...b,
+    ownerCharacterAvatar:
+      typeof b.ownerCharacterAvatar === 'string'
+        ? b.ownerCharacterAvatar
+        : null,
+    entries: b.entries.map((e) => ({
+      ...e,
+      sticky: e.sticky ?? 0,
+      cooldown: e.cooldown ?? 0,
+      delay: e.delay ?? 0,
+    })),
+  }));
+}
+
+function loadBooks(handle?: string | null): WorldInfoBook[] {
+  const h = handle !== undefined ? handle : _currentHandle;
   try {
-    const raw = localStorage.getItem(BOOKS_KEY);
-    const list = raw ? (JSON.parse(raw) as WorldInfoBook[]) : [];
-    // Backfill fields added after initial release so old stored data works.
-    return list.map((b) => ({
-      ...b,
-      ownerCharacterAvatar:
-        typeof b.ownerCharacterAvatar === 'string'
-          ? b.ownerCharacterAvatar
-          : null,
-      entries: b.entries.map((e) => ({
-        ...e,
-        sticky: e.sticky ?? 0,
-        cooldown: e.cooldown ?? 0,
-        delay: e.delay ?? 0,
-      })),
-    }));
+    const key = scopedKey(BOOKS_KEY, h);
+    const raw = localStorage.getItem(key);
+    if (raw) return parseBooks(raw);
+    // One-time migration: absorb the legacy unscoped key into the first user
+    // who logs in after upgrading. Anyone who logs in subsequently starts fresh.
+    if (h) {
+      const legacy = localStorage.getItem(BOOKS_KEY);
+      if (legacy) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(BOOKS_KEY);
+        return parseBooks(legacy);
+      }
+    }
+    return [];
   } catch {
     return [];
   }
@@ -151,16 +177,27 @@ function loadBooks(): WorldInfoBook[] {
 
 function saveBooks(books: WorldInfoBook[]) {
   try {
-    localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+    localStorage.setItem(scopedKey(BOOKS_KEY), JSON.stringify(books));
   } catch {
     // ignore quota/security errors
   }
 }
 
-function loadActiveBooks(): string[] {
+function loadActiveBooks(handle?: string | null): string[] {
+  const h = handle !== undefined ? handle : _currentHandle;
   try {
-    const raw = localStorage.getItem(ACTIVE_BOOKS_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    const key = scopedKey(ACTIVE_BOOKS_KEY, h);
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw) as string[];
+    if (h) {
+      const legacy = localStorage.getItem(ACTIVE_BOOKS_KEY);
+      if (legacy) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(ACTIVE_BOOKS_KEY);
+        return JSON.parse(legacy) as string[];
+      }
+    }
+    return [];
   } catch {
     return [];
   }
@@ -168,15 +205,16 @@ function loadActiveBooks(): string[] {
 
 function saveActiveBooks(ids: string[]) {
   try {
-    localStorage.setItem(ACTIVE_BOOKS_KEY, JSON.stringify(ids));
+    localStorage.setItem(scopedKey(ACTIVE_BOOKS_KEY), JSON.stringify(ids));
   } catch {
     // ignore
   }
 }
 
-function loadScanDepth(): number {
+function loadScanDepth(handle?: string | null): number {
+  const h = handle !== undefined ? handle : _currentHandle;
   try {
-    const raw = localStorage.getItem(SCAN_DEPTH_KEY);
+    const raw = localStorage.getItem(scopedKey(SCAN_DEPTH_KEY, h));
     const n = raw ? parseInt(raw, 10) : DEFAULT_SCAN_DEPTH;
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_SCAN_DEPTH;
   } catch {
@@ -186,15 +224,16 @@ function loadScanDepth(): number {
 
 function saveScanDepth(depth: number) {
   try {
-    localStorage.setItem(SCAN_DEPTH_KEY, String(depth));
+    localStorage.setItem(scopedKey(SCAN_DEPTH_KEY), String(depth));
   } catch {
     // ignore
   }
 }
 
-function loadMaxRecursion(): number {
+function loadMaxRecursion(handle?: string | null): number {
+  const h = handle !== undefined ? handle : _currentHandle;
   try {
-    const raw = localStorage.getItem(MAX_RECURSION_KEY);
+    const raw = localStorage.getItem(scopedKey(MAX_RECURSION_KEY, h));
     const n = raw !== null ? parseInt(raw, 10) : DEFAULT_MAX_RECURSION;
     return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MAX_RECURSION;
   } catch {
@@ -204,15 +243,16 @@ function loadMaxRecursion(): number {
 
 function saveMaxRecursion(steps: number) {
   try {
-    localStorage.setItem(MAX_RECURSION_KEY, String(steps));
+    localStorage.setItem(scopedKey(MAX_RECURSION_KEY), String(steps));
   } catch {
     // ignore
   }
 }
 
-function loadTokenBudget(): number {
+function loadTokenBudget(handle?: string | null): number {
+  const h = handle !== undefined ? handle : _currentHandle;
   try {
-    const raw = localStorage.getItem(TOKEN_BUDGET_KEY);
+    const raw = localStorage.getItem(scopedKey(TOKEN_BUDGET_KEY, h));
     const n = raw !== null ? parseInt(raw, 10) : DEFAULT_TOKEN_BUDGET;
     return Number.isFinite(n) && n >= 0 ? n : DEFAULT_TOKEN_BUDGET;
   } catch {
@@ -222,7 +262,7 @@ function loadTokenBudget(): number {
 
 function saveTokenBudget(budget: number) {
   try {
-    localStorage.setItem(TOKEN_BUDGET_KEY, String(budget));
+    localStorage.setItem(scopedKey(TOKEN_BUDGET_KEY), String(budget));
   } catch {
     // ignore
   }
@@ -1008,14 +1048,20 @@ interface WorldInfoState {
   deleteCharacterBook: (ownerAvatar: string) => void;
 
   clearError: () => void;
+
+  // Lifecycle: call on login/checkAuth to load the user's books, and on logout
+  // to clear in-memory state so one user's books don't bleed into another's.
+  initForUser: (handle: string) => void;
+  resetUser: () => void;
 }
 
 export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
-  books: loadBooks(),
-  activeBookIds: loadActiveBooks(),
-  scanDepth: loadScanDepth(),
-  maxRecursionSteps: loadMaxRecursion(),
-  tokenBudget: loadTokenBudget(),
+  // Start empty; populated by initForUser once the authenticated user is known.
+  books: [],
+  activeBookIds: [],
+  scanDepth: DEFAULT_SCAN_DEPTH,
+  maxRecursionSteps: DEFAULT_MAX_RECURSION,
+  tokenBudget: DEFAULT_TOKEN_BUDGET,
   error: null,
 
   createBook: (name) => {
@@ -1256,4 +1302,28 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  initForUser: (handle) => {
+    _currentHandle = handle;
+    set({
+      books: loadBooks(handle),
+      activeBookIds: loadActiveBooks(handle),
+      scanDepth: loadScanDepth(handle),
+      maxRecursionSteps: loadMaxRecursion(handle),
+      tokenBudget: loadTokenBudget(handle),
+      error: null,
+    });
+  },
+
+  resetUser: () => {
+    _currentHandle = null;
+    set({
+      books: [],
+      activeBookIds: [],
+      scanDepth: DEFAULT_SCAN_DEPTH,
+      maxRecursionSteps: DEFAULT_MAX_RECURSION,
+      tokenBudget: DEFAULT_TOKEN_BUDGET,
+      error: null,
+    });
+  },
 }));
