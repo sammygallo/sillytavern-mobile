@@ -37,7 +37,6 @@ import {
 import {
   THEME_PRESETS,
   PRESET_SWATCHES,
-  type ThemeMode,
   type ThemePreset,
 } from '../../hooks/themePreferences';
 import { useThemeStore } from '../../stores/themeStore';
