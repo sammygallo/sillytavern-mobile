@@ -4,6 +4,9 @@ import { MessageSquare, Users, Settings2, Pencil, Square, Search, ChevronUp, Che
 import { showToastGlobal } from '../ui/Toast';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
+import { usePersonaStore } from '../../stores/personaStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { processMacros, type MacroContext } from '../../utils/macros';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
@@ -168,6 +171,25 @@ export function ChatView() {
     () => messages.some((m) => !m.isUser && !m.isSystem),
     [messages]
   );
+
+  // Build a macro context used to resolve {{user}}/{{char}}/etc. at render time.
+  const activeModel = useSettingsStore((s) => s.activeModel);
+  const displayPersona = usePersonaStore((s) =>
+    s.getPersonaForContext(selectedCharacter?.avatar)
+  );
+  const displayMacroCtx = useMemo<MacroContext>(() => {
+    const userName = displayPersona?.name || 'User';
+    return {
+      charName: selectedCharacter?.name || '',
+      userName,
+      personaName: userName,
+      personaDescription: displayPersona?.description || '',
+      characterDescription: selectedCharacter?.description || (selectedCharacter as any)?.data?.description || '',
+      characterPersonality: selectedCharacter?.personality || (selectedCharacter as any)?.data?.personality || '',
+      characterScenario: selectedCharacter?.scenario || (selectedCharacter as any)?.data?.scenario || '',
+      model: activeModel,
+    };
+  }, [selectedCharacter, displayPersona, activeModel]);
 
   // Phase 9.1: IDs of messages matching the search query (excludes system messages)
   const searchMatchIds = useMemo(() => {
@@ -1127,7 +1149,7 @@ export function ChatView() {
                   <ChatMessage
                     messageId={message.id}
                     name={message.name}
-                    content={message.content}
+                    content={processMacros(message.content, displayMacroCtx)}
                     isUser={message.isUser}
                     isSystem={message.isSystem}
                     avatar={messageAvatar}
