@@ -1,6 +1,38 @@
 import { create } from 'zustand';
 import { settingsApi, PROVIDERS, type SecretsResponse } from '../api/client';
 
+// Per-provider field inside oai_settings used to store the active model.
+// Native-routed providers each have their own slot; adding a new native
+// provider to the catalog means adding an entry here so the model persists
+// across page reloads.
+const PROVIDER_MODEL_FIELD: Record<string, string> = {
+  openai: 'openai_model',
+  claude: 'claude_model',
+  makersuite: 'google_model',
+  vertexai: 'vertexai_model',
+  mistralai: 'mistralai_model',
+  groq: 'groq_model',
+  openrouter: 'openrouter_model',
+  deepseek: 'deepseek_model',
+  cohere: 'cohere_model',
+  perplexity: 'perplexity_model',
+  xai: 'xai_model',
+  ai21: 'ai21_model',
+  '01ai': 'zerooneai_model',
+  moonshot: 'moonshot_model',
+  zhipu: 'zhipu_model',
+  nanogpt: 'nanogpt_model',
+  blockentropy: 'blockentropy_model',
+  pollinations: 'pollinations_model',
+  aimlapi: 'aimlapi_model',
+  electronhub: 'electronhub_model',
+  custom: 'custom_model',
+};
+
+function modelFieldFor(provider: string): string {
+  return PROVIDER_MODEL_FIELD[provider] ?? `${provider}_model`;
+}
+
 interface SettingsState {
   secrets: SecretsResponse;
   activeProvider: string;
@@ -77,23 +109,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const oaiSettings = (settings.oai_settings as Record<string, unknown>) || {};
       const chatCompletionSource = (oaiSettings.chat_completion_source as string) || 'openai';
 
-      // Try to find active model based on provider
-      let model = 'gpt-4o';
-      if (chatCompletionSource === 'openai') {
-        model = (oaiSettings.openai_model as string) || 'gpt-4o';
-      } else if (chatCompletionSource === 'claude') {
-        model = (oaiSettings.claude_model as string) || 'claude-3-5-sonnet-20241022';
-      } else if (chatCompletionSource === 'makersuite') {
-        model = (oaiSettings.google_model as string) || 'gemini-1.5-pro';
-      } else if (chatCompletionSource === 'custom') {
-        model = (oaiSettings.custom_model as string) || '';
-      } else if (chatCompletionSource === 'deepseek') {
-        model = (oaiSettings.deepseek_model as string) || 'deepseek-chat';
-      } else if (chatCompletionSource === 'cohere') {
-        model = (oaiSettings.cohere_model as string) || 'command-r-plus';
-      } else if (chatCompletionSource === 'perplexity') {
-        model = (oaiSettings.perplexity_model as string) || 'sonar';
-      }
+      // Try to find active model based on provider. Uses the generic
+      // provider→oai_settings-field map so new native providers don't need
+      // their own branch here.
+      const modelField = modelFieldFor(chatCompletionSource);
+      const providerInfo = PROVIDERS.find((p) => p.id === chatCompletionSource);
+      const fallbackModel = providerInfo?.models[0] || 'gpt-4o';
+      const model = (oaiSettings[modelField] as string) || fallbackModel;
 
       const customUrl = (oaiSettings.custom_url as string) || '';
 
@@ -192,21 +214,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const oaiSettings = (settings.oai_settings as Record<string, unknown>) || {};
       oaiSettings.chat_completion_source = provider;
 
-      // Also set the appropriate model for this provider
-      if (provider === 'openai') {
-        oaiSettings.openai_model = defaultModel;
-      } else if (provider === 'claude') {
-        oaiSettings.claude_model = defaultModel;
-      } else if (provider === 'makersuite') {
-        oaiSettings.google_model = defaultModel;
-      } else if (provider === 'deepseek') {
-        oaiSettings.deepseek_model = defaultModel;
-      } else if (provider === 'cohere') {
-        oaiSettings.cohere_model = defaultModel;
-      } else if (provider === 'perplexity') {
-        oaiSettings.perplexity_model = defaultModel;
+      // Also set the appropriate model for this provider. For 'custom',
+      // custom_url / custom_model are managed by setCustomUrl / setActiveModel
+      // (or customProviderStore.activate) separately.
+      if (provider !== 'custom') {
+        oaiSettings[modelFieldFor(provider)] = defaultModel;
+        // Switching to a native provider clears the "which user provider is
+        // currently in the custom slot" marker — it's no longer active.
+        oaiSettings.stm_active_custom_provider = null;
       }
-      // 'custom': custom_url / custom_model are managed by setCustomUrl / setActiveModel separately.
 
       settings.oai_settings = oaiSettings;
 
@@ -243,25 +259,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         }
       }
 
-      // Update oai_settings with new model
+      // Update oai_settings with new model — generic mapping covers all
+      // native providers + 'custom'.
       const oaiSettings = (settings.oai_settings as Record<string, unknown>) || {};
-
-      if (activeProvider === 'openai') {
-        oaiSettings.openai_model = model;
-      } else if (activeProvider === 'claude') {
-        oaiSettings.claude_model = model;
-      } else if (activeProvider === 'makersuite') {
-        oaiSettings.google_model = model;
-      } else if (activeProvider === 'custom') {
-        oaiSettings.custom_model = model;
-      } else if (activeProvider === 'deepseek') {
-        oaiSettings.deepseek_model = model;
-      } else if (activeProvider === 'cohere') {
-        oaiSettings.cohere_model = model;
-      } else if (activeProvider === 'perplexity') {
-        oaiSettings.perplexity_model = model;
-      }
-
+      oaiSettings[modelFieldFor(activeProvider)] = model;
       settings.oai_settings = oaiSettings;
 
       await settingsApi.saveSettings(settings);

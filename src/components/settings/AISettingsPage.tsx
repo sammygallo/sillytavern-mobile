@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Eye, EyeOff, Globe, Key, Loader2, Plug, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Eye, EyeOff, Globe, Key, LayoutGrid, Loader2, Plug, Server, Trash2 } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
 import { useGenerationStore } from '../../stores/generationStore';
+import { useCustomProviderStore } from '../../stores/customProviderStore';
 import { PROVIDERS, type SecretState } from '../../api/client';
+import { probeProviderModels } from '../../api/providerProbe';
 import { useAuthStore } from '../../stores/authStore';
 import { hasMinRole } from '../../utils/permissions';
 import { Button, Input } from '../ui';
+import { showToastGlobal } from '../ui/Toast';
 
 type TestState =
   | { kind: 'idle' }
@@ -24,27 +27,63 @@ const LOCAL_PRESETS: LocalPreset[] = [
   { name: 'TabbyAPI', url: 'http://localhost:5000/v1' },
 ];
 
-async function testLocalEndpoint(
-  url: string
-): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
-  const normalized = url.replace(/\/+$/, '');
-  try {
-    const res = await fetch(`${normalized}/models`, { method: 'GET', headers: { Accept: 'application/json' } });
-    if (!res.ok) {
-      if (res.status === 404) return { ok: false, error: "Endpoint returned 404. Did you include '/v1' at the end of the URL?" };
-      return { ok: false, error: `Endpoint returned HTTP ${res.status}` };
-    }
-    const data = (await res.json().catch(() => null)) as { data?: Array<{ id?: string }> } | null;
-    const models = Array.isArray(data?.data) ? data.data.map((m) => m.id).filter((x): x is string => typeof x === 'string') : [];
-    return { ok: true, models };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `Couldn't reach the endpoint (${msg}). Is your local server running? CORS may also block browser access.` };
-  }
+// Inline key-entry field rendered below the Active Provider grid when a user
+// provider is active. Kept tiny so switching providers is a two-click flow:
+// click the chip → re-enter the key.
+function UserProviderKeyInput({
+  providerId,
+  onSave,
+}: {
+  providerId: string;
+  onSave: (key: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState('');
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Reset on provider change
+  useEffect(() => { setValue(''); setShow(false); }, [providerId]);
+
+  return (
+    <div className="flex gap-2">
+      <div className="flex-1 relative">
+        <Input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Re-enter API key..."
+          className="pr-10"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+        >
+          {show ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+      <Button
+        onClick={async () => {
+          if (!value.trim()) return;
+          setSaving(true);
+          try {
+            await onSave(value.trim());
+            setValue('');
+          } finally {
+            setSaving(false);
+          }
+        }}
+        disabled={!value.trim() || saving}
+        size="sm"
+        className="shrink-0"
+      >
+        {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
+      </Button>
+    </div>
+  );
 }
 
 export function AISettingsPage(_props?: { params?: Record<string, string> }) {
-  const { goBack } = useSettingsPanelStore();
+  const { goBack, pushPage } = useSettingsPanelStore();
   const {
     secrets, globalSecrets, globalSharingEnabled, globalSharingSupported,
     activeProvider, activeModel, customUrl,
@@ -55,6 +94,14 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   } = useSettingsStore();
   const userRole = useAuthStore((s) => s.currentUser?.role);
   const isOwner = hasMinRole(userRole, 'owner');
+  const canManageProviders = hasMinRole(userRole, 'admin');
+
+  // User-added (custom-routed) providers — merged into the Active Provider grid.
+  const userProviders = useCustomProviderStore((s) => s.list);
+  const activeUserProviderId = useCustomProviderStore((s) => s.activeId);
+  const fetchUserProviders = useCustomProviderStore((s) => s.fetch);
+  const activateUserProvider = useCustomProviderStore((s) => s.activate);
+  const setUserProviderApiKey = useCustomProviderStore((s) => s.setApiKey);
 
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
@@ -75,7 +122,12 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
 
-  useEffect(() => { fetchSecrets(); fetchSettings(); if (isOwner) fetchGlobalSecrets(); }, [fetchSecrets, fetchSettings, fetchGlobalSecrets, isOwner]);
+  useEffect(() => {
+    fetchSecrets();
+    fetchSettings();
+    fetchUserProviders();
+    if (isOwner) fetchGlobalSecrets();
+  }, [fetchSecrets, fetchSettings, fetchUserProviders, fetchGlobalSecrets, isOwner]);
   useEffect(() => {
     if (successMessage || error) {
       const timer = setTimeout(clearMessages, 3000);
@@ -149,11 +201,21 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
 
         {/* Active Provider */}
         <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
-          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">Active Provider</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Active Provider</h2>
+            <button
+              type="button"
+              onClick={() => pushPage('ai-catalog')}
+              className="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+            >
+              <LayoutGrid size={12} />
+              Browse catalog
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {PROVIDERS.map((provider) => {
               const configured = isProviderConfigured(provider);
-              const isActive = activeProvider === provider.id;
+              const isActive = activeProvider === provider.id && !(provider.id === 'custom' && activeUserProviderId);
               return (
                 <button
                   key={provider.id}
@@ -172,12 +234,64 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                 </button>
               );
             })}
+            {/* User-added providers appear alongside the built-ins */}
+            {userProviders.map((up) => {
+              const isActive = activeProvider === 'custom' && activeUserProviderId === up.id;
+              return (
+                <button
+                  key={up.id}
+                  onClick={async () => {
+                    try {
+                      await activateUserProvider(up.id);
+                      await fetchSettings();
+                    } catch (e) {
+                      showToastGlobal(e instanceof Error ? e.message : 'Activation failed', 'error');
+                    }
+                  }}
+                  disabled={isSaving}
+                  className={`relative p-3 rounded-lg text-left transition-all ${
+                    isActive
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'bg-[var(--color-bg-tertiary)] hover:bg-zinc-700'
+                  }`}
+                  title={up.baseUrl}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Server size={12} className="flex-shrink-0 opacity-70" />
+                    <span className="text-sm font-medium truncate">{up.name}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
           {activeProvider !== 'custom' && !hasApiKey(currentProvider?.secretKey || '') && (
             <p className="mt-2 text-xs text-[var(--color-text-secondary)]">Configure an API key below to use this provider</p>
           )}
-          {activeProvider === 'custom' && !customUrl && (
+          {activeProvider === 'custom' && !activeUserProviderId && !customUrl && (
             <p className="mt-2 text-xs text-[var(--color-text-secondary)]">Enter the endpoint URL below to use a local or custom model server</p>
+          )}
+          {activeProvider === 'custom' && activeUserProviderId && (
+            <div className="mt-3 p-2 rounded-lg bg-[var(--color-bg-tertiary)] space-y-2">
+              <p className="text-[10px] text-[var(--color-text-secondary)]">
+                Active user provider. Re-save the API key here if you switched from another custom provider.
+              </p>
+              <UserProviderKeyInput
+                providerId={activeUserProviderId}
+                onSave={async (key) => {
+                  try {
+                    await setUserProviderApiKey(activeUserProviderId, key);
+                    showToastGlobal('API key saved', 'success');
+                  } catch (e) {
+                    showToastGlobal(e instanceof Error ? e.message : 'Save failed', 'error');
+                  }
+                }}
+              />
+            </div>
+          )}
+          {canManageProviders && userProviders.length === 0 && (
+            <p className="mt-2 text-[10px] text-[var(--color-text-secondary)]">
+              Add more providers from the catalog to expand this list.
+            </p>
           )}
         </section>
 
@@ -216,7 +330,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                     const url = customUrlInput.trim();
                     if (!url) return;
                     setTestState({ kind: 'pending' });
-                    const result = await testLocalEndpoint(url);
+                    const result = await probeProviderModels(url);
                     if (result.ok) { setTestState({ kind: 'success', count: result.models.length }); setDiscoveredModels(result.models); }
                     else { setTestState({ kind: 'error', message: result.error }); setDiscoveredModels([]); }
                   }}

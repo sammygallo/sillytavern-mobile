@@ -1,0 +1,589 @@
+// Provider Catalog — central registry of AI providers the app knows about.
+//
+// Two routing modes:
+//   - nativeRouted: true  → backend has a dedicated chat_completion_source for
+//                            this provider. Settings go in the provider's own
+//                            oai_settings fields. Uses the provider's own
+//                            SECRET_KEYS entry.
+//   - nativeRouted: false → routes via chat_completion_source: 'custom'. The
+//                            baseUrl + model + API key are swapped into the
+//                            custom_url / custom_model / api_key_custom slot
+//                            on activation. Used for OpenAI-compatible
+//                            providers (Together, Fireworks, Hyperbolic, ...)
+//                            and local servers (Ollama, LM Studio, ...).
+
+export type ProviderKind = 'chat-completion' | 'text-completion';
+
+export type ProviderCategory =
+  | 'frontier' // OpenAI, Claude, Gemini, etc.
+  | 'open' // OpenRouter-style aggregators with many models
+  | 'aggregator' // Together, Fireworks, Hyperbolic — hosted open-source models
+  | 'specialty' // Cohere, Perplexity, Mistral
+  | 'local'; // Ollama, LM Studio, KoboldCpp, llama.cpp
+
+export interface CatalogProvider {
+  /** Stable id. For nativeRouted providers, matches chat_completion_source. */
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  category: ProviderCategory;
+  nativeRouted: boolean;
+  /** For OpenAI-compat providers: the default base URL users can override. */
+  baseUrl?: string;
+  /** Secret key used by the backend. For user providers, backed by a dedicated slot. */
+  secretKey: string;
+  /** Seed model list (may be refined by a /models probe). */
+  defaultModels: readonly string[];
+  /** Relative path appended to baseUrl for model listing. Defaults to "/models". */
+  modelListEndpoint?: string;
+  docsUrl?: string;
+  description?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in catalog
+// ---------------------------------------------------------------------------
+
+/**
+ * Native-routed providers. The SillyTavern backend has dedicated
+ * chat_completion_source handling for each of these; the app configures them
+ * via provider-specific oai_settings fields and a provider-specific secret key.
+ */
+export const NATIVE_PROVIDERS: readonly CatalogProvider[] = [
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    kind: 'chat-completion',
+    category: 'frontier',
+    nativeRouted: true,
+    secretKey: 'api_key_openai',
+    defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+    docsUrl: 'https://platform.openai.com/docs/api-reference',
+    description: 'GPT-4o, GPT-4 Turbo, and the rest of the OpenAI lineup.',
+  },
+  {
+    id: 'claude',
+    name: 'Claude',
+    kind: 'chat-completion',
+    category: 'frontier',
+    nativeRouted: true,
+    secretKey: 'api_key_claude',
+    defaultModels: [
+      'claude-opus-4-5',
+      'claude-sonnet-4-5',
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022',
+      'claude-3-opus-20240229',
+    ],
+    docsUrl: 'https://docs.anthropic.com/en/api/messages',
+    description: "Anthropic's Claude family — Opus, Sonnet, Haiku.",
+  },
+  {
+    id: 'makersuite',
+    name: 'Google Gemini',
+    kind: 'chat-completion',
+    category: 'frontier',
+    nativeRouted: true,
+    secretKey: 'api_key_makersuite',
+    defaultModels: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    docsUrl: 'https://ai.google.dev/gemini-api/docs',
+    description: "Google's Gemini models via AI Studio.",
+  },
+  {
+    id: 'vertexai',
+    name: 'Vertex AI',
+    kind: 'chat-completion',
+    category: 'frontier',
+    nativeRouted: true,
+    secretKey: 'api_key_vertexai',
+    defaultModels: ['gemini-2.0-flash', 'gemini-1.5-pro'],
+    docsUrl: 'https://cloud.google.com/vertex-ai/docs',
+    description: 'Google Cloud Vertex AI — Gemini with GCP auth.',
+  },
+  {
+    id: 'mistralai',
+    name: 'Mistral AI',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_mistralai',
+    defaultModels: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+    docsUrl: 'https://docs.mistral.ai/api/',
+    description: "Mistral's hosted models — Large, Medium, Small.",
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_groq',
+    defaultModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+    docsUrl: 'https://console.groq.com/docs/api-reference',
+    description: 'Ultra-fast LPU inference for Llama, Mixtral, and more.',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    kind: 'chat-completion',
+    category: 'open',
+    nativeRouted: true,
+    secretKey: 'api_key_openrouter',
+    defaultModels: [
+      'openai/gpt-4o',
+      'anthropic/claude-sonnet-4',
+      'google/gemini-pro-1.5',
+      'meta-llama/llama-3.3-70b-instruct',
+    ],
+    docsUrl: 'https://openrouter.ai/docs',
+    description: 'One key, 300+ models from every major provider.',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_deepseek',
+    defaultModels: ['deepseek-chat', 'deepseek-reasoner'],
+    docsUrl: 'https://api-docs.deepseek.com/',
+    description: 'DeepSeek V3 + R1 reasoner, direct from the source.',
+  },
+  {
+    id: 'cohere',
+    name: 'Cohere',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_cohere',
+    defaultModels: ['command-r-plus', 'command-r', 'command-r-08-2024'],
+    docsUrl: 'https://docs.cohere.com/reference/chat',
+    description: 'Command R / R+ models with built-in retrieval.',
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_perplexity',
+    defaultModels: ['sonar', 'sonar-pro', 'llama-3.1-sonar-large-128k-online'],
+    docsUrl: 'https://docs.perplexity.ai/',
+    description: 'Sonar models with live web search built in.',
+  },
+  {
+    id: 'xai',
+    name: 'xAI (Grok)',
+    kind: 'chat-completion',
+    category: 'frontier',
+    nativeRouted: true,
+    secretKey: 'api_key_xai',
+    defaultModels: ['grok-3', 'grok-3-mini', 'grok-2-1212', 'grok-beta'],
+    docsUrl: 'https://docs.x.ai/',
+    description: "Elon's Grok 3 / 2 models from xAI.",
+  },
+  {
+    id: 'ai21',
+    name: 'AI21',
+    kind: 'chat-completion',
+    category: 'specialty',
+    nativeRouted: true,
+    secretKey: 'api_key_ai21',
+    defaultModels: ['jamba-1.5-large', 'jamba-1.5-mini'],
+    docsUrl: 'https://docs.ai21.com/',
+    description: 'Jamba hybrid SSM-Transformer models.',
+  },
+  {
+    id: '01ai',
+    name: '01.AI (Yi)',
+    kind: 'chat-completion',
+    category: 'open',
+    nativeRouted: true,
+    secretKey: 'api_key_01ai',
+    defaultModels: ['yi-large', 'yi-medium', 'yi-spark'],
+    docsUrl: 'https://platform.01.ai/docs',
+    description: 'Yi models from 01.AI — strong at long context.',
+  },
+  {
+    id: 'moonshot',
+    name: 'Moonshot (Kimi)',
+    kind: 'chat-completion',
+    category: 'open',
+    nativeRouted: true,
+    secretKey: 'api_key_moonshot',
+    defaultModels: ['kimi-k2', 'moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k'],
+    docsUrl: 'https://platform.moonshot.ai/docs',
+    description: 'Kimi K2 and Moonshot V1 long-context models.',
+  },
+  {
+    id: 'zhipu',
+    name: 'Zhipu (GLM)',
+    kind: 'chat-completion',
+    category: 'open',
+    nativeRouted: true,
+    secretKey: 'api_key_zhipu',
+    defaultModels: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'],
+    docsUrl: 'https://open.bigmodel.cn/dev/api',
+    description: 'GLM-4 family from Zhipu AI.',
+  },
+  {
+    id: 'nanogpt',
+    name: 'NanoGPT',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: true,
+    secretKey: 'api_key_nanogpt',
+    defaultModels: ['chatgpt-4o-latest', 'claude-sonnet-4', 'gemini-2.0-flash'],
+    docsUrl: 'https://nano-gpt.com/api',
+    description: 'Pay-as-you-go crypto-friendly proxy for many models.',
+  },
+  {
+    id: 'blockentropy',
+    name: 'Block Entropy',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: true,
+    secretKey: 'api_key_blockentropy',
+    defaultModels: ['be-70b-4k-base', 'be-8b-4k-base'],
+    docsUrl: 'https://blockentropy.ai/',
+    description: 'Uncensored hosted open-source models.',
+  },
+  {
+    id: 'pollinations',
+    name: 'Pollinations',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: true,
+    secretKey: 'api_key_pollinations',
+    defaultModels: ['openai', 'mistral', 'deepseek'],
+    docsUrl: 'https://pollinations.ai/',
+    description: 'Free AI text + image inference gateway.',
+  },
+  {
+    id: 'aimlapi',
+    name: 'AI/ML API',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: true,
+    secretKey: 'api_key_aimlapi',
+    defaultModels: ['gpt-4o', 'claude-3-5-sonnet-20241022', 'deepseek-chat'],
+    docsUrl: 'https://docs.aimlapi.com/',
+    description: '200+ models through a single OpenAI-compatible key.',
+  },
+  {
+    id: 'electronhub',
+    name: 'Electron Hub',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: true,
+    secretKey: 'api_key_electronhub',
+    defaultModels: ['gpt-4o', 'claude-3-5-sonnet', 'llama-3.1-405b'],
+    docsUrl: 'https://www.electronhub.top/',
+    description: 'Aggregated proxy for frontier and open models.',
+  },
+];
+
+/**
+ * OpenAI-compatible aggregators. Route via chat_completion_source: 'custom'.
+ * These appear in the catalog as one-click installs that prefill the custom
+ * endpoint fields with a known baseUrl + seed model list.
+ */
+export const OPENAI_COMPAT_PROVIDERS: readonly CatalogProvider[] = [
+  {
+    id: 'togetherai',
+    name: 'Together AI',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.together.xyz/v1',
+    secretKey: 'api_key_custom_togetherai',
+    defaultModels: [
+      'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+      'deepseek-ai/DeepSeek-V3',
+    ],
+    docsUrl: 'https://docs.together.ai/',
+    description: 'Hosted Llama, DeepSeek, Mixtral, and more.',
+  },
+  {
+    id: 'fireworks',
+    name: 'Fireworks AI',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    secretKey: 'api_key_custom_fireworks',
+    defaultModels: [
+      'accounts/fireworks/models/llama-v3p3-70b-instruct',
+      'accounts/fireworks/models/deepseek-v3',
+    ],
+    docsUrl: 'https://docs.fireworks.ai/',
+    description: 'Fast serverless hosting for open-source models.',
+  },
+  {
+    id: 'hyperbolic',
+    name: 'Hyperbolic',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.hyperbolic.xyz/v1',
+    secretKey: 'api_key_custom_hyperbolic',
+    defaultModels: ['meta-llama/Meta-Llama-3.1-405B-Instruct', 'deepseek-ai/DeepSeek-V3'],
+    docsUrl: 'https://docs.hyperbolic.xyz/',
+    description: 'Cheap inference on large open-source models.',
+  },
+  {
+    id: 'chutes',
+    name: 'Chutes',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://llm.chutes.ai/v1',
+    secretKey: 'api_key_custom_chutes',
+    defaultModels: ['deepseek-ai/DeepSeek-V3', 'meta-llama/Llama-3.1-70B-Instruct'],
+    docsUrl: 'https://chutes.ai/',
+    description: 'Decentralized inference marketplace.',
+  },
+  {
+    id: 'sambanova',
+    name: 'SambaNova',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.sambanova.ai/v1',
+    secretKey: 'api_key_custom_sambanova',
+    defaultModels: ['Meta-Llama-3.1-405B-Instruct', 'Meta-Llama-3.1-70B-Instruct'],
+    docsUrl: 'https://docs.sambanova.ai/',
+    description: 'Extremely fast inference on RDU chips.',
+  },
+  {
+    id: 'cerebras',
+    name: 'Cerebras',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.cerebras.ai/v1',
+    secretKey: 'api_key_custom_cerebras',
+    defaultModels: ['llama3.3-70b', 'llama3.1-8b'],
+    docsUrl: 'https://inference-docs.cerebras.ai/',
+    description: 'Wafer-scale inference at thousands of tokens/sec.',
+  },
+  {
+    id: 'deepinfra',
+    name: 'DeepInfra',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.deepinfra.com/v1/openai',
+    secretKey: 'api_key_custom_deepinfra',
+    defaultModels: [
+      'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      'deepseek-ai/DeepSeek-V3',
+    ],
+    docsUrl: 'https://deepinfra.com/docs',
+    description: 'Cheap hosted inference for open-source models.',
+  },
+  {
+    id: 'infermatic',
+    name: 'InfermaticAI',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.totalgpt.ai/v1',
+    secretKey: 'api_key_custom_infermatic',
+    defaultModels: ['Infermatic-Llama-3.1-70B', 'Infermatic-Mixtral-8x22B'],
+    docsUrl: 'https://infermatic.ai/',
+    description: 'Subscription-priced OpenAI-compat proxy.',
+  },
+  {
+    id: 'featherless',
+    name: 'Featherless',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api.featherless.ai/v1',
+    secretKey: 'api_key_custom_featherless',
+    defaultModels: ['meta-llama/Meta-Llama-3.1-70B-Instruct'],
+    docsUrl: 'https://featherless.ai/',
+    description: 'Unlimited inference on 3000+ open models.',
+  },
+  {
+    id: 'mancer',
+    name: 'Mancer',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://neuro.mancer.tech/oai/v1',
+    secretKey: 'api_key_custom_mancer',
+    defaultModels: ['mancer/weaver', 'mythomax-l2-13b'],
+    docsUrl: 'https://mancer.tech/docs',
+    description: 'Uncensored roleplay-oriented hosted models.',
+  },
+  {
+    id: 'dreamgen',
+    name: 'DreamGen',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://dreamgen.com/api/openai/v1',
+    secretKey: 'api_key_custom_dreamgen',
+    defaultModels: ['lucid-v1-extended', 'opus-v1-xl'],
+    docsUrl: 'https://dreamgen.com/docs',
+    description: 'Hosted Opus/Lucid models tuned for story writing.',
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face Inference',
+    kind: 'chat-completion',
+    category: 'aggregator',
+    nativeRouted: false,
+    baseUrl: 'https://api-inference.huggingface.co/v1',
+    secretKey: 'api_key_custom_huggingface',
+    defaultModels: ['meta-llama/Meta-Llama-3.1-8B-Instruct'],
+    docsUrl: 'https://huggingface.co/docs/api-inference',
+    description: 'Serverless Inference API for Hugging Face models.',
+  },
+];
+
+/**
+ * Local / self-hosted servers. Same routing as OpenAI-compat (custom source),
+ * but grouped separately in the UI since they require a locally running server.
+ */
+export const LOCAL_PROVIDERS: readonly CatalogProvider[] = [
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:11434/v1',
+    secretKey: 'api_key_custom_ollama',
+    defaultModels: ['llama3.3', 'llama3.1', 'mistral', 'phi3'],
+    docsUrl: 'https://github.com/ollama/ollama/blob/main/docs/openai.md',
+    description: 'Run open-source models locally. Zero config.',
+  },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:1234/v1',
+    secretKey: 'api_key_custom_lmstudio',
+    defaultModels: [],
+    docsUrl: 'https://lmstudio.ai/docs',
+    description: 'GUI desktop app for running local LLMs.',
+  },
+  {
+    id: 'koboldcpp',
+    name: 'KoboldCpp',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:5001/v1',
+    secretKey: 'api_key_custom_koboldcpp',
+    defaultModels: [],
+    docsUrl: 'https://github.com/LostRuins/koboldcpp/wiki',
+    description: 'Single-file llama.cpp runner with OpenAI-compat API.',
+  },
+  {
+    id: 'llamacpp',
+    name: 'llama.cpp Server',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:8080/v1',
+    secretKey: 'api_key_custom_llamacpp',
+    defaultModels: [],
+    docsUrl: 'https://github.com/ggerganov/llama.cpp/tree/master/examples/server',
+    description: 'Official llama.cpp HTTP server.',
+  },
+  {
+    id: 'tabbyapi',
+    name: 'TabbyAPI',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:5000/v1',
+    secretKey: 'api_key_custom_tabbyapi',
+    defaultModels: [],
+    docsUrl: 'https://github.com/theroyallab/tabbyAPI',
+    description: 'ExLlamaV2 OpenAI-compatible server.',
+  },
+  {
+    id: 'ooba',
+    name: 'Text Generation WebUI',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:5000/v1',
+    secretKey: 'api_key_custom_ooba',
+    defaultModels: [],
+    docsUrl: 'https://github.com/oobabooga/text-generation-webui',
+    description: "Oobabooga's all-in-one local LLM UI.",
+  },
+  {
+    id: 'aphrodite',
+    name: 'Aphrodite',
+    kind: 'chat-completion',
+    category: 'local',
+    nativeRouted: false,
+    baseUrl: 'http://localhost:2242/v1',
+    secretKey: 'api_key_custom_aphrodite',
+    defaultModels: [],
+    docsUrl: 'https://github.com/PygmalionAI/aphrodite-engine',
+    description: 'vLLM-forked serving engine for open models.',
+  },
+];
+
+/** The complete built-in catalog. */
+export const BUILTIN_CATALOG: readonly CatalogProvider[] = [
+  ...NATIVE_PROVIDERS,
+  ...OPENAI_COMPAT_PROVIDERS,
+  ...LOCAL_PROVIDERS,
+];
+
+// ---------------------------------------------------------------------------
+// User-added providers
+// ---------------------------------------------------------------------------
+
+/**
+ * A user-added provider. Structurally the same as a CatalogProvider, but
+ * always non-native-routed (we can't add new native sources without changing
+ * the backend) and carries a timestamp so the catalog page can sort them.
+ */
+export interface UserProvider extends CatalogProvider {
+  nativeRouted: false;
+  baseUrl: string;
+  createdAt: number;
+  /** Optional — set by AI extraction to record the docs page used. */
+  sourceUrl?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function getCatalogProvider(id: string): CatalogProvider | undefined {
+  return BUILTIN_CATALOG.find((p) => p.id === id);
+}
+
+export function isNativeProvider(id: string): boolean {
+  return NATIVE_PROVIDERS.some((p) => p.id === id);
+}
+
+/** Build a stable secret key slot for a user provider. */
+export function userProviderSecretKey(id: string): string {
+  return `api_key_custom_${id.replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}`;
+}
+
+/** Generate a URL-safe id from a provider display name. */
+export function slugifyProviderName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+    || `provider-${Date.now()}`;
+}

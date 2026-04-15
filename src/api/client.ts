@@ -849,21 +849,39 @@ export const SECRET_KEYS = {
   COHERE: 'api_key_cohere',
   DEEPSEEK: 'api_key_deepseek',
   PERPLEXITY: 'api_key_perplexity',
+  // Phase 10.4 — additional native-routed providers added via the provider catalog.
+  XAI: 'api_key_xai',
+  AI21: 'api_key_ai21',
+  VERTEXAI: 'api_key_vertexai',
+  ZEROONEAI: 'api_key_01ai',
+  MOONSHOT: 'api_key_moonshot',
+  ZHIPU: 'api_key_zhipu',
+  NANOGPT: 'api_key_nanogpt',
+  BLOCKENTROPY: 'api_key_blockentropy',
+  POLLINATIONS: 'api_key_pollinations',
+  AIMLAPI: 'api_key_aimlapi',
+  ELECTRONHUB: 'api_key_electronhub',
+  // Used by the 'custom' chat_completion_source when a user-added provider is active.
+  CUSTOM: 'api_key_custom',
 } as const;
 
+// PROVIDERS is kept as a getter re-exported from providerCatalog so call sites
+// that iterate over `PROVIDERS` (e.g. the global-keys section in
+// AISettingsPage) see the full list of native-routed providers without
+// caring about the user-added ones. The `custom` entry is appended so the
+// existing "Custom / Local" selection path keeps working.
+//
+// For the full merged list (built-in catalog + user providers), import
+// BUILTIN_CATALOG from providerCatalog directly.
+import { NATIVE_PROVIDERS as CATALOG_NATIVE_PROVIDERS } from './providerCatalog';
+
 export const PROVIDERS = [
-  { id: 'openai', name: 'OpenAI', secretKey: SECRET_KEYS.OPENAI, models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'] },
-  { id: 'claude', name: 'Claude', secretKey: SECRET_KEYS.CLAUDE, models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'] },
-  { id: 'makersuite', name: 'Google Gemini', secretKey: SECRET_KEYS.GOOGLE, models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
-  { id: 'mistralai', name: 'Mistral AI', secretKey: SECRET_KEYS.MISTRAL, models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'] },
-  { id: 'groq', name: 'Groq', secretKey: SECRET_KEYS.GROQ, models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
-  { id: 'openrouter', name: 'OpenRouter', secretKey: SECRET_KEYS.OPENROUTER, models: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-pro-1.5'] },
-  // Phase 10.2 — additional cloud providers. The SillyTavern backend routes by
-  // `chat_completion_source` matching the `id` below, and the API key is stored
-  // under the corresponding SECRET_KEYS entry. No backend changes required.
-  { id: 'deepseek', name: 'DeepSeek', secretKey: SECRET_KEYS.DEEPSEEK, models: ['deepseek-chat', 'deepseek-reasoner'] },
-  { id: 'cohere', name: 'Cohere', secretKey: SECRET_KEYS.COHERE, models: ['command-r-plus', 'command-r', 'command-r-08-2024'] },
-  { id: 'perplexity', name: 'Perplexity', secretKey: SECRET_KEYS.PERPLEXITY, models: ['sonar', 'sonar-pro', 'llama-3.1-sonar-large-128k-online'] },
+  ...CATALOG_NATIVE_PROVIDERS.map((p) => ({
+    id: p.id,
+    name: p.name,
+    secretKey: p.secretKey,
+    models: p.defaultModels as readonly string[],
+  })),
   // Custom / local: no secret key required; URL and model are stored directly in oai_settings.
   { id: 'custom', name: 'Custom / Local', secretKey: '', models: [] as readonly string[] },
 ] as const;
@@ -941,7 +959,64 @@ export const settingsApi = {
       body: JSON.stringify({ enabled }),
     });
   },
+
+  // ---------------------------------------------------------------------
+  // Provider catalog — backend helper for docs-URL extraction (Phase 10.4).
+  //
+  // The backend endpoint is served from the sammygallo/sillytavern fork.
+  // On backends that don't have the route yet, this throws a 404 and the
+  // caller should feature-detect and hide the AI mode in the UI.
+  // ---------------------------------------------------------------------
+
+  async extractProviderFromUrl(
+    url: string,
+  ): Promise<{ ok: true; provider: ExtractedProvider } | { ok: false; error: string }> {
+    try {
+      const response = await apiRequest<{ ok?: boolean; provider?: ExtractedProvider; error?: string }>(
+        '/api/providers/extract',
+        {
+          method: 'POST',
+          body: JSON.stringify({ url }),
+        },
+      );
+      if (response.ok && response.provider) {
+        return { ok: true, provider: response.provider };
+      }
+      return { ok: false, error: response.error || 'Extraction failed' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    }
+  },
+
+  /** Probe whether the /api/providers/extract helper endpoint exists. */
+  async providerExtractorSupported(): Promise<boolean> {
+    try {
+      // Cheap GET-style probe: a HEAD request against the POST route returns
+      // 405 (Method Not Allowed) if the route exists, 404 if it doesn't.
+      const token = await getCsrfToken();
+      const res = await fetch('/api/providers/extract', {
+        method: 'OPTIONS',
+        headers: { 'X-CSRF-Token': token },
+        credentials: 'include',
+      });
+      return res.status !== 404;
+    } catch {
+      return false;
+    }
+  },
 };
+
+/** Shape returned by /api/providers/extract. Mirror of UserProvider from providerCatalog. */
+export interface ExtractedProvider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  defaultModels: string[];
+  modelListEndpoint?: string;
+  docsUrl?: string;
+  description?: string;
+}
 
 // Sprites/Expressions API
 export interface SpriteInfo {
