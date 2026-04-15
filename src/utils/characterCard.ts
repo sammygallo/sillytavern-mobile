@@ -484,6 +484,27 @@ export function exportCharacterAsJSON(
 }
 
 /**
+ * Try to parse a JSON file as a standalone lorebook (CharacterBookV2).
+ * Returns null if the file looks like a character card or lacks a valid entries array.
+ */
+export async function parseLorebookFromJSON(file: File): Promise<CharacterBookV2 | null> {
+  try {
+    const data = JSON.parse(await file.text());
+    if (
+      data !== null &&
+      typeof data === 'object' &&
+      Array.isArray(data.entries) &&
+      !('spec' in data)
+    ) {
+      return data as CharacterBookV2;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse character from JSON file
  */
 export async function parseCharacterFromJSON(
