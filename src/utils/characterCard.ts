@@ -485,19 +485,66 @@ export function exportCharacterAsJSON(
 
 /**
  * Try to parse a JSON file as a standalone lorebook (CharacterBookV2).
- * Returns null if the file looks like a character card or lacks a valid entries array.
+ * Handles both CharacterBookV2 format (entries array) and SillyTavern native
+ * world-info format (entries keyed object like {"0": {...}, "1": {...}}).
+ * Returns null if the file is a character card or can't be parsed as a lorebook.
  */
 export async function parseLorebookFromJSON(file: File): Promise<CharacterBookV2 | null> {
   try {
     const data = JSON.parse(await file.text());
-    if (
-      data !== null &&
-      typeof data === 'object' &&
-      Array.isArray(data.entries) &&
-      !('spec' in data)
-    ) {
+    if (data === null || typeof data !== 'object' || 'spec' in data) return null;
+
+    const { entries } = data as { entries?: unknown; name?: string; description?: string };
+
+    // CharacterBookV2 format: entries is an array
+    if (Array.isArray(entries)) {
       return data as CharacterBookV2;
     }
+
+    // SillyTavern native world-info format: entries is a keyed object {"0": {...}}
+    if (entries !== null && typeof entries === 'object') {
+      const entryArray: CharacterBookEntryV2[] = Object.values(
+        entries as Record<string, Record<string, unknown>>
+      ).map((e) => ({
+        keys: Array.isArray(e.key) ? (e.key as string[]) : [],
+        content: typeof e.content === 'string' ? e.content : '',
+        comment: typeof e.comment === 'string' ? e.comment : '',
+        name: typeof e.comment === 'string' ? e.comment : '',
+        enabled: e.disable !== true,
+        insertion_order: typeof e.order === 'number' ? e.order : 0,
+        case_sensitive: e.caseSensitive === true,
+        selective: e.selective === true,
+        secondary_keys: Array.isArray(e.keysecondary) ? (e.keysecondary as string[]) : [],
+        constant: e.constant === true,
+        id: typeof e.uid === 'number' ? e.uid : undefined,
+        // Preserve ST-specific numeric fields in extensions so entryFromCharacterBookV2
+        // can reconstruct depth, position, logic, probability, etc. faithfully.
+        extensions: {
+          position: typeof e.position === 'number' ? e.position : 0,
+          selectiveLogic: typeof e.selectiveLogic === 'number' ? e.selectiveLogic : 0,
+          depth: typeof e.depth === 'number' ? e.depth : 4,
+          scan_depth: e.scanDepth ?? null,
+          probability: typeof e.probability === 'number' ? e.probability : 100,
+          useProbability: e.useProbability === true,
+          group: typeof e.group === 'string' ? e.group : '',
+          group_override: e.groupOverride === true,
+          group_weight: typeof e.groupWeight === 'number' ? e.groupWeight : 100,
+          prevent_recursion: e.preventRecursion === true,
+          exclude_recursion: e.excludeRecursion === true,
+          sticky: typeof e.sticky === 'number' ? e.sticky : 0,
+          cooldown: typeof e.cooldown === 'number' ? e.cooldown : 0,
+          delay: typeof e.delay === 'number' ? e.delay : 0,
+        },
+      }));
+
+      return {
+        name: typeof (data as { name?: unknown }).name === 'string'
+          ? (data as { name: string }).name
+          : undefined,
+        entries: entryArray,
+      };
+    }
+
     return null;
   } catch {
     return null;
