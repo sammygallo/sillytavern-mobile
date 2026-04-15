@@ -138,17 +138,17 @@ export function setThemeMode(mode: ThemeMode): void {
 export function getActivePreset(): ActivePreset {
   try {
     const v = localStorage.getItem(PRESET_KEY);
-    if (!v) return 'purple';
+    if (!v) return 'cyberpunk';
     if (VALID_PRESETS.includes(v as ThemePreset)) return v as ThemePreset;
     if (v.startsWith('custom:')) return v as ActivePreset;
   } catch { /* ignore */ }
-  return 'purple';
+  return 'cyberpunk';
 }
 
 /** @deprecated Use getActivePreset() for new code */
 export function getThemePreset(): ThemePreset {
   const active = getActivePreset();
-  if (active.startsWith('custom:')) return 'purple';
+  if (active.startsWith('custom:')) return 'cyberpunk';
   return active as ThemePreset;
 }
 
@@ -204,10 +204,10 @@ export function saveCustomTheme(theme: CustomTheme): void {
 export function deleteCustomTheme(id: string): void {
   const themes = getCustomThemes().filter(t => t.id !== id);
   saveCustomThemes(themes);
-  // If the deleted theme was active, revert to purple
+  // If the deleted theme was active, revert to the default (cyberpunk).
   const active = getActivePreset();
   if (active === `custom:${id}`) {
-    setActivePreset('purple');
+    setActivePreset('cyberpunk');
     applyTheme();
   }
 }
@@ -274,7 +274,7 @@ export function applyTheme(): void {
   if (active.startsWith('custom:')) {
     const id = active.slice(7);
     const custom = getCustomThemeColors(id, resolved);
-    colors = custom ?? (resolved === 'light' ? LIGHT_THEMES.purple : DARK_THEMES.purple);
+    colors = custom ?? (resolved === 'light' ? LIGHT_THEMES.cyberpunk : DARK_THEMES.cyberpunk);
   } else {
     const preset = active as ThemePreset;
     colors = resolved === 'light' ? LIGHT_THEMES[preset] : DARK_THEMES[preset];

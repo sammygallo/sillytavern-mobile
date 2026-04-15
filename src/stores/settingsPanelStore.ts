@@ -4,6 +4,7 @@ export type SettingsPageId =
   | 'main'
   | 'my-keys'
   | 'ai'
+  | 'ai-catalog'
   | 'generation'
   | 'prompts'
   | 'worldinfo'
