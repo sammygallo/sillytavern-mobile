@@ -4,6 +4,7 @@ import {
   extractCharacterFromPNG,
   extractCharacterBook,
   parseCharacterFromJSON,
+  parseLorebookFromJSON,
   cardToCharacterInfo,
   embedCharacterInPNG,
   exportCharacterAsJSON,
@@ -104,7 +105,7 @@ interface CharacterState {
   reorderGroupChatCharacters: (avatars: string[]) => void;
   // Import/Export actions
   importCharacter: (
-    file: File
+    files: File | File[]
   ) => Promise<{
     data: Partial<CharacterInfo>;
     avatarFile?: File;
@@ -526,32 +527,65 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   },
 
   // Import/Export actions
-  importCharacter: async (file: File) => {
+  importCharacter: async (files: File | File[]) => {
+    const fileList = Array.isArray(files) ? files : [files];
     set({ isImporting: true, error: null });
     try {
       let characterData: CharacterCardV2 | CharacterExportData | null = null;
       let avatarFile: File | undefined;
+      let characterBook: CharacterBookV2 | undefined;
 
-      const isPNG = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
-      const isJSON = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+      const isPNG = (f: File) =>
+        f.type === 'image/png' || f.name.toLowerCase().endsWith('.png');
+      const isJSON = (f: File) =>
+        f.type === 'application/json' || f.name.toLowerCase().endsWith('.json');
 
-      if (isPNG) {
-        // Extract character data from PNG
-        characterData = await extractCharacterFromPNG(file);
-        if (!characterData) {
-          throw new Error('No character data found in PNG file');
-        }
-        // Use the PNG as the avatar
-        avatarFile = file;
-      } else if (isJSON) {
-        // Parse JSON file
-        characterData = await parseCharacterFromJSON(file);
-      } else {
+      const pngFiles = fileList.filter(isPNG);
+      const jsonFiles = fileList.filter(isJSON);
+
+      if (fileList.some((f) => !isPNG(f) && !isJSON(f))) {
         throw new Error('Unsupported file format. Please use PNG or JSON files.');
       }
 
+      // Classify JSON files as either lorebook or character card
+      const standaloneBooks: CharacterBookV2[] = [];
+      const characterJsons: Array<CharacterCardV2 | CharacterExportData> = [];
+
+      for (const json of jsonFiles) {
+        const book = await parseLorebookFromJSON(json);
+        if (book) {
+          standaloneBooks.push(book);
+        } else {
+          try {
+            characterJsons.push(await parseCharacterFromJSON(json));
+          } catch {
+            // skip unparseable JSON
+          }
+        }
+      }
+
+      // Resolve character source: PNG takes priority over JSON
+      if (pngFiles.length > 0) {
+        const png = pngFiles[0];
+        characterData = await extractCharacterFromPNG(png);
+        if (!characterData) throw new Error('No character data found in PNG file');
+        avatarFile = png;
+      } else if (characterJsons.length > 0) {
+        characterData = characterJsons[0];
+      }
+
+      if (!characterData) {
+        throw new Error('No character data found. Please provide a PNG or character JSON file.');
+      }
+
+      // Lorebook priority: standalone JSON > embedded in card
+      if (standaloneBooks.length > 0) {
+        characterBook = standaloneBooks[0];
+      } else {
+        characterBook = extractCharacterBook(characterData) || undefined;
+      }
+
       const info = cardToCharacterInfo(characterData);
-      const characterBook = extractCharacterBook(characterData) || undefined;
       set({ isImporting: false });
       return { data: info, avatarFile, characterBook };
     } catch (error) {

@@ -55,30 +55,17 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     tags: [],
   });
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    clearError();
-    setLorebookFile(null);
-    setLorebookImported(false);
-
-    // Read the file text upfront so we can hand it to importBookJson if needed
-    const fileText = await file.text();
-
-    const result = await importCharacter(file);
+  const processFiles = async (files: File[]) => {
+    const result = await importCharacter(files);
 
     if (result) {
       setImportedData(result.data);
       setImportedBook(result.characterBook || null);
       if (result.avatarFile) {
         setAvatarFile(result.avatarFile);
-        // Create preview URL
         const previewUrl = URL.createObjectURL(result.avatarFile);
         setAvatarPreview(previewUrl);
       }
-
-      // Populate form with imported data
       setFormData({
         name: result.data.name || '',
         description: result.data.description || result.data.data?.description || '',
@@ -90,30 +77,44 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         creator: result.data.data?.creator || '',
         tags: result.data.tags || result.data.data?.tags || [],
       });
-    } else {
-      // importCharacter returned null — check if this is a lorebook file.
-      // The LorebookDetectedError was caught by the store and turned into
-      // an error string; detect the format here to offer lorebook import.
-      try {
-        const parsed = JSON.parse(fileText);
-        if (
-          parsed?.entries &&
-          typeof parsed.entries === 'object' &&
-          !parsed.name &&
-          !parsed.first_mes
-        ) {
-          clearError();
-          const entryCount = Object.keys(parsed.entries).length;
-          setLorebookFile({
-            text: fileText,
-            name: file.name.replace(/\.json$/i, ''),
-            entryCount,
-          });
+    } else if (files.length === 1) {
+      // Single file that failed character parsing — check if it's a standalone lorebook JSON
+      const file = files[0];
+      const isJSON = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+      if (isJSON) {
+        try {
+          const fileText = await file.text();
+          const parsed = JSON.parse(fileText);
+          if (
+            parsed?.entries &&
+            typeof parsed.entries === 'object' &&
+            !parsed.name &&
+            !parsed.first_mes
+          ) {
+            clearError();
+            const entryCount = Object.keys(parsed.entries).length;
+            setLorebookFile({
+              text: fileText,
+              name: file.name.replace(/\.json$/i, ''),
+              entryCount,
+            });
+          }
+        } catch {
+          // Not valid JSON — let the existing error stand
         }
-      } catch {
-        // Not valid JSON — let the existing error from importCharacter stand
       }
     }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    clearError();
+    setLorebookFile(null);
+    setLorebookImported(false);
+
+    await processFiles(files);
 
     // Reset file input
     if (fileInputRef.current) {
@@ -218,65 +219,18 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     e.preventDefault();
     e.stopPropagation();
 
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    // Check file type
-    const isPNG = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
-    const isJSON = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-
-    if (!isPNG && !isJSON) {
-      return;
-    }
+    const files = Array.from(e.dataTransfer.files).filter((f) => {
+      const isPNG = f.type === 'image/png' || f.name.toLowerCase().endsWith('.png');
+      const isJSON = f.type === 'application/json' || f.name.toLowerCase().endsWith('.json');
+      return isPNG || isJSON;
+    });
+    if (files.length === 0) return;
 
     clearError();
     setLorebookFile(null);
     setLorebookImported(false);
 
-    const fileText = isJSON ? await file.text() : '';
-    const result = await importCharacter(file);
-
-    if (result) {
-      setImportedData(result.data);
-      setImportedBook(result.characterBook || null);
-      if (result.avatarFile) {
-        setAvatarFile(result.avatarFile);
-        const previewUrl = URL.createObjectURL(result.avatarFile);
-        setAvatarPreview(previewUrl);
-      }
-
-      setFormData({
-        name: result.data.name || '',
-        description: result.data.description || result.data.data?.description || '',
-        personality: result.data.personality || result.data.data?.personality || '',
-        firstMessage: result.data.first_mes || result.data.data?.first_mes || '',
-        scenario: result.data.scenario || result.data.data?.scenario || '',
-        exampleMessages: result.data.mes_example || '',
-        creatorNotes: result.data.data?.creator_notes || '',
-        creator: result.data.data?.creator || '',
-        tags: result.data.tags || result.data.data?.tags || [],
-      });
-    } else if (isJSON && fileText) {
-      try {
-        const parsed = JSON.parse(fileText);
-        if (
-          parsed?.entries &&
-          typeof parsed.entries === 'object' &&
-          !parsed.name &&
-          !parsed.first_mes
-        ) {
-          clearError();
-          const entryCount = Object.keys(parsed.entries).length;
-          setLorebookFile({
-            text: fileText,
-            name: file.name.replace(/\.json$/i, ''),
-            entryCount,
-          });
-        }
-      } catch {
-        // let existing error stand
-      }
-    }
+    await processFiles(files);
   };
 
   return (
@@ -293,10 +247,10 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
           >
             <Upload size={48} className="mx-auto text-[var(--color-text-secondary)] mb-4" />
             <p className="text-[var(--color-text-primary)] font-medium mb-2">
-              Drop a character file here
+              Drop character file(s) here
             </p>
             <p className="text-sm text-[var(--color-text-secondary)] mb-4">
-              or click to browse
+              or click to browse &mdash; you can drop a PNG and lorebook JSON together
             </p>
             <div className="flex justify-center gap-4 text-xs text-[var(--color-text-secondary)]">
               <span className="flex items-center gap-1">
@@ -305,7 +259,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
               </span>
               <span className="flex items-center gap-1">
                 <FileJson size={14} />
-                JSON
+                JSON (character or lorebook)
               </span>
             </div>
           </div>
@@ -314,6 +268,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
             ref={fileInputRef}
             type="file"
             accept=".png,.json,image/png,application/json"
+            multiple
             onChange={handleFileSelect}
             className="hidden"
           />
