@@ -348,7 +348,17 @@ export function InstallProviderFromUrlModal({ isOpen, onClose }: Props) {
           <Button variant="ghost" size="sm" onClick={onClose} disabled={running}>
             Cancel
           </Button>
-          {phase !== 'preview' ? (
+          {phase === 'preview' || phase === 'saving' ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSave}
+              disabled={!name.trim() || !url.trim() || running}
+              isLoading={phase === 'saving'}
+            >
+              Save provider
+            </Button>
+          ) : (
             <Button
               variant="primary"
               size="sm"
@@ -363,16 +373,6 @@ export function InstallProviderFromUrlModal({ isOpen, onClose }: Props) {
               ) : (
                 'Extract'
               )}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSave}
-              disabled={!name.trim() || !url.trim() || running}
-              isLoading={phase === 'saving'}
-            >
-              Save provider
             </Button>
           )}
         </div>
