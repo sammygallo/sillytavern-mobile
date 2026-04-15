@@ -36,6 +36,16 @@ import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
 import { useDataBankStore } from './dataBankStore';
 import { extensionRegistry } from '../extensions/registry';
 import type { ContextContribution } from '../extensions/types';
+import { useAuthStore } from './authStore';
+
+// Resolve the display name for the current user: active persona → auth user name → fallback.
+function getUserDisplayName(characterAvatar?: string): string {
+  const persona = usePersonaStore.getState().getPersonaForContext(characterAvatar);
+  if (persona?.name) return persona.name;
+  const authName = useAuthStore.getState().currentUser?.name;
+  if (authName) return authName;
+  return 'User';
+}
 
 export interface ChatMessage {
   id: string;
@@ -634,7 +644,7 @@ function buildConversationContext(
   const persona = usePersonaStore
     .getState()
     .getPersonaForContext(character.avatar);
-  const personaName = persona?.name || 'You';
+  const personaName = getUserDisplayName(character.avatar);
   const personaDescription = persona?.description || '';
 
   // Get generation config + provider for macros/tokenizer
@@ -1087,7 +1097,7 @@ function buildGroupConversationContext(
     const persona = usePersonaStore
       .getState()
       .getPersonaForContext(currentCharacter.avatar);
-    const personaName = persona?.name || 'You';
+    const personaName = getUserDisplayName(currentCharacter.avatar);
     const { activeModel } = useSettingsStore.getState();
     scenarioText = processMacros(scenarioOverride, {
       charName: '',
@@ -1417,7 +1427,7 @@ async function saveChatToBackend(
 
   const chatData = [
     {
-      user_name: 'You',
+      user_name: getUserDisplayName(),
       character_name: isGroupChat && groupCharacters
         ? groupCharacters.map(c => c.name).join(', ')
         : character.name,
@@ -2385,7 +2395,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const processedContent = applyUserInputRegex(content, character.avatar);
 
     addMessage({
-      name: 'You',
+      name: getUserDisplayName(character.avatar),
       isUser: true,
       isSystem: false,
       content: processedContent,
@@ -2513,7 +2523,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const processedGroupContent = applyUserInputRegex(content);
 
     addMessage({
-      name: 'You',
+      name: getUserDisplayName(),
       isUser: true,
       isSystem: false,
       content: processedGroupContent,
