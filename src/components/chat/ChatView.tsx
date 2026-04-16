@@ -10,6 +10,8 @@ import { processMacros, type MacroContext } from '../../utils/macros';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
+import { ChatOptionsMenu } from './ChatOptionsMenu';
+import { ChatHistoryPanel } from './ChatHistoryPanel';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
 import { SummaryPanel } from './SummaryPanel';
@@ -125,6 +127,13 @@ export function ChatView() {
   const [isImageGenOpen, setIsImageGenOpen] = useState(false);
   const dragCounter = useRef(0);
 
+  // Chat options menu + controlled panel states
+  const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [authorNoteOpen, setAuthorNoteOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+
   // Phase 6.4: VN mode — background image and costume
   const [vnBg, setVnBgState] = useState<string | null>(null);
   const [activeCostume, setActiveCostumeState] = useState<string | null>(null);
@@ -138,6 +147,10 @@ export function ChatView() {
   const checkpointInputRef = useRef<HTMLInputElement>(null);
   const createBranch = useBranchStore((s) => s.createBranch);
   const loadBranchesForChat = useBranchStore((s) => s.loadBranchesForChat);
+  const branchCount = useBranchStore((s) => s.branches.length);
+  const authorNoteContent = useChatStore((s) =>
+    s.currentChatFile ? (s.authorNotes[s.currentChatFile]?.content ?? '') : ''
+  );
 
   // Phase 9.1: in-chat message search
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -443,6 +456,9 @@ export function ChatView() {
   // Phase 7.1/7.5: extension-gated features
   const imageGenEnabled = useExtensionStore((s) => s.enabled.imageGen);
   const summarizeEnabled = useExtensionStore((s) => s.enabled.summarize);
+  const summaryHasContent = useSummarizeStore((s) =>
+    currentChatFile ? !!(s.summaries[currentChatFile]?.text) : false
+  );
 
   // Phase 6.4: background image picker
   const handleBgFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1241,16 +1257,29 @@ export function ChatView() {
         </div>
       ) : null}
 
-      {/* Phase 8.1: Author's Note — collapsible panel for per-chat instructions */}
-      {currentChatFile && <AuthorNote fileName={currentChatFile} />}
-
-      {/* Phase 7.5: Summary panel — shown when summarize extension is enabled */}
-      {summarizeEnabled && currentChatFile && selectedCharacter && (
-        <SummaryPanel chatFile={currentChatFile} characterName={selectedCharacter.name} />
+      {/* Panels — controlled from ChatOptionsMenu icon strip */}
+      {currentChatFile && (
+        <AuthorNote
+          fileName={currentChatFile}
+          isOpen={authorNoteOpen}
+          onToggle={() => setAuthorNoteOpen((v) => !v)}
+        />
       )}
-
-      {/* Phase 8.6: Branch panel — always shown when a chat file is open */}
-      {currentChatFile && <BranchPanel chatFile={currentChatFile} />}
+      {summarizeEnabled && currentChatFile && selectedCharacter && (
+        <SummaryPanel
+          chatFile={currentChatFile}
+          characterName={selectedCharacter.name}
+          isOpen={summaryOpen}
+          onToggle={() => setSummaryOpen((v) => !v)}
+        />
+      )}
+      {currentChatFile && (
+        <BranchPanel
+          chatFile={currentChatFile}
+          isOpen={branchOpen}
+          onToggle={() => setBranchOpen((v) => !v)}
+        />
+      )}
 
       {/* Phase 8.6: Checkpoint naming dialog — slides in above the input */}
       {checkpointMessageId && (
@@ -1305,6 +1334,7 @@ export function ChatView() {
         droppedImagesNonce={droppedImagesNonce}
         onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
         onImageGen={imageGenEnabled && !isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
+        onOpenChatMenu={selectedCharacter ? () => setIsChatMenuOpen(true) : undefined}
       />
 
       {/* Phase 7.1: Image generation modal */}
@@ -1378,6 +1408,45 @@ export function ChatView() {
           </div>
         </div>
       )}
+      {/* Chat Options Menu */}
+      {selectedCharacter && (
+        <ChatOptionsMenu
+          isOpen={isChatMenuOpen}
+          onClose={() => setIsChatMenuOpen(false)}
+          authorNote={{
+            isOpen: authorNoteOpen,
+            hasContent: authorNoteContent.length > 0,
+            onToggle: () => setAuthorNoteOpen((v) => !v),
+          }}
+          summary={{
+            isOpen: summaryOpen,
+            hasContent: summaryHasContent,
+            enabled: summarizeEnabled,
+            onToggle: () => setSummaryOpen((v) => !v),
+          }}
+          branches={{
+            isOpen: branchOpen,
+            hasContent: branchCount > 0,
+            count: branchCount,
+            onToggle: () => setBranchOpen((v) => !v),
+          }}
+          onStartNewChat={() => startNewChat(selectedCharacter)}
+          onManageChatFiles={() => setIsHistoryPanelOpen(true)}
+          onSaveCheckpoint={currentChatFile && lastAiMessageId ? () => handleCheckpoint(lastAiMessageId) : undefined}
+          onDeleteMessages={() => startNewChat(selectedCharacter)}
+          onRegenerate={hasAiMessage && !isGroupChatMode ? handleRegenerate : undefined}
+          onContinue={hasAiMessage && !isGroupChatMode ? handleContinue : undefined}
+          onImpersonate={!isGroupChatMode ? handleImpersonate : undefined}
+          isGroupChat={isGroupChatMode}
+        />
+      )}
+
+      {/* Chat History Panel (also opened from chat options menu) */}
+      <ChatHistoryPanel
+        isOpen={isHistoryPanelOpen}
+        onClose={() => setIsHistoryPanelOpen(false)}
+      />
+
       </div>{/* end VN content wrapper */}
     </div>
   );

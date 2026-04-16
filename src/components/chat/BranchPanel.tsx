@@ -11,10 +11,15 @@ import { useChatStore } from '../../stores/chatStore';
 
 interface BranchPanelProps {
   chatFile: string;
+  /** Controlled open state. When provided, removes the persistent header row. */
+  isOpen?: boolean;
+  onToggle?: () => void;
 }
 
-export function BranchPanel({ chatFile }: BranchPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+export function BranchPanel({ chatFile, isOpen, onToggle }: BranchPanelProps) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const isControlled = isOpen !== undefined;
+  const isExpanded = isControlled ? isOpen : internalExpanded;
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -31,9 +36,10 @@ export function BranchPanel({ chatFile }: BranchPanelProps) {
       if (!branch) return;
       loadBranchMessages(branch.messages);
       setActiveBranch(branchId);
-      setIsExpanded(false);
+      if (!isControlled) setInternalExpanded(false);
+      else onToggle?.();
     },
-    [branches, loadBranchMessages, setActiveBranch]
+    [branches, loadBranchMessages, setActiveBranch, isControlled, onToggle]
   );
 
   const handleDelete = useCallback(
@@ -56,46 +62,65 @@ export function BranchPanel({ chatFile }: BranchPanelProps) {
   const activeBranch = branches.find((b) => b.id === activeBranchId);
   const hasBranches = branches.length > 0;
 
+  const handleToggle = isControlled
+    ? onToggle ?? (() => {})
+    : () => setInternalExpanded((v) => !v);
+
+  if (isControlled && !isExpanded) return null;
+
   return (
     <div className="border-t border-[var(--color-border)]">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-[var(--color-bg-tertiary)] transition-colors"
-        aria-expanded={isExpanded}
-        aria-label="Toggle branch panel"
-      >
-        <GitFork
-          size={14}
-          className={
-            hasBranches
-              ? 'text-[var(--color-primary)]'
-              : 'text-[var(--color-text-secondary)]'
-          }
-        />
-        <span
-          className={`font-medium ${
-            hasBranches
-              ? 'text-[var(--color-primary)]'
-              : 'text-[var(--color-text-secondary)]'
-          }`}
+      {/* Self-managed header — only in uncontrolled mode */}
+      {!isControlled && (
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-[var(--color-bg-tertiary)] transition-colors"
+          aria-expanded={isExpanded}
+          aria-label="Toggle branch panel"
         >
-          Branches
-        </span>
-        {activeBranch && (
-          <span className="text-xs text-[var(--color-text-secondary)] truncate max-w-[120px]">
-            · {activeBranch.name}
+          <GitFork
+            size={14}
+            className={hasBranches ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'}
+          />
+          <span className={`font-medium ${hasBranches ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'}`}>
+            Branches
           </span>
-        )}
-        {hasBranches && (
-          <span className="text-xs text-[var(--color-text-secondary)]">
-            ({branches.length})
+          {activeBranch && (
+            <span className="text-xs text-[var(--color-text-secondary)] truncate max-w-[120px]">
+              · {activeBranch.name}
+            </span>
+          )}
+          {hasBranches && (
+            <span className="text-xs text-[var(--color-text-secondary)]">
+              ({branches.length})
+            </span>
+          )}
+          <span className="ml-auto text-[var(--color-text-secondary)]">
+            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
-        )}
-        <span className="ml-auto text-[var(--color-text-secondary)]">
-          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </span>
-      </button>
+        </button>
+      )}
+
+      {/* Controlled mode: always open, show inline header with close button */}
+      {isControlled && (
+        <div className="flex items-center gap-2 px-4 py-2">
+          <GitFork size={14} className={hasBranches ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'} />
+          <span className={`text-sm font-medium flex-1 ${hasBranches ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'}`}>
+            Branches
+            {hasBranches && <span className="text-xs font-normal ml-1">({branches.length})</span>}
+            {activeBranch && <span className="text-xs font-normal ml-1 text-[var(--color-text-secondary)]">· {activeBranch.name}</span>}
+          </span>
+          <button
+            type="button"
+            onClick={handleToggle}
+            className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+            aria-label="Close branch panel"
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
+      )}
 
       {isExpanded && (
         <div className="px-4 pb-3 bg-[var(--color-bg-secondary)]">

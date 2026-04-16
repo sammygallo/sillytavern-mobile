@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Mic, Paperclip, Square, X, Image } from 'lucide-react';
+import { Send, Mic, Paperclip, Square, X, Image, Menu } from 'lucide-react';
 import { CommandAutocomplete } from './CommandAutocomplete';
 import { Button } from '../ui';
 import {
@@ -28,6 +28,8 @@ interface ChatInputProps {
   onEditLast?: () => void;
   /** Phase 7.1: open the image generation modal. */
   onImageGen?: () => void;
+  /** Open the chat options menu. */
+  onOpenChatMenu?: () => void;
 }
 
 /** How long a mic button press must be held before it flips from
@@ -55,6 +57,7 @@ export function ChatInput({
   droppedImagesNonce,
   onEditLast,
   onImageGen,
+  onOpenChatMenu,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -446,6 +449,22 @@ export function ChatInput({
       )}
 
       <div className="flex items-end gap-2">
+        {/* Chat Options Menu Button */}
+        {onOpenChatMenu && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="p-2 flex-shrink-0"
+            aria-label="Chat options"
+            title="Chat options"
+            onClick={onOpenChatMenu}
+            disabled={disabled && false}
+          >
+            <Menu size={20} />
+          </Button>
+        )}
+
         {/* Attachment Button */}
         <Button
           type="button"
