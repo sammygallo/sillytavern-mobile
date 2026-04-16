@@ -1,0 +1,5 @@
+# Local Claude Code state — not useful to other machines
+launch.json
+plans/
+worktrees/
+memory/
