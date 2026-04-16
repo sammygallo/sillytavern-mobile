@@ -26,6 +26,12 @@ import { useChatStore } from '../../stores/chatStore';
 import { usePersonaStore } from '../../stores/personaStore';
 import { useAuthStore } from '../../stores/authStore';
 import { showToastGlobal } from '../../components/ui/Toast';
+import {
+  useExtensionPopupStore,
+  POPUP_TYPE,
+  type PopupType,
+  type PopupOptions,
+} from '../../stores/extensionPopupStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -172,6 +178,20 @@ export function ExtensionFrame({
       case 'sendSystemMessage':
         respond(null);
         break;
+      case 'callPopup': {
+        const [html, rawType, inputValue, options] = msg.args as [
+          string,
+          number | string,
+          string?,
+          PopupOptions?,
+        ];
+        const type = (Number(rawType) as PopupType) || POPUP_TYPE.TEXT;
+        useExtensionPopupStore
+          .getState()
+          .showPopup(String(html ?? ''), type, inputValue, options)
+          .then((result) => respond(result));
+        break;
+      }
       default:
         respond(null, `Unsupported RPC method: ${msg.method}`);
     }

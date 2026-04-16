@@ -8,6 +8,8 @@ import { ChatView } from './components/chat/ChatView';
 // Settings pages are now rendered inside the slide-in SettingsPanel (not routes).
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
 import { ToastProvider } from './components/ui/Toast';
+import { GlobalExtensionHost } from './extensions/sandbox/GlobalExtensionHost';
+import { ExtensionPopupRoot } from './extensions/sandbox/ExtensionPopupRoot';
 
 // Phase 7.1: Register all built-in extensions at app startup.
 import './extensions';
@@ -27,6 +29,8 @@ function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <GlobalExtensionHost />
+      <ExtensionPopupRoot />
     </ToastProvider>
     </BrowserRouter>
   );
