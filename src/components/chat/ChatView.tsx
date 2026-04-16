@@ -129,6 +129,7 @@ export function ChatView() {
 
   // Chat options menu + controlled panel states
   const [isChatMenuOpen, setIsChatMenuOpen] = useState(false);
+  const [chatMenuAnchor, setChatMenuAnchor] = useState<HTMLElement | null>(null);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [authorNoteOpen, setAuthorNoteOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -1334,7 +1335,7 @@ export function ChatView() {
         droppedImagesNonce={droppedImagesNonce}
         onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
         onImageGen={imageGenEnabled && !isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
-        onOpenChatMenu={selectedCharacter ? () => setIsChatMenuOpen(true) : undefined}
+        onOpenChatMenu={selectedCharacter ? (anchor) => { setChatMenuAnchor(anchor); setIsChatMenuOpen(true); } : undefined}
       />
 
       {/* Phase 7.1: Image generation modal */}
@@ -1413,6 +1414,7 @@ export function ChatView() {
         <ChatOptionsMenu
           isOpen={isChatMenuOpen}
           onClose={() => setIsChatMenuOpen(false)}
+          anchor={chatMenuAnchor}
           authorNote={{
             isOpen: authorNoteOpen,
             hasContent: authorNoteContent.length > 0,

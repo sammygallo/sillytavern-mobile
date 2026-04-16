@@ -1,10 +1,17 @@
 /**
- * ChatOptionsMenu — bottom sheet for chat-level actions.
+ * ChatOptionsMenu — chat-level actions menu.
  *
- * Extensions (Author's Note, Summary, Branches) are shown as a compact icon
- * strip rather than individual rows, saving screen real estate.
+ * Mobile  → BottomSheet (slides up from bottom)
+ * Desktop → compact dropdown anchored above the trigger button
+ *
+ * Extensions (Author's Note, Summary, Branches) are shown as a compact pill
+ * strip rather than individual rows, saving vertical screen real estate.
  */
-import { BookOpen, FileText, GitFork, MessageSquare, FolderOpen, Trash2, RefreshCw, ArrowRight, User, Flag, Users } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import {
+  BookOpen, FileText, GitFork, MessageSquare, FolderOpen,
+  Trash2, RefreshCw, ArrowRight, User, Flag, Users,
+} from 'lucide-react';
 import { BottomSheet } from '../ui/BottomSheet';
 
 // ---------------------------------------------------------------------------
@@ -20,30 +27,27 @@ export interface ChatPanelState {
 interface ChatOptionsMenuProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Trigger element — used to anchor the desktop dropdown. */
+  anchor?: HTMLElement | null;
 
-  // -- Extension panels (shown as icon strip) --
   authorNote: ChatPanelState;
   summary: ChatPanelState & { enabled: boolean };
   branches: ChatPanelState & { count: number };
 
-  // -- Chat management --
   onStartNewChat: () => void;
   onManageChatFiles: () => void;
-  /** Only provided when a chat file is loaded. */
   onSaveCheckpoint?: () => void;
   onDeleteMessages: () => void;
 
-  // -- AI actions (undefined = not currently available) --
   onRegenerate?: () => void;
   onContinue?: () => void;
   onImpersonate?: () => void;
 
-  // -- Context --
   isGroupChat: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Shared sub-components
 // ---------------------------------------------------------------------------
 
 function ActionRow({
@@ -64,29 +68,189 @@ function ActionRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors
+        disabled:opacity-40 disabled:cursor-not-allowed
         ${danger
           ? 'text-red-400 hover:bg-red-500/10'
           : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]'
         }`}
     >
-      <Icon size={16} className="flex-shrink-0" />
+      <Icon size={15} className="flex-shrink-0" />
       <span>{label}</span>
     </button>
   );
 }
 
 function Divider() {
-  return <div className="mx-4 border-t border-[var(--color-border)]" />;
+  return <div className="my-1 mx-4 border-t border-[var(--color-border)]" />;
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// Shared menu body (used by both mobile sheet and desktop dropdown)
+// ---------------------------------------------------------------------------
+
+function MenuBody({
+  wrap,
+  extensionPanels,
+  onStartNewChat,
+  onManageChatFiles,
+  onSaveCheckpoint,
+  onDeleteMessages,
+  onRegenerate,
+  onContinue,
+  onImpersonate,
+  isGroupChat,
+}: {
+  wrap: (fn: () => void) => () => void;
+  extensionPanels: Array<{
+    id: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    label: string;
+    isOpen: boolean;
+    hasContent: boolean;
+    onToggle: () => void;
+  }>;
+  onStartNewChat: () => void;
+  onManageChatFiles: () => void;
+  onSaveCheckpoint?: () => void;
+  onDeleteMessages: () => void;
+  onRegenerate?: () => void;
+  onContinue?: () => void;
+  onImpersonate?: () => void;
+  isGroupChat: boolean;
+}) {
+  const hasAiActions = !!(onRegenerate || onContinue || onImpersonate);
+
+  return (
+    <>
+      {/* Extension panel pills */}
+      <div className="px-4 pt-3 pb-2">
+        <p className="text-xs text-[var(--color-text-secondary)] mb-2">Panels</p>
+        <div className="flex gap-1.5 flex-wrap">
+          {extensionPanels.map((panel) => {
+            const Icon = panel.icon;
+            const active = panel.isOpen || panel.hasContent;
+            return (
+              <button
+                key={panel.id}
+                type="button"
+                onClick={panel.onToggle}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border
+                  ${active
+                    ? 'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/40 text-[var(--color-primary)]'
+                    : 'bg-[var(--color-bg-tertiary)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-text-secondary)]/40'
+                  }`}
+              >
+                <Icon size={11} />
+                <span>{panel.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Divider />
+
+      <div className="py-1">
+        <ActionRow icon={MessageSquare} label="Start new chat" onClick={wrap(onStartNewChat)} />
+        <ActionRow icon={FolderOpen} label="Manage chat files" onClick={wrap(onManageChatFiles)} />
+        {onSaveCheckpoint && (
+          <ActionRow icon={Flag} label="Save checkpoint" onClick={wrap(onSaveCheckpoint)} />
+        )}
+        {!isGroupChat && (
+          <ActionRow icon={Users} label="Convert to group" onClick={wrap(() => {})} disabled />
+        )}
+      </div>
+
+      {hasAiActions && (
+        <>
+          <Divider />
+          <div className="py-1">
+            {onRegenerate && <ActionRow icon={RefreshCw} label="Regenerate" onClick={wrap(onRegenerate)} />}
+            {onContinue && <ActionRow icon={ArrowRight} label="Continue" onClick={wrap(onContinue)} />}
+            {onImpersonate && <ActionRow icon={User} label="Impersonate" onClick={wrap(onImpersonate)} />}
+          </div>
+        </>
+      )}
+
+      <Divider />
+
+      <div className="py-1">
+        <ActionRow icon={Trash2} label="Delete messages" onClick={wrap(onDeleteMessages)} danger />
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Desktop dropdown
+// ---------------------------------------------------------------------------
+
+function DesktopDropdown({
+  isOpen,
+  onClose,
+  anchor,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  anchor?: HTMLElement | null;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Position the panel above the anchor button
+  useEffect(() => {
+    if (!isOpen || !anchor || !panelRef.current) return;
+    const rect = anchor.getBoundingClientRect();
+    const panel = panelRef.current;
+    panel.style.left = `${rect.left}px`;
+    panel.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+  }, [isOpen, anchor]);
+
+  // Close on outside click or Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onMouse = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node) &&
+          anchor && !anchor.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', onMouse);
+      document.addEventListener('keydown', onKey);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', onMouse);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose, anchor]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      ref={panelRef}
+      className="fixed z-50 w-56 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl shadow-2xl overflow-hidden"
+    >
+      <div className="overflow-y-auto max-h-[70vh]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main export
 // ---------------------------------------------------------------------------
 
 export function ChatOptionsMenu({
   isOpen,
   onClose,
+  anchor,
   authorNote,
   summary,
   branches,
@@ -130,72 +294,36 @@ export function ChatOptionsMenu({
     },
   ];
 
-  const hasAiActions = !!(onRegenerate || onContinue || onImpersonate);
+  const body = (
+    <MenuBody
+      wrap={wrap}
+      extensionPanels={extensionPanels}
+      onStartNewChat={onStartNewChat}
+      onManageChatFiles={onManageChatFiles}
+      onSaveCheckpoint={onSaveCheckpoint}
+      onDeleteMessages={onDeleteMessages}
+      onRegenerate={onRegenerate}
+      onContinue={onContinue}
+      onImpersonate={onImpersonate}
+      isGroupChat={isGroupChat}
+    />
+  );
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Chat Options">
-      {/* Extension panels — compact icon strip */}
-      <div className="mb-4">
-        <p className="text-xs text-[var(--color-text-secondary)] mb-2">Panels</p>
-        <div className="flex gap-2 flex-wrap">
-          {extensionPanels.map((panel) => {
-            const Icon = panel.icon;
-            const active = panel.isOpen || panel.hasContent;
-            return (
-              <button
-                key={panel.id}
-                type="button"
-                onClick={panel.onToggle}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border
-                  ${active
-                    ? 'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/40 text-[var(--color-primary)]'
-                    : 'bg-[var(--color-bg-tertiary)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-text-secondary)]/40'
-                  }`}
-              >
-                <Icon size={12} />
-                <span>{panel.label}</span>
-              </button>
-            );
-          })}
-        </div>
+    <>
+      {/* Mobile: bottom sheet */}
+      <div className="lg:hidden">
+        <BottomSheet isOpen={isOpen} onClose={onClose} title="Chat Options">
+          {body}
+        </BottomSheet>
       </div>
 
-      <Divider />
-
-      {/* Chat management */}
-      <div className="py-1">
-        <ActionRow icon={MessageSquare} label="Start new chat" onClick={wrap(onStartNewChat)} />
-        <ActionRow icon={FolderOpen} label="Manage chat files" onClick={wrap(onManageChatFiles)} />
-        {onSaveCheckpoint && (
-          <ActionRow icon={Flag} label="Save checkpoint" onClick={wrap(onSaveCheckpoint)} />
-        )}
-        {!isGroupChat && (
-          <ActionRow icon={Users} label="Convert to group" onClick={wrap(() => { /* future */ })} disabled />
-        )}
+      {/* Desktop: anchored dropdown */}
+      <div className="hidden lg:block">
+        <DesktopDropdown isOpen={isOpen} onClose={onClose} anchor={anchor}>
+          {body}
+        </DesktopDropdown>
       </div>
-
-      {hasAiActions && (
-        <>
-          <Divider />
-          <div className="py-1">
-            {onRegenerate && (
-              <ActionRow icon={RefreshCw} label="Regenerate" onClick={wrap(onRegenerate)} />
-            )}
-            {onContinue && (
-              <ActionRow icon={ArrowRight} label="Continue" onClick={wrap(onContinue)} />
-            )}
-            {onImpersonate && (
-              <ActionRow icon={User} label="Impersonate" onClick={wrap(onImpersonate)} />
-            )}
-          </div>
-        </>
-      )}
-
-      <Divider />
-
-      <div className="py-1">
-        <ActionRow icon={Trash2} label="Delete messages" onClick={wrap(onDeleteMessages)} danger />
-      </div>
-    </BottomSheet>
+    </>
   );
 }
