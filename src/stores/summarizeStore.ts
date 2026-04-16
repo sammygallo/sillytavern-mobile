@@ -1,7 +1,24 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '../api/client';
 import { useSettingsStore } from './settingsStore';
+
+let _currentHandle: string | null = null;
+
+const scopedLocalStorage = {
+  getItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    return localStorage.getItem(key);
+  },
+  setItem: (name: string, value: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.setItem(key, value);
+  },
+  removeItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.removeItem(key);
+  },
+};
 
 export interface ChatSummary {
   text: string;
@@ -35,6 +52,8 @@ interface SummarizeState {
   getSummary: (chatFile: string) => ChatSummary | null;
   clearSummary: (chatFile: string) => void;
   clearError: () => void;
+  initForUser: (handle: string) => void;
+  resetUser: () => void;
   generateSummary: (
     chatMessages: { name: string; isUser: boolean; isSystem: boolean; content: string }[],
     chatFile: string,
@@ -113,6 +132,15 @@ export const useSummarizeStore = create<SummarizeState>()(
 
       clearError: () => set({ error: null }),
 
+      initForUser: (handle) => {
+        _currentHandle = handle;
+        useSummarizeStore.persist.rehydrate();
+      },
+      resetUser: () => {
+        _currentHandle = null;
+        set({ autoSummarize: false, autoTriggerEvery: 20, injectionDepth: 999, injectionRole: 'system', summaries: {}, error: null });
+      },
+
       generateSummary: async (chatMessages, chatFile, characterName) => {
         if (get().isGenerating) return;
         set({ isGenerating: true, error: null });
@@ -181,6 +209,7 @@ export const useSummarizeStore = create<SummarizeState>()(
     }),
     {
       name: 'st-mobile-summarize',
+      storage: createJSONStorage(() => scopedLocalStorage),
       partialize: (s) => ({
         autoSummarize: s.autoSummarize,
         autoTriggerEvery: s.autoTriggerEvery,

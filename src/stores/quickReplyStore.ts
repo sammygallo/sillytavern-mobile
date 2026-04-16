@@ -1,5 +1,22 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+let _currentHandle: string | null = null;
+
+const scopedLocalStorage = {
+  getItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    return localStorage.getItem(key);
+  },
+  setItem: (name: string, value: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.setItem(key, value);
+  },
+  removeItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.removeItem(key);
+  },
+};
 
 export interface QuickReplyEntry {
   id: string;
@@ -28,6 +45,8 @@ interface QuickReplyState {
   deleteEntry: (setId: string, entryId: string) => void;
   moveEntryUp: (setId: string, entryId: string) => void;
   moveEntryDown: (setId: string, entryId: string) => void;
+  initForUser: (handle: string) => void;
+  resetUser: () => void;
 }
 
 function uid(): string {
@@ -122,7 +141,18 @@ export const useQuickReplyStore = create<QuickReplyState>()(
             return { ...qs, entries };
           }),
         })),
+      initForUser: (handle) => {
+        _currentHandle = handle;
+        useQuickReplyStore.persist.rehydrate();
+      },
+      resetUser: () => {
+        _currentHandle = null;
+        set({ sets: [], activeSetId: null });
+      },
     }),
-    { name: 'quick-reply-store' }
+    {
+      name: 'quick-reply-store',
+      storage: createJSONStorage(() => scopedLocalStorage),
+    }
   )
 );

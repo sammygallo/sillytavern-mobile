@@ -5,6 +5,10 @@ import { useChatStore } from './chatStore';
 import { useSettingsStore } from './settingsStore';
 import { useWorldInfoStore } from './worldInfoStore';
 import { useThemeStore } from './themeStore';
+import { useExtensionStore } from './extensionStore';
+import { useSummarizeStore } from './summarizeStore';
+import { useTranslateStore } from './translateStore';
+import { useQuickReplyStore } from './quickReplyStore';
 import type { UserRole, Permission } from '../types';
 
 interface CurrentUser {
@@ -50,6 +54,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = await api.getCurrentUser();
       if (user) {
         useWorldInfoStore.getState().initForUser(user.handle);
+        useExtensionStore.getState().initForUser(user.handle);
+        useSummarizeStore.getState().initForUser(user.handle);
+        useTranslateStore.getState().initForUser(user.handle);
+        useQuickReplyStore.getState().initForUser(user.handle);
         set({
           isAuthenticated: true,
           currentUser: {
@@ -96,6 +104,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       // After successful registration, log the user in
       const loginResult = await api.login(result.handle, password);
       useWorldInfoStore.getState().initForUser(loginResult.handle);
+      useExtensionStore.getState().initForUser(loginResult.handle);
+      useSummarizeStore.getState().initForUser(loginResult.handle);
+      useTranslateStore.getState().initForUser(loginResult.handle);
+      useQuickReplyStore.getState().initForUser(loginResult.handle);
       set({
         isAuthenticated: true,
         currentUser: { handle: loginResult.handle, name, role: 'end_user' },
@@ -117,7 +129,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api.login(handle, password);
       // Fetch real user data so role, permissions, and display name are correct.
       const user = await api.getCurrentUser();
-      useWorldInfoStore.getState().initForUser(user?.handle ?? handle);
+      const h = user?.handle ?? handle;
+      useWorldInfoStore.getState().initForUser(h);
+      useExtensionStore.getState().initForUser(h);
+      useSummarizeStore.getState().initForUser(h);
+      useTranslateStore.getState().initForUser(h);
+      useQuickReplyStore.getState().initForUser(h);
       set({
         isAuthenticated: true,
         currentUser: user
@@ -182,6 +199,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         successMessage: null,
       });
       useWorldInfoStore.getState().resetUser();
+      useExtensionStore.getState().resetUser();
+      useSummarizeStore.getState().resetUser();
+      useTranslateStore.getState().resetUser();
+      useQuickReplyStore.getState().resetUser();
 
       // Clear persisted localStorage data
       localStorage.removeItem('sillytavern_group_chats');

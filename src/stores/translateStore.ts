@@ -1,6 +1,23 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { translateText, type TranslateProvider } from '../api/translateApi';
+
+let _currentHandle: string | null = null;
+
+const scopedLocalStorage = {
+  getItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    return localStorage.getItem(key);
+  },
+  setItem: (name: string, value: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.setItem(key, value);
+  },
+  removeItem: (name: string) => {
+    const key = _currentHandle ? `${name}_${_currentHandle}` : name;
+    localStorage.removeItem(key);
+  },
+};
 
 interface TranslateState {
   // Persisted settings
@@ -16,6 +33,8 @@ interface TranslateState {
   setTargetLang: (l: string) => void;
   /** Toggle the translation panel for a message. Fetches from API if not cached. */
   toggleTranslation: (messageId: string, text: string) => Promise<void>;
+  initForUser: (handle: string) => void;
+  resetUser: () => void;
 }
 
 export const useTranslateStore = create<TranslateState>()(
@@ -83,9 +102,19 @@ export const useTranslateStore = create<TranslateState>()(
           set({ pending: newPending, visible: newVisible });
         }
       },
+
+      initForUser: (handle) => {
+        _currentHandle = handle;
+        useTranslateStore.persist.rehydrate();
+      },
+      resetUser: () => {
+        _currentHandle = null;
+        set({ provider: 'google', targetLang: 'en', cache: new Map(), pending: new Set(), visible: new Set() });
+      },
     }),
     {
       name: 'st-mobile-translate',
+      storage: createJSONStorage(() => scopedLocalStorage),
       partialize: (state) => ({
         provider: state.provider,
         targetLang: state.targetLang,
