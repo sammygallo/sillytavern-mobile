@@ -109,9 +109,18 @@ export function InstallProviderFromUrlModal({ isOpen, onClose }: Props) {
     const extracted = result.provider;
     setName(extracted.name || '');
     setUrl(extracted.baseUrl || '');
-    setModels(extracted.defaultModels || []);
     setDocsUrl(extracted.docsUrl || docsInput);
     setDescription(extracted.description || '');
+
+    // Try to probe the live /models endpoint for a complete list; fall back to
+    // whatever the docs extraction found if CORS or auth blocks the probe.
+    if (extracted.baseUrl) {
+      const probe = await probeProviderModels(extracted.baseUrl.replace(/\/+$/, ''));
+      setModels(probe.ok && probe.models.length > 0 ? probe.models : (extracted.defaultModels || []));
+    } else {
+      setModels(extracted.defaultModels || []);
+    }
+
     setPhase('preview');
   }
 
