@@ -228,7 +228,7 @@ export const SHIM_CODE: string = /* javascript */ `
       addClass: function (cls) {
         els.forEach(function (e) {
           if (!e) return;
-          cls.split(/\s+/).forEach(function (c) { if (c) e.classList.add(c); });
+          cls.split(/\\s+/).forEach(function (c) { if (c) e.classList.add(c); });
         });
         return jq;
       },
@@ -236,7 +236,7 @@ export const SHIM_CODE: string = /* javascript */ `
       removeClass: function (cls) {
         els.forEach(function (e) {
           if (!e) return;
-          cls.split(/\s+/).forEach(function (c) { if (c) e.classList.remove(c); });
+          cls.split(/\\s+/).forEach(function (c) { if (c) e.classList.remove(c); });
         });
         return jq;
       },
@@ -244,7 +244,7 @@ export const SHIM_CODE: string = /* javascript */ `
       toggleClass: function (cls, force) {
         els.forEach(function (e) {
           if (!e) return;
-          cls.split(/\s+/).forEach(function (c) {
+          cls.split(/\\s+/).forEach(function (c) {
             if (!c) return;
             if (force === undefined) e.classList.toggle(c);
             else if (force) e.classList.add(c);
@@ -288,7 +288,7 @@ export const SHIM_CODE: string = /* javascript */ `
         var delegate = (typeof selectorOrFn === 'string') ? selectorOrFn : null;
         els.forEach(function (e) {
           if (!e) return;
-          events.split(/\s+/).forEach(function (ev) {
+          events.split(/\\s+/).forEach(function (ev) {
             if (!ev) return;
             e.addEventListener(ev, delegate
               ? function (evObj) {
