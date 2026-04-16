@@ -28,8 +28,8 @@ interface ChatInputProps {
   onEditLast?: () => void;
   /** Phase 7.1: open the image generation modal. */
   onImageGen?: () => void;
-  /** Open the chat options menu. */
-  onOpenChatMenu?: () => void;
+  /** Open the chat options menu. Receives the trigger element for desktop positioning. */
+  onOpenChatMenu?: (anchor: HTMLElement) => void;
 }
 
 /** How long a mic button press must be held before it flips from
@@ -458,7 +458,7 @@ export function ChatInput({
             className="p-2 flex-shrink-0"
             aria-label="Chat options"
             title="Chat options"
-            onClick={onOpenChatMenu}
+            onClick={(e) => onOpenChatMenu(e.currentTarget)}
             disabled={disabled && false}
           >
             <Menu size={20} />
