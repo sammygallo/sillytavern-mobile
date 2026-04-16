@@ -28,6 +28,10 @@ export default defineConfig({
         target: BACKEND,
         changeOrigin: true,
       },
+      '/scripts': {
+        target: BACKEND,
+        changeOrigin: true,
+      },
     },
   },
 })

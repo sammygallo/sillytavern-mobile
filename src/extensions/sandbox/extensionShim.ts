@@ -454,21 +454,49 @@ export const SHIM_CODE: string = /* javascript */ `
     return _jq(null);
   }
 
-  // Static jQuery helpers
+  // Static jQuery helpers — $.ajax returns a thenable jqXHR stand-in so
+  // extensions can both \`await $.get(url)\` and chain \`.done()/.fail()\`.
   jQuery.ajax = function (opts) {
     var method = ((opts.method || opts.type || 'GET')).toUpperCase();
-    var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    var headers = Object.assign({}, opts.headers || {});
     var body;
-    if (method !== 'GET' && opts.data) {
-      body = typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data);
+    if (method !== 'GET' && opts.data != null) {
+      if (typeof opts.data === 'string') {
+        body = opts.data;
+      } else {
+        body = JSON.stringify(opts.data);
+        if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+      }
     }
-    fetch(opts.url, { method: method, headers: headers, body: body, credentials: 'include' })
+
+    var doneCbs = [];
+    var failCbs = [];
+
+    var promise = fetch(opts.url, { method: method, headers: headers, body: body, credentials: 'include' })
       .then(function (r) {
-        return opts.dataType === 'text' ? r.text() : r.json();
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var ctype = (r.headers.get('content-type') || '').toLowerCase();
+        if (opts.dataType === 'json' || (!opts.dataType && ctype.indexOf('json') >= 0)) return r.json();
+        return r.text();
       })
-      .then(function (data) { opts.success && opts.success(data); })
-      .catch(function (err) { opts.error && opts.error(null, null, err && err.message); });
-    return { fail: function (fn) { return this; }, done: function (fn) { return this; } };
+      .then(function (data) {
+        try { opts.success && opts.success(data); } catch (_) {}
+        doneCbs.forEach(function (fn) { try { fn(data); } catch (_) {} });
+        return data;
+      }, function (err) {
+        try { opts.error && opts.error(null, null, err && err.message); } catch (_) {}
+        failCbs.forEach(function (fn) { try { fn(null, null, err && err.message); } catch (_) {} });
+        throw err;
+      });
+
+    var jqXHR = {
+      then:    function (onFulfilled, onRejected) { return promise.then(onFulfilled, onRejected); },
+      catch:   function (onRejected) { return promise.catch(onRejected); },
+      done:    function (fn) { doneCbs.push(fn); return jqXHR; },
+      fail:    function (fn) { failCbs.push(fn); return jqXHR; },
+      always:  function (fn) { promise.finally(fn); return jqXHR; },
+    };
+    return jqXHR;
   };
 
   jQuery.get = function (url, data, cb) {
@@ -478,6 +506,10 @@ export const SHIM_CODE: string = /* javascript */ `
 
   jQuery.post = function (url, data, cb) {
     return jQuery.ajax({ url: url, method: 'POST', data: data, success: cb });
+  };
+
+  jQuery.getJSON = function (url, cb) {
+    return jQuery.ajax({ url: url, method: 'GET', dataType: 'json', success: cb });
   };
 
   jQuery.noop   = function () {};
@@ -602,6 +634,9 @@ export const SHIM_CODE: string = /* javascript */ `
         // Async write methods via RPC
         saveMetadataDebounced: function (data) {
           _rpc('saveMetadata', [data]).catch(function () {});
+        },
+        saveSettingsDebounced: function () {
+          _rpc('saveSettings', []).catch(function () {});
         },
         reloadCurrentChat: function () {
           return _rpc('reloadCurrentChat', []);

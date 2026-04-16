@@ -1335,7 +1335,7 @@ export function ChatView() {
         droppedImagesNonce={droppedImagesNonce}
         onEditLast={lastUserMessageId && !isSending ? () => setEditLastNonce((n) => n + 1) : undefined}
         onImageGen={imageGenEnabled && !isGroupChatMode && selectedCharacter ? () => setIsImageGenOpen(true) : undefined}
-        onOpenChatMenu={selectedCharacter ? (anchor) => { setChatMenuAnchor(anchor); setIsChatMenuOpen(true); } : undefined}
+        onOpenChatMenu={selectedCharacter ? (anchor) => { setChatMenuAnchor(anchor); setIsChatMenuOpen((v) => !v); } : undefined}
       />
 
       {/* Phase 7.1: Image generation modal */}
