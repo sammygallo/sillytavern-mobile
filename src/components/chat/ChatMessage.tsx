@@ -14,6 +14,7 @@ import { useRegexScriptStore } from '../../stores/regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 import { useTranslateStore } from '../../stores/translateStore';
 import { useExtensionStore } from '../../stores/extensionStore';
+import { useSlotItems, invokeSlotItem } from '../../extensions/sandbox/sandboxSlotRegistry';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -121,6 +122,27 @@ export function ChatMessage({
   // Phase 7.1: Extension gates
   const ttsEnabled = useExtensionStore((s) => s.enabled.tts);
   const translateEnabled = useExtensionStore((s) => s.enabled.translate);
+
+  // Sandbox extension-contributed message action buttons
+  const messageActionSlotItems = useSlotItems('messageActions');
+  const messageActionExtras = useMemo(
+    () =>
+      messageActionSlotItems.map((item) => ({
+        key: `${item.frameId}:${item.itemId}`,
+        label: item.label,
+        tooltip: item.tooltip,
+        onClick: () => {
+          invokeSlotItem(item.frameId, item.itemId, {
+            messageId,
+            name,
+            isUser,
+            content,
+            swipeId,
+          });
+        },
+      })),
+    [messageActionSlotItems, messageId, name, isUser, content, swipeId],
+  );
 
   // Phase 6.3: TTS — only wired for non-user, non-system messages.
   const { isSupported: ttsSupported, isSpeaking, speak, stop } = useSpeechSynthesis();
@@ -240,22 +262,26 @@ export function ChatMessage({
         <BottomSheet isOpen={showMenu} onClose={() => setShowMenu(false)} title="Message Actions">
           <div className="space-y-1">
             {[
-              { label: 'Edit', onClick: handleStartEdit },
-              { label: 'Copy', onClick: handleCopy },
-              ...(onCheckpoint ? [{ label: 'Checkpoint', onClick: onCheckpoint }] : []),
-              ...(!isUser && onRegenerate ? [{ label: 'Regenerate', onClick: onRegenerate }] : []),
-              { label: 'Delete', onClick: () => onDelete?.(), danger: true },
-            ].map((action) => (
-              <button
-                key={action.label}
-                onClick={() => { action.onClick(); setShowMenu(false); }}
-                className={`w-full text-left px-3 py-3 rounded-lg text-sm transition-colors hover:bg-[var(--color-bg-tertiary)] ${
-                  action.danger ? 'text-red-400' : 'text-[var(--color-text-primary)]'
-                }`}
-              >
-                {action.label}
-              </button>
-            ))}
+              { key: 'edit',   label: 'Edit',   onClick: handleStartEdit },
+              { key: 'copy',   label: 'Copy',   onClick: handleCopy },
+              ...(onCheckpoint ? [{ key: 'checkpoint', label: 'Checkpoint', onClick: onCheckpoint }] : []),
+              ...(!isUser && onRegenerate ? [{ key: 'regen', label: 'Regenerate', onClick: onRegenerate }] : []),
+              ...messageActionExtras.map((e) => ({ key: `ext_${e.key}`, label: e.label, onClick: e.onClick })),
+              { key: 'delete', label: 'Delete', onClick: () => onDelete?.(), danger: true },
+            ].map((action) => {
+              const isDanger = 'danger' in action && action.danger;
+              return (
+                <button
+                  key={action.key}
+                  onClick={() => { action.onClick(); setShowMenu(false); }}
+                  className={`w-full text-left px-3 py-3 rounded-lg text-sm transition-colors hover:bg-[var(--color-bg-tertiary)] ${
+                    isDanger ? 'text-red-400' : 'text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {action.label}
+                </button>
+              );
+            })}
           </div>
         </BottomSheet>
       ) : (
@@ -268,6 +294,7 @@ export function ChatMessage({
           onRegenerate={onRegenerate}
           showRegenerate={!isUser && !!onRegenerate}
           onCheckpoint={onCheckpoint}
+          extras={messageActionExtras}
           anchorRight={layoutMode === 'bubbles' && isUser}
         />
       )}

@@ -18,9 +18,16 @@
  *   appear and the iframe blends into the settings card.
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useMemo, useRef, useCallback, useState } from 'react';
 import { SHIM_CODE } from './extensionShim';
 import { subscribeToSandboxEvents } from './sandboxEventBus';
+import {
+  SLOT_KINDS,
+  useSandboxSlotStore,
+  setFrameInvoker,
+  clearFrameInvoker,
+  type SlotKind,
+} from './sandboxSlotRegistry';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore } from '../../stores/chatStore';
 import { usePersonaStore } from '../../stores/personaStore';
@@ -32,6 +39,8 @@ import {
   type PopupType,
   type PopupOptions,
 } from '../../stores/extensionPopupStore';
+
+let _frameSeq = 0;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +58,15 @@ export interface ExtensionFrameProps {
   className?: string;
   /** Called with true the first time the iframe reports non-zero content. */
   onHasContent?: (hasContent: boolean) => void;
+  /**
+   * Whether this frame is the authoritative source for slot items
+   * (message-action buttons, chat-input extras). Only the global host should
+   * pass `true`; the settings-page preview frame leaves this false so slot
+   * registrations from its duplicate iframe are ignored — otherwise closing
+   * the settings page would yank a slot item that's also wired into the
+   * global frame.
+   */
+  allowSlots?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,11 +158,16 @@ export function ExtensionFrame({
   scriptUrl,
   className,
   onHasContent,
+  allowSlots = false,
 }: ExtensionFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(0);
   const readyRef = useRef(false);
   const hasContentReportedRef = useRef(false);
+  const frameId = useMemo(
+    () => `frame_${extensionName.replace(/[^a-zA-Z0-9_]/g, '_')}_${++_frameSeq}`,
+    [extensionName],
+  );
 
   // Stable ref so the event bus subscription (useEffect with [] deps) always
   // calls the current version of pushContext without needing re-subscription.
@@ -231,13 +254,40 @@ export function ExtensionFrame({
           handleRpc(msg as { id: string; method: string; args: unknown[] });
           break;
 
+        case 'ST_REGISTER_SLOT': {
+          if (!allowSlots) break;
+          const slot = String(msg.slot ?? '') as SlotKind;
+          if (!SLOT_KINDS.includes(slot)) break;
+          const item = msg.item as
+            | { id?: string; label?: string; icon?: string; tooltip?: string }
+            | undefined;
+          if (!item || typeof item.id !== 'string') break;
+          useSandboxSlotStore.getState().register(frameId, extensionName, slot, {
+            id: item.id,
+            label: String(item.label ?? item.id),
+            icon: item.icon,
+            tooltip: item.tooltip,
+          });
+          break;
+        }
+
+        case 'ST_UNREGISTER_SLOT': {
+          if (!allowSlots) break;
+          const slot = String(msg.slot ?? '') as SlotKind;
+          if (!SLOT_KINDS.includes(slot)) break;
+          const itemId = typeof msg.itemId === 'string' ? msg.itemId : null;
+          if (!itemId) break;
+          useSandboxSlotStore.getState().unregister(frameId, slot, itemId);
+          break;
+        }
+
         // Extension emitted an event — re-broadcast to the bus if desired.
         // For now, just ignore (extensions can emit to themselves).
         case 'ST_EVENT_EMIT':
           break;
       }
     },
-    [onHasContent], // extensionName captured via closure, but doesn't change
+    [onHasContent, allowSlots, frameId, extensionName],
   );
 
   // ── Wire up postMessage listener ──────────────────────────────────────────
@@ -258,6 +308,21 @@ export function ExtensionFrame({
       pushContextRef.current();
     });
   }, []);
+
+  // ── Slot invoker: route slot clicks back to this iframe ──────────────────
+  useEffect(() => {
+    if (!allowSlots) return;
+    setFrameInvoker(frameId, (itemId, payload) => {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'ST_SLOT_INVOKE', itemId, payload },
+        '*',
+      );
+    });
+    return () => {
+      clearFrameInvoker(frameId);
+      useSandboxSlotStore.getState().unregisterFrame(frameId);
+    };
+  }, [allowSlots, frameId]);
 
   // ── Build srcdoc once ─────────────────────────────────────────────────────
   // We use a ref so the srcdoc doesn't change on re-renders (which would cause

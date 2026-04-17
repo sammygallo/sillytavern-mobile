@@ -4,3 +4,11 @@ export { fireSandboxLifecycleEvent, subscribeToSandboxEvents } from './sandboxEv
 export { SHIM_CODE } from './extensionShim';
 export { GlobalExtensionHost } from './GlobalExtensionHost';
 export { ExtensionPopupRoot } from './ExtensionPopupRoot';
+export {
+  SLOT_KINDS,
+  useSandboxSlotStore,
+  useSlotItems,
+  invokeSlotItem,
+  type SlotKind,
+  type SlotItem,
+} from './sandboxSlotRegistry';

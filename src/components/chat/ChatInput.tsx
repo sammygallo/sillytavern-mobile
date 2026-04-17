@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Mic, Paperclip, Square, X, Image, Menu } from 'lucide-react';
+import { Send, Mic, Paperclip, Square, X, Image, Menu, Puzzle } from 'lucide-react';
 import { CommandAutocomplete } from './CommandAutocomplete';
 import { Button } from '../ui';
+import { useSlotItems, invokeSlotItem } from '../../extensions/sandbox/sandboxSlotRegistry';
 import {
   compressImageFiles,
   ACCEPTED_IMAGE_MIMES,
@@ -66,6 +67,9 @@ export function ChatInput({
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sandbox extension-contributed chat-input buttons
+  const inputExtras = useSlotItems('chatInputExtras');
 
   // Phase 8.7: derive autocomplete prefix from message
   const autocompletePrefix = useMemo<string | null>(() => {
@@ -477,6 +481,28 @@ export function ChatInput({
         >
           <Paperclip size={20} />
         </Button>
+
+        {/* Extension-contributed chat-input buttons */}
+        {inputExtras.map((item) => (
+          <Button
+            key={`${item.frameId}:${item.itemId}`}
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="p-2 flex-shrink-0"
+            aria-label={item.label}
+            title={item.tooltip ?? item.label}
+            onClick={() =>
+              invokeSlotItem(item.frameId, item.itemId, {
+                text: message,
+                hasImages: images.length > 0,
+              })
+            }
+            disabled={disabled || isListening}
+          >
+            <Puzzle size={20} />
+          </Button>
+        ))}
 
         {/* Image Generation Button */}
         {onImageGen && (
