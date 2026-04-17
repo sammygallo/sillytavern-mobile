@@ -47,6 +47,7 @@ export function GlobalExtensionHost() {
           key={ext.name}
           extensionName={ext.name}
           scriptUrl={extensionScriptUrl(ext.name)}
+          allowSlots
         />
       ))}
     </div>

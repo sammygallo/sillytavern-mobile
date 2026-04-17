@@ -42,6 +42,7 @@ export const SHIM_CODE: string = /* javascript */ `
 
   // ── RPC infrastructure ───────────────────────────────────────────────────
   var _pending = Object.create(null); // id → { resolve, reject }
+  var _slotCallbacks = Object.create(null); // itemId → fn
   var _seq = 0;
 
   function _post(msg) {
@@ -111,6 +112,13 @@ export const SHIM_CODE: string = /* javascript */ `
           delete _pending[msg.id];
           if (msg.error) p.reject(new Error(msg.error));
           else p.resolve(msg.result);
+        }
+        break;
+
+      case 'ST_SLOT_INVOKE':
+        var slotCb = _slotCallbacks[msg.itemId];
+        if (slotCb) {
+          try { slotCb(msg.payload); } catch (_) {}
         }
         break;
     }
@@ -605,6 +613,32 @@ export const SHIM_CODE: string = /* javascript */ `
   // ── callGenericPopup (newer ST API) ───────────────────────────────────────
   window.callGenericPopup = window.callPopup;
 
+  // ── registerSlotItem ──────────────────────────────────────────────────────
+  // slot: 'messageActions' | 'chatInputExtras'
+  // def:  { id, label, icon?, tooltip?, onClick }
+  // Returns an unregister function.
+  function _registerSlotItem(slot, def) {
+    if (!def || typeof def.onClick !== 'function') {
+      throw new Error('registerSlotItem: def.onClick must be a function');
+    }
+    var itemId = String(def.id || ('slot_' + (++_seq)));
+    _slotCallbacks[itemId] = def.onClick;
+    _post({
+      type: 'ST_REGISTER_SLOT',
+      slot: String(slot),
+      item: {
+        id: itemId,
+        label: String(def.label != null ? def.label : itemId),
+        icon: typeof def.icon === 'string' ? def.icon : undefined,
+        tooltip: typeof def.tooltip === 'string' ? def.tooltip : undefined,
+      },
+    });
+    return function unregister() {
+      delete _slotCallbacks[itemId];
+      _post({ type: 'ST_UNREGISTER_SLOT', slot: String(slot), itemId: itemId });
+    };
+  }
+
   // ── extension_settings ────────────────────────────────────────────────────
   window.extension_settings = _ctx.extensionSettings;
 
@@ -654,6 +688,7 @@ export const SHIM_CODE: string = /* javascript */ `
         },
       };
     },
+    registerSlotItem: _registerSlotItem,
   };
 
   // ── Legacy flat globals (some old extensions access these directly) ────────

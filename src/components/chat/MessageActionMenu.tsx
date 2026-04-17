@@ -1,5 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { Pencil, Copy, Trash2, RefreshCw, GitFork } from 'lucide-react';
+import { Pencil, Copy, Trash2, RefreshCw, GitFork, Puzzle } from 'lucide-react';
+
+export interface MessageActionExtra {
+  key: string;
+  label: string;
+  tooltip?: string;
+  onClick: () => void;
+}
 
 interface MessageActionMenuProps {
   isOpen: boolean;
@@ -11,6 +18,8 @@ interface MessageActionMenuProps {
   showRegenerate?: boolean;
   /** Phase 8.6: create a checkpoint at this message. */
   onCheckpoint?: () => void;
+  /** Extension-contributed entries rendered before Delete. */
+  extras?: MessageActionExtra[];
   anchorRight?: boolean;
 }
 
@@ -23,6 +32,7 @@ export function MessageActionMenu({
   onRegenerate,
   showRegenerate,
   onCheckpoint,
+  extras,
   anchorRight,
 }: MessageActionMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -52,15 +62,22 @@ export function MessageActionMenu({
   if (!isOpen) return null;
 
   const actions = [
-    { icon: Pencil, label: 'Edit', onClick: onEdit },
-    { icon: Copy, label: 'Copy', onClick: onCopy },
+    { key: 'edit',     icon: Pencil,    label: 'Edit',       onClick: onEdit },
+    { key: 'copy',     icon: Copy,      label: 'Copy',       onClick: onCopy },
     ...(onCheckpoint
-      ? [{ icon: GitFork, label: 'Checkpoint', onClick: onCheckpoint }]
+      ? [{ key: 'checkpoint', icon: GitFork, label: 'Checkpoint', onClick: onCheckpoint }]
       : []),
     ...(showRegenerate && onRegenerate
-      ? [{ icon: RefreshCw, label: 'Regenerate', onClick: onRegenerate }]
+      ? [{ key: 'regen', icon: RefreshCw, label: 'Regenerate', onClick: onRegenerate }]
       : []),
-    { icon: Trash2, label: 'Delete', onClick: onDelete, danger: true },
+    ...(extras ?? []).map((e) => ({
+      key: `ext_${e.key}`,
+      icon: Puzzle,
+      label: e.label,
+      onClick: e.onClick,
+      tooltip: e.tooltip,
+    })),
+    { key: 'delete', icon: Trash2, label: 'Delete', onClick: onDelete, danger: true },
   ];
 
   return (
@@ -76,17 +93,20 @@ export function MessageActionMenu({
     >
       {actions.map((action) => {
         const Icon = action.icon;
+        const isDanger = 'danger' in action && action.danger;
+        const tooltip = 'tooltip' in action ? action.tooltip : undefined;
         return (
           <button
-            key={action.label}
+            key={action.key}
             onClick={() => {
               action.onClick();
               onClose();
             }}
+            title={tooltip}
             className={`
               w-full flex items-center gap-3 px-3 py-2 text-sm text-left
               hover:bg-[var(--color-bg-tertiary)] transition-colors
-              ${action.danger ? 'text-red-400' : 'text-[var(--color-text-primary)]'}
+              ${isDanger ? 'text-red-400' : 'text-[var(--color-text-primary)]'}
             `}
           >
             <Icon size={14} />
