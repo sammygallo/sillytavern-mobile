@@ -264,6 +264,48 @@ Expected:
 - `ggbc-intake-bot` — `online`, low restart count.
 - `ggbc-intake-recluster` — `stopped` (it runs once nightly at 04:00 then exits; that is normal).
 
+### 5.5. Notify intake-bot subscribers that their feature shipped
+
+Skip this step if no web repos were deployed in this run (intake-only deploys have no user-facing feature ship).
+
+The droplet keeps `/opt/sillytavern-mobile/.last-deployed` as a marker. Walk the merge commits in the window since the previous deploy and DM the requester for each PR that closed an intake-linked issue.
+
+```bash
+# Read the previous deploy marker, compute merged PRs in the window, update the marker
+MERGED_PRS=$(ssh root@159.89.180.146 '
+  cd /opt/sillytavern-mobile
+  PREV=$(cat .last-deployed 2>/dev/null || echo "")
+  CURR=$(git rev-parse HEAD)
+  if [ -n "$PREV" ] && [ "$PREV" != "$CURR" ]; then
+    git log "$PREV..$CURR" --merges --pretty=format:"%s" \
+      | grep -oE "pull request #[0-9]+" \
+      | grep -oE "[0-9]+" \
+      | sort -u
+  fi
+  echo "$CURR" > .last-deployed
+')
+
+if [ -z "$MERGED_PRS" ]; then
+  echo "no merged PRs in this deploy window (first run or no changes)"
+else
+  for PR in $MERGED_PRS; do
+    PR_URL="https://github.com/sammygallo/sillytavern-mobile/pull/$PR"
+    ISSUES=$(gh pr view "$PR" --repo sammygallo/sillytavern-mobile \
+      --json closingIssuesReferences \
+      --jq '.closingIssuesReferences[].number' 2>/dev/null)
+    for ISSUE in $ISSUES; do
+      echo "notifying subscribers of issue #$ISSUE (PR $PR)"
+      ssh root@159.89.180.146 "cd /opt/ggbc-intake-bot && npm run notify:request-deployed -- $ISSUE $PR_URL" \
+        || echo "  notify failed for #$ISSUE — non-fatal"
+    done
+  done
+fi
+```
+
+The CLI no-ops if the GH issue isn't linked to an intake request, so PRs that came from non-intake issues (refactors, your own ideas) won't trigger noise. **First run after adding this step:** `.last-deployed` won't exist, so the whole loop is skipped — expected. Next deploy onward works normally.
+
+### 5.6. Report
+
 Report the final status to the user.
 
 ## Error handling
