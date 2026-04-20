@@ -37,6 +37,7 @@ import { useDataBankStore } from './dataBankStore';
 import { extensionRegistry } from '../extensions/registry';
 import type { ContextContribution } from '../extensions/types';
 import { useAuthStore } from './authStore';
+import { parseChatTranscript, toSaveChatPayload } from '../utils/chatTranscript';
 
 // Resolve the display name for the current user: active persona → auth user name → fallback.
 function getUserDisplayName(characterAvatar?: string): string {
@@ -2328,7 +2329,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ---- Import Chat File ----
   importChat: async (avatarUrl: string, characterName: string, file: File) => {
     try {
-      await api.importChat(avatarUrl, characterName, file);
+      const userName = getUserDisplayName();
+      const parsed = await parseChatTranscript(file, { characterName, userName });
+      const fileName = await api.createChat(characterName);
+      await api.saveChat(avatarUrl, fileName, toSaveChatPayload(parsed));
       const { fetchChatFiles } = get();
       await fetchChatFiles(avatarUrl);
     } catch (error) {
