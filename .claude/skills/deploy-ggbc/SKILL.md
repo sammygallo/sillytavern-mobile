@@ -15,12 +15,14 @@ Both the frontend and backend images are built in GitHub Actions and pulled from
 |------|-----------|--------|-------------|-----------|-------------|
 | sillytavern-mobile (frontend) | `/Users/sammy/Documents/GitHub/sillytavern-mobile` | `sammygallo/sillytavern-mobile` | `main` | `ghcr.io/sammygallo/sillytavern-mobile:latest` | `.github/workflows/docker-publish.yml` |
 | SillyTavern (backend) | `/Users/sammy/Documents/GitHub/SillyTavern` | `sammygallo/SillyTavern` | `feat/role-based-permissions` | `ghcr.io/sammygallo/sillytavern:feat-role-based-permissions` | `.github/workflows/docker-publish.yml` |
+| ggbc-intake-bot | `/Users/sammy/Documents/GitHub/ggbc-intake-bot` | `sammygallo/ggbc-intake-bot` | `main` | _(no image — builds on droplet)_ | _(none — no CI)_ |
 
 ## Droplet
 
 - **Host:** `159.89.180.146` (DigitalOcean `s-1vcpu-1gb`, 2 GB swap)
 - **User:** `root`
-- **App dir:** `/opt/sillytavern-mobile`
+- **App dir (web):** `/opt/sillytavern-mobile`
+- **App dir (intake bot):** `/opt/ggbc-intake-bot` — runs under pm2, NOT docker
 - **Connect:** `ssh root@159.89.180.146`
 - **Public URL:** fronted by a reverse proxy; the frontend container binds to `127.0.0.1:8080` internally
 
@@ -61,13 +63,16 @@ The droplet is a 1 vCPU / 1 GB box. Running `vite build` on it takes 12+ minutes
 The skill accepts optional branch names as arguments:
 
 ```
-/deploy-ggbc                                          # auto-detect branches
+/deploy-ggbc                                          # auto-detect all three repos
 /deploy-ggbc claude/some-branch                       # frontend only
 /deploy-ggbc - feat/some-branch                       # backend only (dash = skip frontend)
-/deploy-ggbc claude/some-branch feat/some-branch      # both repos
+/deploy-ggbc claude/some-branch feat/some-branch      # both web repos
+/deploy-ggbc intake                                   # intake bot only
 ```
 
-If invoked with no args and there are no branches ahead of `main`/`feat/role-based-permissions`, interpret it as "sync the droplet with whatever is currently on the deployment branches" — skip the merge steps and go straight to step 5.
+The intake bot is auto-included when detection finds unpushed commits or local commits ahead of `origin/main` in `~/Documents/GitHub/ggbc-intake-bot`. Use the explicit `intake` keyword to target it alone and skip web repos.
+
+If invoked with no args and nothing to deploy anywhere, interpret it as "sync the droplet with whatever is currently on the deployment branches" — skip the merge steps and go straight to step 5.
 
 ## Workflow
 
@@ -78,6 +83,7 @@ Before ANY branch inspection, merge, or PR operation, fetch both repos. Stale `o
 ```bash
 cd /Users/sammy/Documents/GitHub/sillytavern-mobile && git fetch origin
 cd /Users/sammy/Documents/GitHub/SillyTavern && git fetch origin
+cd /Users/sammy/Documents/GitHub/ggbc-intake-bot && git fetch origin
 ```
 
 ### 1. Determine what to deploy
@@ -92,6 +98,10 @@ git log --oneline origin/main..HEAD  # if on a feature branch
 # Backend: check for commits ahead of feat/role-based-permissions
 cd /Users/sammy/Documents/GitHub/SillyTavern
 git log --oneline origin/feat/role-based-permissions..HEAD
+
+# Intake bot: check for unpushed commits on main
+cd /Users/sammy/Documents/GitHub/ggbc-intake-bot
+git fetch origin && git log --oneline origin/main..HEAD
 ```
 
 Confirm with the user what you're about to merge before proceeding. If a repo has no changes, skip it.
@@ -202,6 +212,33 @@ Pull-only deploy:
 
 Should complete in under a minute. **Never add `--build`.** Building on the droplet is explicitly prohibited (see Environment gotcha #3).
 
+### 4.5. Deploy intake bot (only when intake is in scope)
+
+Skip this entire step if the intake bot wasn't detected in step 1 and wasn't explicitly requested.
+
+The intake bot is **NOT** a docker service. It runs directly under pm2 on the droplet at `/opt/ggbc-intake-bot`. There is no GHA workflow — it builds on the droplet (cheap: `tsc` only, no Vite/Docker). Push the local main, then SSH and update.
+
+```bash
+# Push local main first (intake bot commits straight to main, no PR flow)
+cd /Users/sammy/Documents/GitHub/ggbc-intake-bot
+git push origin main
+
+# Deploy in one SSH round-trip
+ssh root@159.89.180.146 "cd /opt/ggbc-intake-bot && \
+  git pull origin main && \
+  npm ci && \
+  npm run build && \
+  npm run migrate && \
+  pm2 start ecosystem.config.cjs --update-env && \
+  pm2 save"
+```
+
+Why each command:
+- `npm ci` — clean install from lockfile; tolerant of native rebuilds (`better-sqlite3`).
+- `npm run migrate` — applies any new SQL migrations; idempotent (`IF NOT EXISTS`).
+- `pm2 start ... --update-env` — re-registers all apps declared in `ecosystem.config.cjs`. Safe to run when apps are already online; pm2 restarts them with new env + new code. Also picks up newly-added apps (e.g. the nightly `ggbc-intake-recluster` cron).
+- `pm2 save` — persists the process list so `pm2 resurrect` restores it after a reboot.
+
 ### 5. Verify
 
 ```bash
@@ -218,6 +255,14 @@ For a deeper check, smoke-test the proxy endpoint:
 ssh root@159.89.180.146 "curl -sI http://127.0.0.1:8080 | head -3"
 ```
 Should return `HTTP/1.1 200 OK`.
+
+If the intake bot was deployed, verify pm2:
+```bash
+ssh root@159.89.180.146 "pm2 list"
+```
+Expected:
+- `ggbc-intake-bot` — `online`, low restart count.
+- `ggbc-intake-recluster` — `stopped` (it runs once nightly at 04:00 then exits; that is normal).
 
 Report the final status to the user.
 
@@ -280,6 +325,22 @@ If you SSH in and see a zombie `docker build` or `vite` process, the droplet is 
 ssh root@159.89.180.146 "ps aux | grep -E 'docker build|vite|tsc|npm' | grep -v grep"
 ```
 Kill any zombies (`kill -9 <pid>`), then retry the deploy. The droplet should never be building — always pulling.
+
+### Intake bot: `npm ci` fails with `better-sqlite3` native rebuild error
+Usually a Node version mismatch or missing build toolchain. Check:
+```bash
+ssh root@159.89.180.146 "node -v && which python3 && which make"
+```
+Node must be 20+. If the rebuild failed mid-install, a retry usually succeeds. If it persists, fall back to `npm rebuild better-sqlite3 --build-from-source`.
+
+### Intake bot: pm2 app not starting
+```bash
+ssh root@159.89.180.146 "pm2 logs ggbc-intake-bot --lines 60 --nostream"
+```
+Common causes: missing `.env` (Discord token, Anthropic key, GitHub PAT), bad sqlite path, wrong working directory. `.env` at `/opt/ggbc-intake-bot/.env` is **not** in git — never overwrite it during deploy.
+
+### Intake bot: `ggbc-intake-recluster` shows repeated restart attempts
+That app must have `autorestart: false` in `ecosystem.config.cjs`. If it's thrashing, the config is wrong or the script is failing at import. Check logs; fix the underlying error; `pm2 delete ggbc-intake-recluster && pm2 start ecosystem.config.cjs --update-env`.
 
 ### Droplet is low on disk / RAM
 2 GB swap is in place, but disk can fill up with stale images:
