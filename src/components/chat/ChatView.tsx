@@ -39,6 +39,14 @@ import {
 import { getTtsAutoRead } from '../../hooks/speechLanguage';
 import { speakText } from '../../hooks/useSpeechSynthesis';
 import {
+  getMobilePortraitHeight,
+  setMobilePortraitHeight,
+  clampPortraitHeight,
+  MIN_PORTRAIT_HEIGHT,
+  MAX_PORTRAIT_HEIGHT,
+  PORTRAIT_HEIGHT_STEP,
+} from '../../hooks/mobilePortraitHeight';
+import {
   getChatLayoutMode,
   getAvatarShape,
   getChatFontSize,
@@ -113,6 +121,40 @@ export function ChatView() {
 
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [prefillText, setPrefillText] = useState<string | undefined>(undefined);
+  const [portraitHeight, setPortraitHeight] = useState<number>(getMobilePortraitHeight);
+
+  const handlePortraitResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = portraitHeight;
+    const viewportHeight = window.innerHeight || 1;
+    let latest = startHeight;
+
+    const onMove = (ev: PointerEvent) => {
+      latest = clampPortraitHeight(startHeight + (ev.clientY - startY) / viewportHeight);
+      setPortraitHeight(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      setMobilePortraitHeight(latest);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }, [portraitHeight]);
+
+  const handlePortraitResizeKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowUp' ? -PORTRAIT_HEIGHT_STEP : PORTRAIT_HEIGHT_STEP;
+    setPortraitHeight((prev) => {
+      const next = clampPortraitHeight(prev + delta);
+      setMobilePortraitHeight(next);
+      return next;
+    });
+  }, []);
   const [prefillNonce, setPrefillNonce] = useState(0);
   const [showGroupControls, setShowGroupControls] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -826,41 +868,60 @@ export function ChatView() {
         <>
           {/* Mobile: character portrait (hidden in VN mode and mobile landscape) */}
           {!isVnMode && !isMobileLandscape && (
-            <div className="lg:hidden h-[30vh] min-h-[150px] max-h-[250px] relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden">
-              <img
-                key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-                src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-                alt={selectedCharacter.name}
-                className="w-full h-full object-cover object-top transition-opacity duration-300"
-                onError={() => {
-                  if (latestEmotion) {
-                    const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
-                    setFailedExpressions((prev) => new Set(prev).add(expressionKey));
-                  }
-                }}
-              />
-              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
-              <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
-                  {selectedCharacter.name}
-                </h2>
-                <div className="flex items-center gap-2">
-                  {latestEmotion && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
-                      {latestEmotion}
-                    </span>
-                  )}
-                  <button
-                    onClick={openSearch}
-                    className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
-                    aria-label="Search messages"
-                    title="Search messages"
-                  >
-                    <Search size={15} />
-                  </button>
+            <>
+              <div
+                className="lg:hidden relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden"
+                style={{ height: `${portraitHeight * 100}vh` }}
+              >
+                <img
+                  key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+                  src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                  alt={selectedCharacter.name}
+                  className="w-full h-full object-cover object-top transition-opacity duration-300"
+                  onError={() => {
+                    if (latestEmotion) {
+                      const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
+                      setFailedExpressions((prev) => new Set(prev).add(expressionKey));
+                    }
+                  }}
+                />
+                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
+                <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
+                    {selectedCharacter.name}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {latestEmotion && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
+                        {latestEmotion}
+                      </span>
+                    )}
+                    <button
+                      onClick={openSearch}
+                      className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
+                      aria-label="Search messages"
+                      title="Search messages"
+                    >
+                      <Search size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+              <div
+                onPointerDown={handlePortraitResize}
+                onKeyDown={handlePortraitResizeKey}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize character portrait"
+                aria-valuenow={Math.round(portraitHeight * 100)}
+                aria-valuemin={Math.round(MIN_PORTRAIT_HEIGHT * 100)}
+                aria-valuemax={Math.round(MAX_PORTRAIT_HEIGHT * 100)}
+                tabIndex={0}
+                className="lg:hidden flex items-center justify-center h-3 bg-[var(--color-bg-primary)] cursor-ns-resize touch-none select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              >
+                <div className="h-1 w-10 rounded-full bg-[var(--color-border)]" />
+              </div>
+            </>
           )}
 
           {/* Phase 6.4: VN mode compact header — shown on mobile instead of the 30vh panel */}
