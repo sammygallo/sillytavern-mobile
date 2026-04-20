@@ -345,7 +345,12 @@ export async function extractCharacterFromPNG(
         const base64String = String.fromCharCode(...textData);
 
         try {
-          const jsonString = atob(base64String);
+          // atob() returns a binary string; decode as UTF-8 so non-ASCII
+          // characters (em-dashes, smart quotes, emoji) survive import.
+          const binary = atob(base64String);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const jsonString = new TextDecoder('utf-8').decode(bytes);
           const charData = JSON.parse(jsonString);
 
           // Check if it's V2/V3 format

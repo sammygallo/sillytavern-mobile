@@ -3,6 +3,7 @@ import { Upload, FileImage, FileJson, X, BookOpen } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { Modal, Button, Input, TextArea, ImageUpload, TagInput } from '../ui';
+import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import type { CharacterInfo } from '../../api/client';
 import type { CharacterBookV2 } from '../../utils/characterCard';
 
@@ -54,6 +55,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     creator: '',
     tags: [],
   });
+  const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
 
   const processFiles = async (files: File[]) => {
     const result = await importCharacter(files);
@@ -77,6 +79,11 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         creator: result.data.data?.creator || '',
         tags: result.data.tags || result.data.data?.tags || [],
       });
+      setAlternateGreetings(
+        result.data.alternate_greetings ||
+          result.data.data?.alternate_greetings ||
+          []
+      );
     } else if (files.length === 1) {
       // Single file that failed character parsing — check if it's a standalone lorebook JSON
       const file = files[0];
@@ -146,6 +153,12 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       return;
     }
 
+    const altGreetings = alternateGreetings.filter(
+      (g) => typeof g === 'string' && g.trim()
+    );
+    const depthPrompt = importedData?.data?.extensions?.depth_prompt;
+    const talkativenessRaw = importedData?.data?.extensions?.talkativeness;
+
     const avatarUrl = await createCharacter(
       {
         ch_name: formData.name.trim(),
@@ -157,6 +170,23 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
         creator_notes: formData.creatorNotes.trim(),
         creator: formData.creator.trim(),
         tags: formData.tags.join(', '),
+        alternate_greetings: altGreetings.length > 0 ? altGreetings : undefined,
+        system_prompt:
+          importedData?.system_prompt || importedData?.data?.system_prompt || undefined,
+        post_history_instructions:
+          importedData?.post_history_instructions ||
+          importedData?.data?.post_history_instructions ||
+          undefined,
+        character_version:
+          importedData?.character_version ||
+          importedData?.data?.character_version ||
+          undefined,
+        depth_prompt_prompt: depthPrompt?.prompt?.trim() || undefined,
+        depth_prompt_depth: depthPrompt?.prompt?.trim() ? depthPrompt.depth ?? 4 : undefined,
+        depth_prompt_role: depthPrompt?.prompt?.trim()
+          ? (depthPrompt.role as string | undefined) || 'system'
+          : undefined,
+        talkativeness: typeof talkativenessRaw === 'string' ? talkativenessRaw : undefined,
       },
       avatarFile || undefined
     );
@@ -206,6 +236,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       creator: '',
       tags: [],
     });
+    setAlternateGreetings([]);
     clearError();
     onClose();
   };
@@ -340,6 +371,7 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
                   URL.revokeObjectURL(avatarPreview);
                 }
                 setAvatarPreview(null);
+                setAlternateGreetings([]);
               }}
               className="p-1 hover:bg-green-500/20 rounded"
             >
@@ -405,6 +437,13 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
             value={formData.firstMessage}
             onChange={handleChange('firstMessage')}
             rows={4}
+          />
+
+          {/* Alternate Greetings — additional opening messages the user can
+              swipe between. Pre-populated from the imported card. */}
+          <AlternateGreetingsEditor
+            greetings={alternateGreetings}
+            onChange={setAlternateGreetings}
           />
 
           {/* Scenario */}

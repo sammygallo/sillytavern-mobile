@@ -69,6 +69,35 @@ export async function apiRequestText(
   return response.text();
 }
 
+/**
+ * Append character-create/edit fields to a multipart FormData body.
+ *
+ * Arrays are appended as repeated same-key entries (which Express parses
+ * back into an array), NOT as a JSON-stringified blob — the backend's
+ * getAlternateGreetings() treats a string as a single-element array, so
+ * stringifying would collapse N alternates into one giant JSON string.
+ */
+function appendCharacterFields(
+  formData: FormData,
+  data: object
+): void {
+  Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      // Skip entirely when empty — form-data can't express an empty array
+      // and the backend treats a missing field as [].
+      if (value.length === 0) return;
+      for (const item of value) {
+        formData.append(key, typeof item === 'string' ? item : JSON.stringify(item));
+      }
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      formData.append(key, String(value));
+    } else {
+      formData.append(key, String(value));
+    }
+  });
+}
+
 export interface UserInfo {
   handle: string;
   name: string;
@@ -341,28 +370,13 @@ export const api = {
     // Returns avatar filename like "CharacterName.png" as plain text
     const token = await getCsrfToken();
 
-    // Serialize arrays/numbers properly for backend
-    const serializedData: Record<string, string> = {};
-    Object.entries(data).forEach(([key, value]) => {
-      if (value === undefined) return;
-      if (Array.isArray(value)) {
-        serializedData[key] = JSON.stringify(value);
-      } else if (typeof value === 'number' || typeof value === 'boolean') {
-        serializedData[key] = String(value);
-      } else {
-        serializedData[key] = String(value);
-      }
-    });
-
     let response: Response;
 
     if (avatarFile) {
       // Use multipart form data when uploading an image
       const formData = new FormData();
       formData.append('avatar', avatarFile);
-      Object.entries(serializedData).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
+      appendCharacterFields(formData, data);
 
       response = await fetch('/api/characters/create', {
         method: 'POST',
@@ -395,7 +409,9 @@ export const api = {
   },
 
   async deleteCharacter(avatarUrl: string, deleteChats: boolean = true): Promise<void> {
-    await apiRequest('/api/characters/delete', {
+    // Server responds with a plain-text body (e.g. "OK"), not JSON.
+    // Use apiRequestText so a non-JSON success body isn't treated as a failure.
+    await apiRequestText('/api/characters/delete', {
       method: 'POST',
       body: JSON.stringify({ avatar_url: avatarUrl, delete_chats: deleteChats }),
     });
@@ -405,28 +421,13 @@ export const api = {
     // Backend returns plain text "OK", not JSON
     const token = await getCsrfToken();
 
-    // Serialize arrays/numbers properly for backend
-    const serializedData: Record<string, string> = {};
-    Object.entries(data).forEach(([key, value]) => {
-      if (value === undefined) return;
-      if (Array.isArray(value)) {
-        serializedData[key] = JSON.stringify(value);
-      } else if (typeof value === 'number' || typeof value === 'boolean') {
-        serializedData[key] = String(value);
-      } else {
-        serializedData[key] = String(value);
-      }
-    });
-
     let response: Response;
 
     if (avatarFile) {
       // Use multipart form data when uploading an image
       const formData = new FormData();
       formData.append('avatar', avatarFile);
-      Object.entries(serializedData).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
+      appendCharacterFields(formData, data);
 
       response = await fetch('/api/characters/edit', {
         method: 'POST',

@@ -214,8 +214,24 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       // Ownership is recorded server-side when a character is flipped to
       // global. Newly-created characters start personal with no metadata
       // entry, which is the correct default.
-      // Refresh the character list (also refetches ownership).
-      await get().fetchCharacters();
+
+      // Fetch the new character directly by its avatar url and push it into
+      // the local list so the UI updates instantly, regardless of any
+      // server-side listing cache. No background list refetch: the list
+      // endpoint can briefly omit the just-created character, which would
+      // race the direct push and make the new character vanish until the
+      // next pull-to-refresh. Fall back to a full refetch if the direct get
+      // itself fails.
+      try {
+        const newChar = await api.getCharacter(avatarUrl);
+        const { characters } = get();
+        if (!characters.some((c) => c.avatar === avatarUrl)) {
+          set({ characters: [...characters, newChar] });
+        }
+      } catch {
+        await get().fetchCharacters();
+      }
+
       set({ isCreating: false });
       return avatarUrl;
     } catch (error) {
@@ -251,14 +267,26 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   },
 
   deleteCharacter: async (avatar: string) => {
-    set({ isLoading: true, error: null });
+    const {
+      characters: previousCharacters,
+      selectedCharacter,
+      favorites,
+      linkedBookIdsByAvatar,
+    } = get();
+
+    // Optimistic update: remove from the local list immediately so the UI
+    // reflects the deletion without waiting for the server roundtrip. If the
+    // server call fails we roll back below.
+    set({
+      characters: previousCharacters.filter((c) => c.avatar !== avatar),
+      selectedCharacter:
+        selectedCharacter?.avatar === avatar ? null : selectedCharacter,
+      error: null,
+    });
+
     try {
       await api.deleteCharacter(avatar);
-      // Clear selection if deleting the selected character
-      const { selectedCharacter, favorites, linkedBookIdsByAvatar } = get();
-      if (selectedCharacter?.avatar === avatar) {
-        set({ selectedCharacter: null });
-      }
+
       // Also remove from favorites
       if (favorites.has(avatar)) {
         const newFavorites = new Set(favorites);
@@ -277,12 +305,17 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         saveLinkedBooks(nextLinks);
         set({ linkedBookIdsByAvatar: nextLinks });
       }
-      // Refresh the character list
-      await get().fetchCharacters();
+      // No post-delete refetch: the server's character list endpoint can
+      // briefly still include the just-deleted character (filesystem/cache
+      // lag). A background refetch here would race the optimistic removal
+      // and make the character pop back into the list until the next
+      // pull-to-refresh. The optimistic update is authoritative.
       return true;
     } catch (error) {
+      // Roll back the optimistic removal on server failure
       set({
-        isLoading: false,
+        characters: previousCharacters,
+        selectedCharacter,
         error: error instanceof Error ? error.message : 'Failed to delete character',
       });
       return false;
