@@ -16,6 +16,8 @@ export function ChatHistoryPanel({ isOpen, onClose }: ChatHistoryPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -87,8 +89,18 @@ export function ChatHistoryPanel({ isOpen, onClose }: ChatHistoryPanelProps) {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedCharacter || !e.target.files?.length) return;
     const file = e.target.files[0];
-    await importChat(selectedCharacter.avatar, selectedCharacter.name, file);
-    e.target.value = '';
+    setImportError(null);
+    setImporting(true);
+    try {
+      await importChat(selectedCharacter.avatar, selectedCharacter.name, file);
+      const storeError = useChatStore.getState().error;
+      if (storeError) setImportError(storeError);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
   };
 
   if (!selectedCharacter) return null;
@@ -107,19 +119,26 @@ export function ChatHistoryPanel({ isOpen, onClose }: ChatHistoryPanelProps) {
             </button>
             <button
               onClick={() => importInputRef.current?.click()}
-              className="flex items-center gap-2 px-3 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-              title="Import chat (.jsonl or .json)"
+              disabled={importing}
+              className="flex items-center gap-2 px-3 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
+              title="Import chat transcript (.jsonl or .json)"
             >
               <Upload size={18} />
             </button>
             <input
               ref={importInputRef}
               type="file"
-              accept=".jsonl,.json"
+              accept=".jsonl,.json,application/json"
               className="hidden"
               onChange={handleImport}
             />
           </div>
+
+          {importError && (
+            <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+              Import failed: {importError}
+            </div>
+          )}
 
           {chatFiles.length === 0 ? (
             <div className="text-center py-8 text-sm text-[var(--color-text-secondary)]">
