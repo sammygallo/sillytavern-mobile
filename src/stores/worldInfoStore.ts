@@ -92,6 +92,7 @@ const SCAN_DEPTH_KEY = 'sillytavern_worldinfo_scan_depth_v1';
 const MAX_RECURSION_KEY = 'sillytavern_worldinfo_max_recursion_v1';
 const TOKEN_BUDGET_KEY = 'sillytavern_worldinfo_token_budget_v1';
 const WI_TIMERS_KEY = 'sillytavern_wi_timers_v1';
+const CHAT_LINKED_BOOKS_KEY = 'sillytavern_worldinfo_chat_linked_books_v1';
 
 // Module-level handle tracking so save functions stay signature-compatible.
 // Set by initForUser, cleared by resetUser.
@@ -206,6 +207,36 @@ function loadActiveBooks(handle?: string | null): string[] {
 function saveActiveBooks(ids: string[]) {
   try {
     localStorage.setItem(scopedKey(ACTIVE_BOOKS_KEY), JSON.stringify(ids));
+  } catch {
+    // ignore
+  }
+}
+
+function loadChatLinkedBooks(
+  handle?: string | null
+): Record<string, string[]> {
+  const h = handle !== undefined ? handle : _currentHandle;
+  try {
+    const raw = localStorage.getItem(scopedKey(CHAT_LINKED_BOOKS_KEY, h));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string[]>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const clean: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (Array.isArray(v)) clean[k] = v.filter((id) => typeof id === 'string');
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
+function saveChatLinkedBooks(map: Record<string, string[]>) {
+  try {
+    localStorage.setItem(
+      scopedKey(CHAT_LINKED_BOOKS_KEY),
+      JSON.stringify(map)
+    );
   } catch {
     // ignore
   }
@@ -1003,6 +1034,12 @@ export function scanMessagesForEntries(
 interface WorldInfoState {
   books: WorldInfoBook[];
   activeBookIds: string[];
+  /**
+   * Per-chat extra lorebooks to auto-activate, keyed by chat file name
+   * (matches the key persona locks use). These stack on top of the
+   * globally-active list and the character's own embedded/linked books.
+   */
+  chatLinkedBookIds: Record<string, string[]>;
   scanDepth: number;
   maxRecursionSteps: number;
   tokenBudget: number;
@@ -1044,8 +1081,14 @@ interface WorldInfoState {
     raw: CharacterBookV2,
     fallbackName: string
   ) => WorldInfoBook;
+  /** Creates a fresh empty book already owned by the given character. */
+  createCharacterBook: (ownerAvatar: string, name: string) => WorldInfoBook;
   getCharacterBook: (ownerAvatar: string) => WorldInfoBook | null;
   deleteCharacterBook: (ownerAvatar: string) => void;
+
+  // Chat-scoped lorebooks
+  getChatLinkedBookIds: (chatFileName: string) => string[];
+  setChatLinkedBookIds: (chatFileName: string, ids: string[]) => void;
 
   clearError: () => void;
 
@@ -1059,6 +1102,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
   // Start empty; populated by initForUser once the authenticated user is known.
   books: [],
   activeBookIds: [],
+  chatLinkedBookIds: loadChatLinkedBooks(),
   scanDepth: DEFAULT_SCAN_DEPTH,
   maxRecursionSteps: DEFAULT_MAX_RECURSION,
   tokenBudget: DEFAULT_TOKEN_BUDGET,
@@ -1094,9 +1138,19 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
   deleteBook: (bookId) => {
     const next = get().books.filter((b) => b.id !== bookId);
     const activeNext = get().activeBookIds.filter((id) => id !== bookId);
+    const chatNext: Record<string, string[]> = {};
+    for (const [k, ids] of Object.entries(get().chatLinkedBookIds)) {
+      const filtered = ids.filter((id) => id !== bookId);
+      if (filtered.length > 0) chatNext[k] = filtered;
+    }
     saveBooks(next);
     saveActiveBooks(activeNext);
-    set({ books: next, activeBookIds: activeNext });
+    saveChatLinkedBooks(chatNext);
+    set({
+      books: next,
+      activeBookIds: activeNext,
+      chatLinkedBookIds: chatNext,
+    });
   },
 
   duplicateBook: (bookId) => {
@@ -1283,6 +1337,29 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     return book;
   },
 
+  createCharacterBook: (ownerAvatar, name) => {
+    // If a book already owned by this character exists, return it rather than
+    // creating a second — the model is one embedded book per character.
+    const existing = get().books.find(
+      (b) => b.ownerCharacterAvatar === ownerAvatar
+    );
+    if (existing) return existing;
+    const trimmed = name.trim() || 'Character Lorebook';
+    const now = Date.now();
+    const book: WorldInfoBook = {
+      id: generateId('wibook'),
+      name: trimmed,
+      entries: [],
+      ownerCharacterAvatar: ownerAvatar,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const next = [...get().books, book];
+    saveBooks(next);
+    set({ books: next });
+    return book;
+  },
+
   getCharacterBook: (ownerAvatar) => {
     return (
       get().books.find((b) => b.ownerCharacterAvatar === ownerAvatar) || null
@@ -1301,6 +1378,23 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     set({ books: next, activeBookIds: activeNext });
   },
 
+  getChatLinkedBookIds: (chatFileName) => {
+    return get().chatLinkedBookIds[chatFileName] || [];
+  },
+
+  setChatLinkedBookIds: (chatFileName, ids) => {
+    const allBookIds = new Set(get().books.map((b) => b.id));
+    const deduped = Array.from(new Set(ids.filter((id) => allBookIds.has(id))));
+    const next = { ...get().chatLinkedBookIds };
+    if (deduped.length === 0) {
+      delete next[chatFileName];
+    } else {
+      next[chatFileName] = deduped;
+    }
+    saveChatLinkedBooks(next);
+    set({ chatLinkedBookIds: next });
+  },
+
   clearError: () => set({ error: null }),
 
   initForUser: (handle) => {
@@ -1308,6 +1402,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     set({
       books: loadBooks(handle),
       activeBookIds: loadActiveBooks(handle),
+      chatLinkedBookIds: loadChatLinkedBooks(handle),
       scanDepth: loadScanDepth(handle),
       maxRecursionSteps: loadMaxRecursion(handle),
       tokenBudget: loadTokenBudget(handle),
@@ -1320,6 +1415,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     set({
       books: [],
       activeBookIds: [],
+      chatLinkedBookIds: {},
       scanDepth: DEFAULT_SCAN_DEPTH,
       maxRecursionSteps: DEFAULT_MAX_RECURSION,
       tokenBudget: DEFAULT_TOKEN_BUDGET,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { User } from 'lucide-react';
+import { BookOpen, User } from 'lucide-react';
 import { usePersonaStore, type PersonaDescriptionPosition, type PersonaDescriptionRole, type Persona } from '../../stores/personaStore';
+import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { Button, Input, TextArea, ImageUpload } from '../ui';
 
 interface PersonaFormProps {
@@ -24,6 +25,12 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
   const [descriptionDepth, setDescriptionDepth] = useState(4);
   const [descriptionRole, setDescriptionRole] = useState<PersonaDescriptionRole>('system');
   const [isDefault, setIsDefault] = useState(false);
+  const [linkedBookIds, setLinkedBookIds] = useState<string[]>([]);
+
+  const books = useWorldInfoStore((s) => s.books);
+  // Only global (non-character-owned) books are picker-eligible — linking
+  // another character's embedded book from a persona would be surprising.
+  const candidateBooks = books.filter((b) => b.ownerCharacterAvatar == null);
 
   useEffect(() => {
     if (persona) {
@@ -34,6 +41,7 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
       setDescriptionDepth(persona.descriptionDepth);
       setDescriptionRole(persona.descriptionRole);
       setIsDefault(!!persona.isDefault);
+      setLinkedBookIds(persona.linkedBookIds ?? []);
     } else {
       setName(initialValues?.name || '');
       setDescription(initialValues?.description || '');
@@ -42,6 +50,7 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
       setDescriptionDepth(4);
       setDescriptionRole('system');
       setIsDefault(false);
+      setLinkedBookIds([]);
     }
   }, [persona, initialValues]);
 
@@ -71,6 +80,7 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
       descriptionDepth,
       descriptionRole,
       isDefault,
+      linkedBookIds,
     };
 
     if (persona) {
@@ -179,6 +189,56 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
         />
         Set as default persona
       </label>
+
+      {/* Persona lorebooks — auto-activated whenever this persona is active */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <BookOpen size={16} className="text-[var(--color-text-secondary)]" />
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
+            Lorebooks
+          </h3>
+        </div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3">
+          {candidateBooks.length === 0 ? (
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              No global lorebooks exist yet. Create some in Settings → World Info.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {candidateBooks.map((book) => {
+                const checked = linkedBookIds.includes(book.id);
+                return (
+                  <li key={book.id}>
+                    <label className="flex items-center gap-2.5 cursor-pointer rounded-md px-1.5 py-1 hover:bg-[var(--color-bg-secondary)]">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setLinkedBookIds(
+                            checked
+                              ? linkedBookIds.filter((id) => id !== book.id)
+                              : [...linkedBookIds, book.id]
+                          )
+                        }
+                        className="w-4 h-4 accent-[var(--color-primary)]"
+                      />
+                      <span className="flex-1 min-w-0 text-sm text-[var(--color-text-primary)] truncate">
+                        {book.name}
+                      </span>
+                      <span className="text-xs text-[var(--color-text-secondary)]">
+                        {book.entries.length}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+            Linked books are auto-activated whenever this persona is active.
+          </p>
+        </div>
+      </section>
 
       <div className="flex gap-3 pt-4 border-t border-[var(--color-border)]">
         <Button type="button" variant="secondary" onClick={onClose} className="flex-1">

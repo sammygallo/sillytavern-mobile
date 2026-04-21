@@ -12,6 +12,8 @@ import { ChatInput } from './ChatInput';
 import { ChatActionBar } from './ChatActionBar';
 import { ChatOptionsMenu } from './ChatOptionsMenu';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
+import { ChatLorebookModal } from './ChatLorebookModal';
+import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { GroupChatControls } from './GroupChatControls';
 import { AuthorNote } from './AuthorNote';
 import { SummaryPanel } from './SummaryPanel';
@@ -176,6 +178,10 @@ export function ChatView() {
   const [authorNoteOpen, setAuthorNoteOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [chatLorebookOpen, setChatLorebookOpen] = useState(false);
+  const chatLorebookCount = useWorldInfoStore((s) =>
+    currentChatFile ? (s.chatLinkedBookIds[currentChatFile]?.length ?? 0) : 0
+  );
 
   // Phase 6.4: VN mode — background image and costume
   const [vnBg, setVnBgState] = useState<string | null>(null);
@@ -1493,6 +1499,12 @@ export function ChatView() {
             count: branchCount,
             onToggle: () => setBranchOpen((v) => !v),
           }}
+          lorebook={{
+            isOpen: chatLorebookOpen,
+            hasContent: chatLorebookCount > 0,
+            count: chatLorebookCount,
+            onToggle: () => setChatLorebookOpen((v) => !v),
+          }}
           onStartNewChat={() => startNewChat(selectedCharacter)}
           onManageChatFiles={() => setIsHistoryPanelOpen(true)}
           onSaveCheckpoint={currentChatFile && lastAiMessageId ? () => handleCheckpoint(lastAiMessageId) : undefined}
@@ -1509,6 +1521,15 @@ export function ChatView() {
         isOpen={isHistoryPanelOpen}
         onClose={() => setIsHistoryPanelOpen(false)}
       />
+
+      {/* Chat Lorebooks modal (opened from chat options menu) */}
+      {currentChatFile && (
+        <ChatLorebookModal
+          isOpen={chatLorebookOpen}
+          onClose={() => setChatLorebookOpen(false)}
+          chatFile={currentChatFile}
+        />
+      )}
 
       </div>{/* end VN content wrapper */}
     </div>

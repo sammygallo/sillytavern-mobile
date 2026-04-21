@@ -676,12 +676,23 @@ function buildConversationContext(
   // The character's embedded book + per-character linked books are
   // auto-activated at scan time (scoped to this call), leaving the global
   // `activeBookIds` list untouched as the user navigates between characters.
+  // Persona-linked and chat-linked books are unioned in on top of that so
+  // each scope contributes its own bucket.
   const wiState = useWorldInfoStore.getState();
   const charBookIds = useCharacterStore
     .getState()
     .getActiveBookIdsForCharacter(character.avatar || '');
+  const personaBookIds = persona?.linkedBookIds ?? [];
+  const chatBookIds = ctxChatFile
+    ? wiState.chatLinkedBookIds[ctxChatFile] ?? []
+    : [];
   const scanBookIds = Array.from(
-    new Set([...wiState.activeBookIds, ...charBookIds])
+    new Set([
+      ...wiState.activeBookIds,
+      ...charBookIds,
+      ...personaBookIds,
+      ...chatBookIds,
+    ])
   );
   const tokenProfile = profileForProvider(activeProvider);
   const matchedEntries = scanMessagesForEntries(
