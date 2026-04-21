@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, FileImage, FileJson, X, BookOpen } from 'lucide-react';
+import { Upload, FileImage, FileJson, X, BookOpen, AlertTriangle, Sparkles } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { Modal, Button, Input, TextArea, ImageUpload, TagInput } from '../ui';
@@ -31,6 +31,9 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [importedBook, setImportedBook] = useState<CharacterBookV2 | null>(null);
+  const [standardizeFormatting, setStandardizeFormatting] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [importChanges, setImportChanges] = useState<string[]>([]);
   // Lorebook-only file detection
   const [lorebookFile, setLorebookFile] = useState<{ text: string; name: string; entryCount: number } | null>(null);
   const [lorebookImported, setLorebookImported] = useState(false);
@@ -57,12 +60,16 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
   });
   const [alternateGreetings, setAlternateGreetings] = useState<string[]>([]);
 
-  const processFiles = async (files: File[]) => {
-    const result = await importCharacter(files);
+  const processFiles = async (files: File[], opts?: { standardizeFormatting: boolean }) => {
+    const result = await importCharacter(files, {
+      standardizeFormatting: opts?.standardizeFormatting ?? standardizeFormatting,
+    });
 
     if (result) {
       setImportedData(result.data);
       setImportedBook(result.characterBook || null);
+      setImportWarnings(result.warnings || []);
+      setImportChanges(result.changes || []);
       if (result.avatarFile) {
         setAvatarFile(result.avatarFile);
         const previewUrl = URL.createObjectURL(result.avatarFile);
@@ -225,6 +232,8 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
     setAvatarPreview(null);
     setLorebookFile(null);
     setLorebookImported(false);
+    setImportWarnings([]);
+    setImportChanges([]);
     setFormData({
       name: '',
       description: '',
@@ -269,6 +278,26 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       {!importedData ? (
         /* File Selection View */
         <div className="space-y-4">
+          {/* Normalization toggle */}
+          <label className="flex items-start gap-2.5 p-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg cursor-pointer hover:border-[var(--color-primary)]/50 transition-colors">
+            <input
+              type="checkbox"
+              checked={standardizeFormatting}
+              onChange={(e) => setStandardizeFormatting(e.target.checked)}
+              className="mt-0.5 accent-[var(--color-primary)]"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-primary)]">
+                <Sparkles size={14} className="text-[var(--color-primary)]" />
+                Standardize formatting
+              </div>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                Convert curly quotes to straight, <code>_italics_</code> to <code>*italics*</code>, and normalize dashes.
+                Junk whitespace and duplicate tags are always cleaned up.
+              </p>
+            </div>
+          </label>
+
           {/* Drop Zone */}
           <div
             onDragOver={handleDragOver}
@@ -358,6 +387,36 @@ export function CharacterImport({ isOpen, onClose, onImported }: CharacterImport
       ) : (
         /* Character Edit Form */
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Cleanup summary */}
+          {importChanges.length > 0 && (
+            <div className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/40 rounded-lg text-sm">
+              <div className="flex items-center gap-1.5 text-[var(--color-primary)] font-medium mb-1">
+                <Sparkles size={14} />
+                Cleaned up on import
+              </div>
+              <ul className="text-xs text-[var(--color-text-secondary)] list-disc list-inside space-y-0.5">
+                {importChanges.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Warnings */}
+          {importWarnings.length > 0 && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg text-sm">
+              <div className="flex items-center gap-1.5 text-amber-400 font-medium mb-1">
+                <AlertTriangle size={14} />
+                Heads up
+              </div>
+              <ul className="text-xs text-[var(--color-text-secondary)] list-disc list-inside space-y-0.5">
+                {importWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Success Message */}
           <div className="p-3 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-sm flex items-center justify-between">
             <span>Character data loaded successfully!</span>

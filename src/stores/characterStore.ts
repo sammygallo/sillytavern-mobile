@@ -14,6 +14,7 @@ import {
   type CharacterCardV2,
   type CharacterExportData,
 } from '../utils/characterCard';
+import { normalizeCard, type NormalizeOptions } from '../utils/characterNormalize';
 import {
   useWorldInfoStore,
   bookToCharacterBookV2,
@@ -105,11 +106,14 @@ interface CharacterState {
   reorderGroupChatCharacters: (avatars: string[]) => void;
   // Import/Export actions
   importCharacter: (
-    files: File | File[]
+    files: File | File[],
+    options?: NormalizeOptions
   ) => Promise<{
     data: Partial<CharacterInfo>;
     avatarFile?: File;
     characterBook?: CharacterBookV2;
+    warnings: string[];
+    changes: string[];
   } | null>;
   exportCharacterAsPNG: (character: CharacterInfo) => Promise<void>;
   exportCharacterAsJSON: (character: CharacterInfo) => void;
@@ -560,7 +564,7 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
   },
 
   // Import/Export actions
-  importCharacter: async (files: File | File[]) => {
+  importCharacter: async (files: File | File[], options?: NormalizeOptions) => {
     const fileList = Array.isArray(files) ? files : [files];
     set({ isImporting: true, error: null });
     try {
@@ -611,16 +615,22 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
         throw new Error('No character data found. Please provide a PNG or character JSON file.');
       }
 
+      // Normalize: clean whitespace, dedup tags, optionally standardize formatting.
+      const { card: normalized, warnings, changes } = normalizeCard(
+        characterData,
+        { standardizeFormatting: options?.standardizeFormatting ?? false }
+      );
+
       // Lorebook priority: standalone JSON > embedded in card
       if (standaloneBooks.length > 0) {
         characterBook = standaloneBooks[0];
       } else {
-        characterBook = extractCharacterBook(characterData) || undefined;
+        characterBook = extractCharacterBook(normalized) || undefined;
       }
 
-      const info = cardToCharacterInfo(characterData);
+      const info = cardToCharacterInfo(normalized);
       set({ isImporting: false });
-      return { data: info, avatarFile, characterBook };
+      return { data: info, avatarFile, characterBook, warnings, changes };
     } catch (error) {
       set({
         isImporting: false,
