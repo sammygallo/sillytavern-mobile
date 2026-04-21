@@ -414,7 +414,7 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
             </section>
 
             {/* Appearance (Phase 7.4 + 6.1) */}
-            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
+            <section id="appearance-section" className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
               <div className="flex items-center gap-2 mb-3">
                 <Palette size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">

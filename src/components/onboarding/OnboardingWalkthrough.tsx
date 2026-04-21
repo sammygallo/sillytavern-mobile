@@ -1,5 +1,5 @@
-import { useEffect, useCallback, useMemo } from 'react';
-import { Sparkles, Key, Users, MessageSquare, PartyPopper } from 'lucide-react';
+import { useEffect, useCallback, useMemo, useRef } from 'react';
+import { Sparkles, Key, Users, MessageSquare, Palette, PartyPopper, ArrowRight, X } from 'lucide-react';
 import { useOnboardingStore, TOTAL_STEPS } from '../../stores/onboardingStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -31,16 +31,23 @@ function buildSteps(isAdmin: boolean): StepDef[] {
     },
     {
       icon: Users,
-      title: 'Browse Characters',
+      title: 'Character Management',
       description:
-        'Open the sidebar to browse available characters, import character cards, or create your own from scratch. Tap any character to start a conversation.',
-      ctaLabel: 'Open Character List',
+        'Import character cards, create your own from scratch, and organize the roster. This is where you\u2019ll spend time building up who you chat with.',
+      ctaLabel: 'Open Character Management',
     },
     {
       icon: MessageSquare,
       title: 'Start Chatting',
       description:
         'Select a character, type your message, and hit send. You can edit, regenerate, or swipe between alternate responses. Try group chats with multiple characters too!',
+    },
+    {
+      icon: Palette,
+      title: 'Make It Yours',
+      description:
+        'Pick an accent color, switch between light and dark, or build a fully custom theme. Appearance lives in Settings — you can tweak it anytime.',
+      ctaLabel: 'Customize Appearance',
     },
     {
       icon: PartyPopper,
@@ -52,18 +59,14 @@ function buildSteps(isAdmin: boolean): StepDef[] {
   ];
 }
 
-interface OnboardingWalkthroughProps {
-  openSidebar: () => void;
-}
-
-export function OnboardingWalkthrough({ openSidebar }: OnboardingWalkthroughProps) {
-  const { isOpen, currentStep, nextStep, prevStep, complete, skip } =
+export function OnboardingWalkthrough() {
+  const { isOpen, isDocked, currentStep, nextStep, prevStep, complete, skip, dock, returnFromDock } =
     useOnboardingStore();
   const userRole = useAuthStore((s) => s.currentUser?.role);
   const isAdmin = can(userRole, 'settings:view');
   const steps = useMemo(() => buildSteps(isAdmin), [isAdmin]);
 
-  // Escape key to skip
+  // Escape key to skip (only when modal is visible)
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -73,7 +76,7 @@ export function OnboardingWalkthrough({ openSidebar }: OnboardingWalkthroughProp
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, skip]);
 
-  // Lock body scroll
+  // Lock body scroll when modal is visible
   useEffect(() => {
     if (!isOpen) return;
     document.body.style.overflow = 'hidden';
@@ -82,30 +85,92 @@ export function OnboardingWalkthrough({ openSidebar }: OnboardingWalkthroughProp
     };
   }, [isOpen]);
 
+  // Auto-return from dock when the user closes the settings panel.
+  // Steps 1, 2, and 4 all hand off to the settings panel.
+  const watchesSettingsPanel =
+    currentStep === 1 || currentStep === 2 || currentStep === 4;
+  const prevSettingsOpenRef = useRef(false);
+  useEffect(() => {
+    if (!isDocked || !watchesSettingsPanel) return;
+    prevSettingsOpenRef.current = useSettingsPanelStore.getState().isOpen;
+    const unsub = useSettingsPanelStore.subscribe((state) => {
+      const prev = prevSettingsOpenRef.current;
+      prevSettingsOpenRef.current = state.isOpen;
+      if (prev && !state.isOpen) {
+        returnFromDock(true);
+      }
+    });
+    return unsub;
+  }, [isDocked, watchesSettingsPanel, returnFromDock]);
+
   const handleCta = useCallback(() => {
     const step = steps[currentStep];
     if (!step.ctaLabel) return;
 
-    // Close walkthrough first, then open target UI
-    complete();
+    // Dock the walkthrough (stays alive as a floating chip), then open target UI
+    dock();
 
     if (currentStep === 1) {
       if (isAdmin) {
-        // Open AI Settings (admin/owner)
         const panel = useSettingsPanelStore.getState();
         panel.open();
         requestAnimationFrame(() => {
           useSettingsPanelStore.getState().pushPage('ai');
         });
       } else {
-        // Open My Keys (non-admin)
         useSettingsPanelStore.getState().openToPage('my-keys');
       }
     } else if (currentStep === 2) {
-      // Open sidebar
-      openSidebar();
+      useSettingsPanelStore.getState().openToPage('characters');
+    } else if (currentStep === 4) {
+      // Open settings main page and scroll to the Appearance section
+      useSettingsPanelStore.getState().open();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document
+            .getElementById('appearance-section')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
     }
-  }, [currentStep, complete, openSidebar, steps]);
+  }, [currentStep, dock, isAdmin, steps]);
+
+  const handleChipReturn = useCallback(() => {
+    // If we're handing off to the settings panel and it's still open,
+    // close it — the subscription effect will handle advancing. This avoids
+    // a double-advance when both close() + returnFromDock() fire.
+    if (watchesSettingsPanel && useSettingsPanelStore.getState().isOpen) {
+      useSettingsPanelStore.getState().close();
+      return;
+    }
+    returnFromDock(true);
+  }, [watchesSettingsPanel, returnFromDock]);
+
+  // Render floating chip when docked
+  if (isDocked) {
+    return (
+      <div className="fixed bottom-4 right-4 z-[110] flex items-center gap-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-full shadow-2xl pl-4 pr-2 py-2 animate-fade-in-up">
+        <span className="text-xs font-medium text-[var(--color-text-primary)]">
+          Setup · {currentStep + 1}/{TOTAL_STEPS}
+        </span>
+        <button
+          onClick={handleChipReturn}
+          className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:opacity-80 transition-opacity px-2 py-1 rounded-full"
+          aria-label="Return to setup walkthrough"
+        >
+          Continue
+          <ArrowRight size={14} />
+        </button>
+        <button
+          onClick={skip}
+          className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors rounded-full"
+          aria-label="Dismiss setup walkthrough"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
 
   if (!isOpen) return null;
 

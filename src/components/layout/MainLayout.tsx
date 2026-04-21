@@ -81,7 +81,7 @@ export function MainLayout() {
       <SettingsPanel />
 
       {/* Onboarding Walkthrough */}
-      <OnboardingWalkthrough openSidebar={openSidebar} />
+      <OnboardingWalkthrough />
     </div>
   );
 }
