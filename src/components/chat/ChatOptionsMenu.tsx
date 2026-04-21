@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef } from 'react';
 import {
-  BookOpen, FileText, GitFork, MessageSquare, FolderOpen,
+  BookOpen, FileText, GitFork, Library, MessageSquare, FolderOpen,
   Trash2, RefreshCw, ArrowRight, User, Flag, Users,
 } from 'lucide-react';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -33,6 +33,7 @@ interface ChatOptionsMenuProps {
   authorNote: ChatPanelState;
   summary: ChatPanelState & { enabled: boolean };
   branches: ChatPanelState & { count: number };
+  lorebook: ChatPanelState & { count: number };
 
   onStartNewChat: () => void;
   onManageChatFiles: () => void;
@@ -254,6 +255,7 @@ export function ChatOptionsMenu({
   authorNote,
   summary,
   branches,
+  lorebook,
   onStartNewChat,
   onManageChatFiles,
   onSaveCheckpoint,
@@ -291,6 +293,14 @@ export function ChatOptionsMenu({
       isOpen: branches.isOpen,
       hasContent: branches.count > 0,
       onToggle: wrap(branches.onToggle),
+    },
+    {
+      id: 'lorebook',
+      icon: Library,
+      label: `Lorebook${lorebook.count > 0 ? ` (${lorebook.count})` : ''}`,
+      isOpen: lorebook.isOpen,
+      hasContent: lorebook.count > 0,
+      onToggle: wrap(lorebook.onToggle),
     },
   ];
 

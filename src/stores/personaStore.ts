@@ -18,6 +18,12 @@ export interface Persona {
   descriptionDepth: number; // only used when position = 'at_depth'
   descriptionRole: PersonaDescriptionRole;
   isDefault?: boolean;
+  /**
+   * World info books to auto-activate whenever this persona is the active
+   * one. Union'd with character-embedded + character-linked + chat-linked
+   * books at scan time. Ids reference `WorldInfoBook.id`.
+   */
+  linkedBookIds?: string[];
   createdAt: number;
   updatedAt: number;
 }

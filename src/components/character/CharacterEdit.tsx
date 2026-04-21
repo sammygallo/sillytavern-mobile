@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Download, FileImage, FileJson, Copy, UserCircle } from 'lucide-react';
+import { Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
+import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
+import { useAuthStore } from '../../stores/authStore';
+import { hasPermission } from '../../utils/permissions';
 import { spritesApi, type CharacterInfo } from '../../api/client';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
@@ -37,6 +40,11 @@ export function CharacterEdit({
     setLinkedBookIds,
     getAllTags,
   } = useCharacterStore();
+  const ownershipStore = useCharacterOwnershipStore();
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const canSetGlobal = hasPermission(currentUser, 'character:set_global');
+  const visibility = ownershipStore.getVisibility(character.avatar);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -225,6 +233,21 @@ export function CharacterEdit({
     onConvertToPersona?.(character);
   };
 
+  const handleToggleVisibility = async () => {
+    const next = visibility === 'global' ? 'personal' : 'global';
+    setIsTogglingVisibility(true);
+    try {
+      await ownershipStore.setVisibility(character.avatar, next);
+      // Server physically moved the file between directories — refresh the
+      // character list so subsequent API calls target the right scope.
+      await useCharacterStore.getState().fetchCharacters();
+    } catch (err) {
+      console.error('Failed to change character visibility', err);
+    } finally {
+      setIsTogglingVisibility(false);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={`Edit ${character.name}`} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -309,6 +332,39 @@ export function CharacterEdit({
           </div>
         </div>
 
+        {/* Visibility (global vs personal) — gated on character:set_global */}
+        {canSetGlobal && (
+          <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                Visibility: {visibility === 'global' ? 'Global' : 'Personal'}
+              </p>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                {visibility === 'global'
+                  ? 'Shared with all users on this server.'
+                  : 'Only visible to you.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleToggleVisibility}
+              disabled={isTogglingVisibility}
+              className="shrink-0"
+            >
+              {isTogglingVisibility ? (
+                <Loader2 size={14} className="animate-spin mr-1.5" />
+              ) : visibility === 'global' ? (
+                <Lock size={14} className="mr-1.5" />
+              ) : (
+                <Globe size={14} className="mr-1.5" />
+              )}
+              {visibility === 'global' ? 'Make Personal' : 'Make Global'}
+            </Button>
+          </div>
+        )}
+
         {/* Name - Required */}
         <Input
           label="Name *"
@@ -370,6 +426,7 @@ export function CharacterEdit({
         {/* Phase 4.3: Character lorebooks */}
         <CharacterLorebookSection
           avatar={character.avatar}
+          characterName={formData.name || character.name}
           linkedBookIds={linkedBookIds}
           onLinkedBookIdsChange={setLinkedBookIdsLocal}
         />
