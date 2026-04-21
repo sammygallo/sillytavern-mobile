@@ -13,10 +13,10 @@ import {
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore, type CharacterOwnershipState } from '../../stores/characterOwnershipStore';
-import type { UserRole } from '../../types';
+import type { User, UserRole } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
-import { can } from '../../utils/permissions';
+import { can, hasPermission } from '../../utils/permissions';
 import { api, type CharacterInfo } from '../../api/client';
 import { Button, ConfirmDialog } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
@@ -221,6 +221,7 @@ export function CharacterManagementPage() {
               <CharacterRow
                 key={char.avatar}
                 character={char}
+                currentUser={currentUser}
                 userHandle={userHandle}
                 userRole={userRole}
                 ownershipStore={ownershipStore}
@@ -280,6 +281,7 @@ export function CharacterManagementPage() {
 
 interface CharacterRowProps {
   character: CharacterInfo;
+  currentUser: User | null;
   userHandle: string;
   userRole: UserRole | undefined;
   ownershipStore: CharacterOwnershipState;
@@ -294,6 +296,7 @@ interface CharacterRowProps {
 
 function CharacterRow({
   character,
+  currentUser,
   userHandle,
   userRole,
   ownershipStore,
@@ -310,9 +313,12 @@ function CharacterRow({
   const isOwned = ownershipStore.isOwnedBy(avatar, userHandle);
   const ownerHandle = ownershipStore.getOwner(avatar);
 
-  const canEdit = ownershipStore.canEditCharacter(avatar, userHandle, userRole);
+  const canEdit =
+    hasPermission(currentUser, 'character:edit') ||
+    ownershipStore.canEditCharacter(avatar, userHandle, userRole);
   const canDelete = ownershipStore.canDeleteCharacter(avatar, userHandle, userRole);
   const canDuplicate = can(userRole, 'character:create');
+  const canSetGlobal = hasPermission(currentUser, 'character:set_global');
 
   const creator = character.creator || character.data?.creator || null;
   const thumbnailUrl = `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
@@ -414,7 +420,7 @@ function CharacterRow({
               <Copy size={14} />
             </button>
           )}
-          {userRole === 'owner' && (
+          {canSetGlobal && (
             <button
               onClick={() => onToggleVisibility(avatar)}
               disabled={isVisibilityBusy}
