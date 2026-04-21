@@ -119,6 +119,24 @@ export function clearVnBgGlobal(): void {
   try { localStorage.removeItem('stm:vn-bg-global'); } catch { /* ignore */ }
 }
 
+// ---- Standardize Message Formatting ---------------------------------
+
+const STANDARDIZE_FMT_KEY = 'stm:standardize-message-formatting';
+
+export function getStandardizeMessageFormatting(): boolean {
+  try {
+    const v = localStorage.getItem(STANDARDIZE_FMT_KEY);
+    if (v === null) return true;
+    return v === 'true';
+  } catch {
+    return true;
+  }
+}
+
+export function setStandardizeMessageFormatting(on: boolean): void {
+  try { localStorage.setItem(STANDARDIZE_FMT_KEY, on ? 'true' : 'false'); } catch { /* ignore */ }
+}
+
 // ---- Sprite Costume -------------------------------------------------
 
 export function getCostume(avatar: string): string | null {

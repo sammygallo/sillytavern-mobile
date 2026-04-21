@@ -2,6 +2,8 @@ import { useMemo, useCallback } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
+import { normalizeForDisplay, wrapDialogue } from '../../utils/messageFormatting';
+import { getStandardizeMessageFormatting } from '../../hooks/displayPreferences';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -179,7 +181,12 @@ function renderMarkdown(text: string, streaming?: boolean): { html: string; isBl
 // ---------------------------------------------------------------------------
 
 export function MarkdownContent({ content, isUser, isStreaming }: MarkdownContentProps) {
-  const segments = useMemo(() => parseRPSegments(content), [content]);
+  const standardize = getStandardizeMessageFormatting();
+  const prepared = useMemo(
+    () => (standardize ? normalizeForDisplay(content) : content),
+    [content, standardize]
+  );
+  const segments = useMemo(() => parseRPSegments(prepared), [prepared]);
 
   /** Copy-button click handler — uses event delegation. */
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -221,8 +228,11 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
           );
         }
 
-        // Dialogue → markdown
-        const { html, isBlock } = renderMarkdown(segment.content, isStreaming && isLast);
+        // Dialogue → markdown. When standardization is on, wrap "…" in
+        // <span class="dialogue"> before marked parses so themes can style
+        // quoted speech distinctly.
+        const dialogueContent = standardize ? wrapDialogue(segment.content) : segment.content;
+        const { html, isBlock } = renderMarkdown(dialogueContent, isStreaming && isLast);
         const cursorHtml = isStreaming && isLast
           ? html + '<span class="streaming-cursor"></span>'
           : html;
