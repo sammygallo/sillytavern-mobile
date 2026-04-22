@@ -9,6 +9,10 @@ interface ChatLorebookModalProps {
   chatFile: string;
 }
 
+// Stable fallback so the zustand selector never returns a fresh array reference.
+// Fresh `[]` per call destabilizes useSyncExternalStore and trips React #185.
+const EMPTY_IDS: string[] = [];
+
 /**
  * Per-chat lorebook picker. Picked books are auto-activated whenever this
  * chat is open, stacked on top of the globally-active list, the character's
@@ -20,7 +24,7 @@ interface ChatLorebookModalProps {
 export function ChatLorebookModal({ isOpen, onClose, chatFile }: ChatLorebookModalProps) {
   const books = useWorldInfoStore((s) => s.books);
   const linkedBookIds = useWorldInfoStore((s) =>
-    s.chatLinkedBookIds[chatFile] || []
+    s.chatLinkedBookIds[chatFile] ?? EMPTY_IDS
   );
   const setChatLinkedBookIds = useWorldInfoStore((s) => s.setChatLinkedBookIds);
 
