@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { BookOpen, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { BookOpen, Upload, User } from 'lucide-react';
 import { usePersonaStore, type PersonaDescriptionPosition, type PersonaDescriptionRole, type Persona } from '../../stores/personaStore';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
+import { extractCharacterFromPNG, parseCharacterFromJSON } from '../../utils/characterCard';
 import { Button, Input, TextArea, ImageUpload } from '../ui';
 
 interface PersonaFormProps {
@@ -16,6 +17,7 @@ interface PersonaFormProps {
 
 export function PersonaForm({ persona, onClose, onSaved, initialValues }: PersonaFormProps) {
   const { createPersona, updatePersona } = usePersonaStore();
+  const importBookJson = useWorldInfoStore((s) => s.importBookJson);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -26,6 +28,11 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
   const [descriptionRole, setDescriptionRole] = useState<PersonaDescriptionRole>('system');
   const [isDefault, setIsDefault] = useState(false);
   const [linkedBookIds, setLinkedBookIds] = useState<string[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+
+  const personaImportInputRef = useRef<HTMLInputElement>(null);
+  const lorebookImportInputRef = useRef<HTMLInputElement>(null);
 
   const books = useWorldInfoStore((s) => s.books);
   // Only global (non-character-owned) books are picker-eligible — linking
@@ -68,6 +75,122 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
     reader.readAsDataURL(file);
   };
 
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+
+  const handlePersonaImport = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportError(null);
+    setImportNotice(null);
+
+    const lower = file.name.toLowerCase();
+    const isPng = lower.endsWith('.png') || file.type === 'image/png';
+    const isJson = lower.endsWith('.json') || file.type === 'application/json';
+
+    try {
+      if (isPng) {
+        const extracted = await extractCharacterFromPNG(file);
+        if (!extracted) {
+          setImportError('No persona data found in this PNG.');
+          return;
+        }
+        const srcName = 'data' in extracted ? extracted.data.name : extracted.name;
+        const srcDesc =
+          'data' in extracted ? extracted.data.description : extracted.description;
+        setName(srcName || '');
+        setDescription(srcDesc || '');
+        setAvatarDataUrl(await readFileAsDataUrl(file));
+        setImportNotice(`Imported "${srcName || 'persona'}" from PNG.`);
+        return;
+      }
+
+      if (isJson) {
+        const raw = JSON.parse(await file.text()) as Record<string, unknown>;
+        const looksLikeCharacterCard =
+          typeof raw.spec === 'string' ||
+          typeof raw.first_mes === 'string' ||
+          typeof raw.personality === 'string' ||
+          typeof raw.scenario === 'string';
+
+        if (looksLikeCharacterCard) {
+          const parsed = await parseCharacterFromJSON(file);
+          const srcName = 'data' in parsed ? parsed.data.name : parsed.name;
+          const srcDesc =
+            'data' in parsed ? parsed.data.description : parsed.description;
+          setName(srcName || '');
+          setDescription(srcDesc || '');
+          setImportNotice(`Imported "${srcName || 'persona'}" from JSON.`);
+          return;
+        }
+
+        const rawName = typeof raw.name === 'string' ? raw.name : '';
+        const rawDesc =
+          typeof raw.description === 'string' ? raw.description : '';
+        if (!rawName && !rawDesc) {
+          setImportError('JSON file has no persona fields to import.');
+          return;
+        }
+        setName(rawName);
+        setDescription(rawDesc);
+        if (typeof raw.avatar === 'string' && raw.avatar.startsWith('data:')) {
+          setAvatarDataUrl(raw.avatar);
+        }
+        if (typeof raw.position === 'string') {
+          setDescriptionPosition(raw.position as PersonaDescriptionPosition);
+        }
+        if (typeof raw.depth === 'number') setDescriptionDepth(raw.depth);
+        if (typeof raw.role === 'string') {
+          setDescriptionRole(raw.role as PersonaDescriptionRole);
+        }
+        setImportNotice(`Imported "${rawName || 'persona'}" from JSON.`);
+        return;
+      }
+
+      setImportError('Unsupported file type. Use .json or .png.');
+    } catch (err) {
+      setImportError(
+        err instanceof Error ? err.message : 'Failed to import persona.'
+      );
+    }
+  };
+
+  const handleLorebookUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportError(null);
+    setImportNotice(null);
+
+    try {
+      const json = await file.text();
+      const fallback = file.name.replace(/\.json$/i, '') || 'Imported Lorebook';
+      const book = importBookJson(json, fallback);
+      if (!book) {
+        setImportError('Could not parse lorebook JSON.');
+        return;
+      }
+      setLinkedBookIds((prev) =>
+        prev.includes(book.id) ? prev : [...prev, book.id]
+      );
+      setImportNotice(`Linked "${book.name}" (${book.entries.length} entries).`);
+    } catch (err) {
+      setImportError(
+        err instanceof Error ? err.message : 'Failed to upload lorebook.'
+      );
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -94,6 +217,57 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        ref={personaImportInputRef}
+        type="file"
+        accept=".json,application/json,.png,image/png"
+        className="hidden"
+        onChange={handlePersonaImport}
+      />
+      <input
+        ref={lorebookImportInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleLorebookUpload}
+      />
+
+      {!persona && (
+        <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+              Import persona
+            </p>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Pre-fill this form from a JSON persona file or a character card PNG.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => personaImportInputRef.current?.click()}
+            className="shrink-0"
+          >
+            <Upload size={14} className="mr-1.5" />
+            Import
+          </Button>
+        </div>
+      )}
+
+      {(importError || importNotice) && (
+        <div
+          className={`rounded-md border px-3 py-2 text-xs ${
+            importError
+              ? 'border-red-500/40 bg-red-500/10 text-[var(--color-text-primary)]'
+              : 'border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]'
+          }`}
+          role={importError ? 'alert' : 'status'}
+        >
+          {importError || importNotice}
+        </div>
+      )}
+
       <div className="flex items-start gap-4">
         <div className="w-20 h-20 rounded-full overflow-hidden bg-[var(--color-bg-tertiary)] flex items-center justify-center border-2 border-[var(--color-border)] flex-shrink-0">
           {avatarDataUrl ? (
@@ -197,11 +371,19 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
             Lorebooks
           </h3>
+          <button
+            type="button"
+            onClick={() => lorebookImportInputRef.current?.click()}
+            className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] border border-[var(--color-border)]"
+          >
+            <Upload size={12} />
+            Upload Lorebook
+          </button>
         </div>
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3">
           {candidateBooks.length === 0 ? (
             <p className="text-sm text-[var(--color-text-secondary)]">
-              No global lorebooks exist yet. Create some in Settings → World Info.
+              No global lorebooks yet. Use Upload Lorebook to add one, or create them in Settings → World Info.
             </p>
           ) : (
             <ul className="space-y-1.5">
