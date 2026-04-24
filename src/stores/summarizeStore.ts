@@ -35,6 +35,12 @@ interface SummarizeState {
   /** Depth from the END of history to inject the summary (999 = before all history). */
   injectionDepth: number;
   injectionRole: 'system' | 'user';
+  /**
+   * When true, drop messages already covered by the summary from the prompt
+   * history. Saves tokens by keeping ONLY the summary + post-summary turns,
+   * instead of duplicating coverage between summary and raw history.
+   */
+  compactWhenSummarized: boolean;
 
   // --- persisted data ---
   /** Keyed by chat file name (e.g. "character_2024-01-01@12:00:00.jsonl"). */
@@ -49,6 +55,7 @@ interface SummarizeState {
   setAutoTriggerEvery: (n: number) => void;
   setInjectionDepth: (d: number) => void;
   setInjectionRole: (r: 'system' | 'user') => void;
+  setCompactWhenSummarized: (on: boolean) => void;
   getSummary: (chatFile: string) => ChatSummary | null;
   clearSummary: (chatFile: string) => void;
   clearError: () => void;
@@ -112,6 +119,7 @@ export const useSummarizeStore = create<SummarizeState>()(
       autoTriggerEvery: 20,
       injectionDepth: 999,
       injectionRole: 'system',
+      compactWhenSummarized: true,
       summaries: {},
       isGenerating: false,
       error: null,
@@ -121,6 +129,7 @@ export const useSummarizeStore = create<SummarizeState>()(
         set({ autoTriggerEvery: Math.max(5, Math.min(100, Math.round(n))) }),
       setInjectionDepth: (d) => set({ injectionDepth: Math.max(0, Math.round(d)) }),
       setInjectionRole: (r) => set({ injectionRole: r }),
+      setCompactWhenSummarized: (on) => set({ compactWhenSummarized: on }),
 
       getSummary: (chatFile) => get().summaries[chatFile] ?? null,
 
@@ -138,7 +147,7 @@ export const useSummarizeStore = create<SummarizeState>()(
       },
       resetUser: () => {
         _currentHandle = null;
-        set({ autoSummarize: false, autoTriggerEvery: 20, injectionDepth: 999, injectionRole: 'system', summaries: {}, error: null });
+        set({ autoSummarize: false, autoTriggerEvery: 20, injectionDepth: 999, injectionRole: 'system', compactWhenSummarized: true, summaries: {}, error: null });
       },
 
       generateSummary: async (chatMessages, chatFile, characterName) => {
@@ -215,6 +224,7 @@ export const useSummarizeStore = create<SummarizeState>()(
         autoTriggerEvery: s.autoTriggerEvery,
         injectionDepth: s.injectionDepth,
         injectionRole: s.injectionRole,
+        compactWhenSummarized: s.compactWhenSummarized,
         summaries: s.summaries,
       }),
     }

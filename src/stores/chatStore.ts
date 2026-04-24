@@ -34,6 +34,8 @@ import { getInstructTemplate, formatInstructPrompt } from '../utils/instructTemp
 import { useRegexScriptStore } from './regexScriptStore';
 import { applyRegexScripts, getActiveScripts } from '../utils/regexScripts';
 import { useDataBankStore } from './dataBankStore';
+import { useSummarizeStore } from './summarizeStore';
+import { useChatHistoryRagStore } from './chatHistoryRagStore';
 import { extensionRegistry } from '../extensions/registry';
 import type { ContextContribution } from '../extensions/types';
 import { useAuthStore } from './authStore';
@@ -607,28 +609,57 @@ function buildMacroContext(
 
 /**
  * Phase 8.5 — RAG helper.
- * Extracts the last user message from `messages`, queries the Data Bank for
- * relevant chunks scoped to `characterAvatar`, and returns a formatted string
- * to inject into the system prompt. Each chunk is prefixed with its source
- * document name (e.g. `[From: ember_lore]`) so the model can cite passages
- * and users can debug which document a chunk came from. Returns null when
- * no relevant chunks are found or RAG is inactive.
+ * Extracts the last user message from `messages` and queries two sources
+ * for relevant context, run in parallel:
+ *   1. The Data Bank (user-uploaded docs, scoped to `characterAvatar`)
+ *   2. Chat-history embeddings for `chatFile` (older turns indexed
+ *      semantically — recalls specific past moments without keeping them
+ *      in raw history)
+ *
+ * Both sources are gated on the user's settings and an OpenAI embeddings
+ * key. Each chunk is prefixed with provenance so the model can cite. Also
+ * lazily ensures any new turns have been embedded before querying.
  */
 async function resolveRagContext(
   messages: ChatMessage[],
-  characterAvatar: string
+  characterAvatar: string,
+  chatFile?: string
 ): Promise<string | null> {
   const lastUser = [...messages].reverse().find((m) => m.isUser && !m.isSystem);
   if (!lastUser?.content.trim()) return null;
 
-  const chunks = await useDataBankStore
-    .getState()
-    .queryRelevantChunks(lastUser.content, characterAvatar);
+  // Kick off chat-history embedding for any messages that don't have one
+  // yet. Don't block generation on it — the next turn will benefit.
+  if (chatFile) {
+    void useChatHistoryRagStore.getState().ensureEmbedded(
+      chatFile,
+      messages.map((m) => ({
+        content: m.content,
+        isUser: m.isUser,
+        isSystem: m.isSystem,
+      }))
+    );
+  }
 
-  if (chunks.length === 0) return null;
-  return chunks
-    .map((c) => `[From: ${c.docName}]\n${c.text}`)
-    .join('\n\n---\n\n');
+  const [dataBankChunks, historyChunks] = await Promise.all([
+    useDataBankStore
+      .getState()
+      .queryRelevantChunks(lastUser.content, characterAvatar),
+    chatFile
+      ? useChatHistoryRagStore.getState().queryTopK(chatFile, lastUser.content)
+      : Promise.resolve([] as Array<{ text: string; speaker: 'user' | 'assistant'; score: number }>),
+  ]);
+
+  const parts: string[] = [];
+  for (const c of dataBankChunks) {
+    parts.push(`[From: ${c.docName}]\n${c.text}`);
+  }
+  for (const m of historyChunks) {
+    const who = m.speaker === 'user' ? 'User' : 'Character';
+    parts.push(`[Earlier in chat — ${who}]\n${m.text}`);
+  }
+  if (parts.length === 0) return null;
+  return parts.join('\n\n---\n\n');
 }
 
 // Build conversation context for AI
@@ -870,7 +901,16 @@ Choose the emotion that best matches how ${character.name} would feel based on t
   const historyPool = ctxConfig.tokenAware
     ? messages.filter((m) => !m.isSystem)
     : messages.slice(-ctxConfig.messageCount).filter((m) => !m.isSystem);
-  const recentMessages = historyPool;
+  // Summary compaction: when a summary covers the first N non-system turns,
+  // drop those turns from the prompt — the summary is already injected
+  // separately by the summarize extension. Big token win on long chats.
+  const sumState = useSummarizeStore.getState();
+  const sumForChat = ctxChatFile ? sumState.getSummary(ctxChatFile) : null;
+  const compactedHistory =
+    sumState.compactWhenSummarized && sumForChat && sumForChat.messageCount > 0
+      ? historyPool.slice(Math.min(sumForChat.messageCount, historyPool.length))
+      : historyPool;
+  const recentMessages = compactedHistory;
 
   // Character's Note (depth prompt): inject at configurable depth from the END of the history
   const depthPrompt = getDepthPrompt(character);
@@ -1225,7 +1265,7 @@ async function generateGroupTurn(
   // Phase 8.5: resolve Data Bank / RAG chunks scoped to the current speaker.
   // In a group turn this means Seraphina's character-scoped docs only fire
   // on Seraphina's turn, which matches how solo chats scope per-character.
-  const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
+  const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '', get().currentChatFile || undefined);
   // Phase 5.3: look up the group's card-handling mode so the builder knows
   // whether to produce a swap-style flat bullet list or a full per-member
   // block layout for join mode.
@@ -2113,7 +2153,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = contextMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
-      const ragCtx = await resolveRagContext(contextMessages, character.avatar || '');
+      const ragCtx = await resolveRagContext(contextMessages, character.avatar || '', currentChatFile || undefined);
       const context = buildConversationContext(contextMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),
@@ -2205,7 +2245,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       // Build context including the current AI message
-      const ragCtx = await resolveRagContext(messages, character.avatar || '');
+      const ragCtx = await resolveRagContext(messages, character.avatar || '', get().currentChatFile || undefined);
       const context = buildConversationContext(messages, character, availableEmotions, undefined, ragCtx ?? undefined);
       // Add a system instruction to continue
       context.push({
@@ -2279,7 +2319,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isSending: true, isStreaming: false, error: null, abortController });
 
     try {
-      const ragCtx = await resolveRagContext(messages, character.avatar || '');
+      const ragCtx = await resolveRagContext(messages, character.avatar || '', get().currentChatFile || undefined);
       const context = buildConversationContext(messages, character, availableEmotions, undefined, ragCtx ?? undefined);
       // Replace the system prompt's last line to instruct impersonation
       context.push({
@@ -2426,7 +2466,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
-      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
+      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '', currentChatFile || undefined);
       const context = buildConversationContext(updatedMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),
@@ -2762,7 +2802,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { currentChatFile } = get();
       const currentTurn = updatedMessages.filter((m) => !m.isUser && !m.isSystem).length;
       const wiTimerActivated = new Set<string>();
-      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '');
+      const ragCtx = await resolveRagContext(updatedMessages, character.avatar || '', currentChatFile || undefined);
       const context = buildConversationContext(updatedMessages, character, availableEmotions, {
         currentTurn,
         timers: loadWiTimers(currentChatFile || ''),

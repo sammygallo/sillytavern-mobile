@@ -27,6 +27,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrientation } from '../../hooks/useOrientation';
 import { useKeyboardHeight } from '../../hooks/useKeyboardHeight';
 import { useSummarizeStore } from '../../stores/summarizeStore';
+import { useAutoMemoryStore } from '../../stores/autoMemoryStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import {
   getExpressionThumbnailUrl,
@@ -491,14 +492,30 @@ export function ChatView() {
     wasSendingRef.current = false;
 
     const sumStore = useSummarizeStore.getState();
-    if (!sumStore.autoSummarize) return;
+    const memStore = useAutoMemoryStore.getState();
     if (!currentChatFile || !selectedCharacter) return;
 
     const nonSystemCount = messages.filter((m) => !m.isSystem).length;
-    const existing = sumStore.getSummary(currentChatFile);
-    const lastCount = existing?.messageCount ?? 0;
-    if (nonSystemCount - lastCount >= sumStore.autoTriggerEvery) {
-      sumStore.generateSummary(messages, currentChatFile, selectedCharacter.name);
+
+    if (sumStore.autoSummarize) {
+      const existing = sumStore.getSummary(currentChatFile);
+      const lastCount = existing?.messageCount ?? 0;
+      if (nonSystemCount - lastCount >= sumStore.autoTriggerEvery) {
+        sumStore.generateSummary(messages, currentChatFile, selectedCharacter.name);
+      }
+    }
+
+    if (memStore.shouldTrigger(currentChatFile, nonSystemCount)) {
+      void memStore.extractFacts(
+        currentChatFile,
+        selectedCharacter,
+        messages.map((m) => ({
+          name: m.name,
+          isUser: m.isUser,
+          isSystem: m.isSystem,
+          content: m.content,
+        }))
+      );
     }
   }, [isSending, messages, currentChatFile, selectedCharacter]);
 

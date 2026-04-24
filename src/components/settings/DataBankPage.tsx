@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useDataBankStore, type DataBankDocument } from '../../stores/dataBankStore';
+import { useChatHistoryRagStore } from '../../stores/chatHistoryRagStore';
 import { useCharacterStore } from '../../stores/characterStore';
 import { Button } from '../ui';
 
@@ -387,6 +388,9 @@ export function DataBankPage(_props?: { params?: Record<string, string> }) {
           )}
         </section>
 
+        {/* Chat memory — semantic retrieval over past chat turns */}
+        <ChatHistoryRagSection />
+
         {/* Embed error */}
         {embedError && (
           <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400">
@@ -438,5 +442,64 @@ export function DataBankPage(_props?: { params?: Record<string, string> }) {
         </section>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat-history RAG settings — embeds older chat turns so the model can
+// recall specific past moments by relevance, instead of carrying everything
+// in raw history. Shares the OpenAI embeddings key with the Data Bank.
+// ---------------------------------------------------------------------------
+
+function ChatHistoryRagSection() {
+  const enabled = useChatHistoryRagStore((s) => s.enabled);
+  const setEnabled = useChatHistoryRagStore((s) => s.setEnabled);
+  const embeddingsByChat = useChatHistoryRagStore((s) => s.embeddingsByChat);
+  const apiKey = useDataBankStore((s) => s.embeddingsApiKey);
+
+  const totalChats = Object.keys(embeddingsByChat).length;
+  const totalEmbeddings = Object.values(embeddingsByChat).reduce(
+    (sum, arr) => sum + arr.length,
+    0
+  );
+
+  return (
+    <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          Chat memory (semantic recall)
+        </h2>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => setEnabled(!enabled)}
+          className={`relative w-9 h-5 rounded-full transition-colors ${
+            enabled ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-bg-tertiary)]'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+              enabled ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        Embeds older chat turns so the AI can recall past moments by relevance
+        — pairs well with summary compaction. Costs one OpenAI embedding call
+        per new message and uses the API key above.
+      </p>
+      {enabled && !apiKey && (
+        <p className="text-xs text-amber-400">
+          No OpenAI embeddings key set — chat memory is inactive until you save one above.
+        </p>
+      )}
+      {enabled && apiKey && totalEmbeddings > 0 && (
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          {totalEmbeddings} message{totalEmbeddings === 1 ? '' : 's'} embedded across {totalChats} chat{totalChats === 1 ? '' : 's'}.
+        </p>
+      )}
+    </section>
   );
 }
