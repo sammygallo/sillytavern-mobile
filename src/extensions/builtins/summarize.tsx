@@ -12,11 +12,13 @@ function SummarizeSettings() {
   const autoTriggerEvery = useSummarizeStore((s) => s.autoTriggerEvery);
   const injectionDepth = useSummarizeStore((s) => s.injectionDepth);
   const injectionRole = useSummarizeStore((s) => s.injectionRole);
+  const compactWhenSummarized = useSummarizeStore((s) => s.compactWhenSummarized);
   const isGenerating = useSummarizeStore((s) => s.isGenerating);
   const setAutoSummarize = useSummarizeStore((s) => s.setAutoSummarize);
   const setAutoTriggerEvery = useSummarizeStore((s) => s.setAutoTriggerEvery);
   const setInjectionDepth = useSummarizeStore((s) => s.setInjectionDepth);
   const setInjectionRole = useSummarizeStore((s) => s.setInjectionRole);
+  const setCompactWhenSummarized = useSummarizeStore((s) => s.setCompactWhenSummarized);
 
   const inputClass =
     'px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]';
@@ -84,6 +86,30 @@ function SummarizeSettings() {
           <option value="system">System</option>
           <option value="user">User</option>
         </select>
+      </div>
+
+      <div className={labelClass}>
+        <span>
+          Compact history when summarized
+          <span className="block text-[10px] text-[var(--color-text-secondary)]/60">
+            Drop turns covered by the summary from the prompt to save tokens
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={compactWhenSummarized}
+          onClick={() => setCompactWhenSummarized(!compactWhenSummarized)}
+          className={`relative w-9 h-5 rounded-full transition-colors ${
+            compactWhenSummarized ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-bg-tertiary)]'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+              compactWhenSummarized ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </button>
       </div>
 
       {isGenerating && (

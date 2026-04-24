@@ -82,6 +82,12 @@ export interface WorldInfoBook {
    * selected. Null = a normal global book.
    */
   ownerCharacterAvatar: string | null;
+  /**
+   * True when entries are appended automatically by the auto-memory
+   * extraction pass. Surfaced in the editor so the user can tell
+   * hand-curated lore from machine-extracted notes.
+   */
+  autoExtracted?: boolean;
   createdAt: number;
   updatedAt: number;
 }

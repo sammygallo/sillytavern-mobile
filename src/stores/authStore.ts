@@ -7,6 +7,7 @@ import { useWorldInfoStore } from './worldInfoStore';
 import { useThemeStore } from './themeStore';
 import { useExtensionStore } from './extensionStore';
 import { useSummarizeStore } from './summarizeStore';
+import { useAutoMemoryStore } from './autoMemoryStore';
 import { useTranslateStore } from './translateStore';
 import { useQuickReplyStore } from './quickReplyStore';
 import type { UserRole, Permission } from '../types';
@@ -56,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         useWorldInfoStore.getState().initForUser(user.handle);
         useExtensionStore.getState().initForUser(user.handle);
         useSummarizeStore.getState().initForUser(user.handle);
+        useAutoMemoryStore.getState().initForUser(user.handle);
         useTranslateStore.getState().initForUser(user.handle);
         useQuickReplyStore.getState().initForUser(user.handle);
         set({
@@ -106,6 +108,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useWorldInfoStore.getState().initForUser(loginResult.handle);
       useExtensionStore.getState().initForUser(loginResult.handle);
       useSummarizeStore.getState().initForUser(loginResult.handle);
+      useAutoMemoryStore.getState().initForUser(loginResult.handle);
       useTranslateStore.getState().initForUser(loginResult.handle);
       useQuickReplyStore.getState().initForUser(loginResult.handle);
       set({
@@ -133,6 +136,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useWorldInfoStore.getState().initForUser(h);
       useExtensionStore.getState().initForUser(h);
       useSummarizeStore.getState().initForUser(h);
+      useAutoMemoryStore.getState().initForUser(h);
       useTranslateStore.getState().initForUser(h);
       useQuickReplyStore.getState().initForUser(h);
       set({
@@ -201,6 +205,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useWorldInfoStore.getState().resetUser();
       useExtensionStore.getState().resetUser();
       useSummarizeStore.getState().resetUser();
+      useAutoMemoryStore.getState().resetUser();
       useTranslateStore.getState().resetUser();
       useQuickReplyStore.getState().resetUser();
 
