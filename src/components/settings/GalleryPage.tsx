@@ -13,6 +13,7 @@ function formatDate(ts: number): string {
 function backendLabel(backend: string): string {
   switch (backend) {
     case 'pollinations': return 'Pollinations';
+    case 'horde': return 'AI Horde';
     case 'sdwebui': return 'SD WebUI';
     case 'dalle': return 'DALL-E';
     default: return backend;

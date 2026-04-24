@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Image, Settings2, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { useImageGenStore } from '../../stores/imageGenStore';
-import { imageGenApi } from '../../api/imageGenApi';
+import { imageGenApi, type HordeModelInfo } from '../../api/imageGenApi';
 import { Button } from '../ui';
 import type { ImageGenBackend } from '../../api/imageGenApi';
 
@@ -18,13 +18,16 @@ interface ImageGenModalProps {
   characterName?: string;
 }
 
-const POLLINATIONS_MODELS = [
-  'flux',
-  'flux-realism',
-  'flux-cablyai',
-  'flux-anime',
-  'flux-3d',
-  'turbo',
+// Fallback used until the live /models fetch resolves (or if it errors).
+// Pollinations' anonymous endpoint really only serves "sana" today; the
+// dropdown will repopulate from the server-side list as soon as it loads.
+const POLLINATIONS_FALLBACK_MODELS = ['sana'];
+
+// Horde fallback when the dynamic models call hasn't returned yet — these
+// are a few perennial high-worker-count entries. Real list overrides as
+// soon as the fetch completes.
+const HORDE_FALLBACK_MODELS: HordeModelInfo[] = [
+  { name: 'stable_diffusion', count: 0, queued: 0, eta: 0 },
 ];
 
 const SIZE_PRESETS = [
@@ -61,6 +64,8 @@ export function ImageGenModal({
     sdUrl,
     sdAuth,
     pollinationsModel,
+    hordeModel,
+    hordeApiKey,
     dalleModel,
     dalleQuality,
     width,
@@ -80,6 +85,12 @@ export function ImageGenModal({
   const [showSettings, setShowSettings] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [pollinationsModels, setPollinationsModels] = useState<string[]>(
+    POLLINATIONS_FALLBACK_MODELS
+  );
+  const [hordeModels, setHordeModels] = useState<HordeModelInfo[]>(
+    HORDE_FALLBACK_MODELS
+  );
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -92,6 +103,22 @@ export function ImageGenModal({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Lazy-load model lists when their backend is selected. Both endpoints
+  // are cheap, but the calls are skipped entirely until the user actually
+  // visits Pollinations or Horde.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (backend === 'pollinations') {
+      void imageGenApi.getPollinationsModels().then((models) => {
+        if (models.length > 0) setPollinationsModels(models);
+      });
+    } else if (backend === 'horde') {
+      void imageGenApi.getHordeModels().then((models) => {
+        if (models.length > 0) setHordeModels(models);
+      });
+    }
+  }, [isOpen, backend]);
 
   if (!isOpen) return null;
 
@@ -265,6 +292,7 @@ export function ImageGenModal({
                   className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
                 >
                   <option value="pollinations">Pollinations (free, no setup)</option>
+                  <option value="horde">AI Horde (free, distributed)</option>
                   <option value="sdwebui">SD WebUI (local)</option>
                   <option value="dalle">OpenAI DALL-E (requires API key)</option>
                 </select>
@@ -281,11 +309,102 @@ export function ImageGenModal({
                     onChange={(e) => setConfig({ pollinationsModel: e.target.value })}
                     className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
                   >
-                    {POLLINATIONS_MODELS.map((m) => (
+                    {pollinationsModels.map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
+                    {!pollinationsModels.includes(pollinationsModel) && (
+                      <option value={pollinationsModel}>{pollinationsModel} (custom)</option>
+                    )}
                   </select>
                 </div>
+              )}
+
+              {/* Horde settings */}
+              {backend === 'horde' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                      Model
+                      <span className="ml-1 text-[10px] text-zinc-500 font-normal">
+                        (sorted by available workers)
+                      </span>
+                    </label>
+                    <select
+                      value={hordeModel}
+                      onChange={(e) => setConfig({ hordeModel: e.target.value })}
+                      className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                    >
+                      {hordeModels.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          {m.name}{m.count > 0 ? ` — ${m.count} worker${m.count === 1 ? '' : 's'}` : ''}
+                        </option>
+                      ))}
+                      {!hordeModels.find((m) => m.name === hordeModel) && (
+                        <option value={hordeModel}>{hordeModel} (custom)</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                      API Key
+                      <span className="ml-1 text-[10px] text-zinc-500 font-normal">
+                        (optional — leave blank for anonymous)
+                      </span>
+                    </label>
+                    <input
+                      type="password"
+                      value={hordeApiKey}
+                      onChange={(e) => setConfig({ hordeApiKey: e.target.value })}
+                      placeholder="0000000000 (anonymous)"
+                      className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                    />
+                    <p className="text-[10px] text-zinc-500 mt-1 leading-snug">
+                      Free key registration at{' '}
+                      <a
+                        href="https://aihorde.net"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[var(--color-primary)] hover:underline"
+                      >
+                        aihorde.net
+                      </a>
+                      {' '}— gives you priority over anonymous requests.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                        Steps
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={steps}
+                        onChange={(e) =>
+                          setConfig({ steps: Math.max(1, Math.min(50, parseInt(e.target.value) || 25)) })
+                        }
+                        className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
+                        CFG Scale
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        step={0.5}
+                        value={cfgScale}
+                        onChange={(e) =>
+                          setConfig({ cfgScale: Math.max(1, Math.min(30, parseFloat(e.target.value) || 7)) })
+                        }
+                        className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* DALL-E settings */}

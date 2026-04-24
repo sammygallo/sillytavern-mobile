@@ -2,7 +2,17 @@ import { apiRequest } from './client';
 import { api } from './client';
 import { useSettingsStore } from '../stores/settingsStore';
 
-export type ImageGenBackend = 'pollinations' | 'sdwebui' | 'dalle';
+export type ImageGenBackend = 'pollinations' | 'horde' | 'sdwebui' | 'dalle';
+
+export interface HordeModelInfo {
+  name: string;
+  /** Number of workers currently serving this model. */
+  count: number;
+  /** Pending jobs queued for this model. */
+  queued: number;
+  /** Estimated wait time in seconds. */
+  eta: number;
+}
 
 export interface ImageGenResult {
   /** Raw base64 string — no data URI prefix. */
@@ -88,13 +98,86 @@ export const imageGenApi = {
       body: JSON.stringify({
         prompt: opts.prompt,
         negative_prompt: opts.negativePrompt,
-        model: opts.model ?? 'flux',
+        // 'sana' is the only model the legacy anonymous endpoint serves
+        // as of 2026-04 — Pollinations silently downgrades anything else.
+        // Caller can still override via the Settings dropdown if a model
+        // name returned by the live /models endpoint changes.
+        model: opts.model ?? 'sana',
         width: opts.width ?? 1024,
         height: opts.height ?? 1024,
         seed: -1,
       }),
     });
     return { base64: result.image, format: 'jpg' };
+  },
+
+  /**
+   * Fetch the live list of Pollinations model names. Returns a fallback
+   * single-element array on failure so the UI dropdown is never empty.
+   */
+  async getPollinationsModels(): Promise<string[]> {
+    try {
+      const result = await apiRequest<unknown>('/api/sd/pollinations/models', {
+        method: 'POST',
+        body: '{}',
+      });
+      if (Array.isArray(result)) {
+        const names = result.filter((m): m is string => typeof m === 'string');
+        if (names.length > 0) return names;
+      }
+    } catch {
+      // fall through to fallback
+    }
+    return ['sana'];
+  },
+
+  /**
+   * Fetch popular AI Horde image models, sorted by worker count.
+   * Returns [] on failure — caller falls back to a hardcoded default.
+   */
+  async getHordeModels(): Promise<HordeModelInfo[]> {
+    try {
+      const result = await apiRequest<HordeModelInfo[]>('/api/sd/horde/models', {
+        method: 'POST',
+        body: '{}',
+      });
+      return Array.isArray(result) ? result : [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Generate via AI Horde. Backend handles the async enqueue + poll dance
+   * and returns the final base64 image. Anonymous key (0000000000) works
+   * but is slow; users can supply their own free key for higher priority.
+   */
+  async generateHorde(opts: {
+    prompt: string;
+    negativePrompt?: string;
+    model?: string;
+    width?: number;
+    height?: number;
+    steps?: number;
+    cfgScale?: number;
+    apiKey?: string;
+    nsfw?: boolean;
+  }): Promise<ImageGenResult> {
+    const result = await apiRequest<{ image: string }>('/api/sd/horde/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt: opts.prompt,
+        negative_prompt: opts.negativePrompt,
+        model: opts.model ?? 'stable_diffusion',
+        width: opts.width ?? 512,
+        height: opts.height ?? 512,
+        steps: opts.steps ?? 25,
+        cfg_scale: opts.cfgScale ?? 7,
+        api_key: opts.apiKey || undefined,
+        nsfw: !!opts.nsfw,
+      }),
+    });
+    return { base64: result.image, format: 'webp' };
   },
 
   async generateSdWebui(opts: {
