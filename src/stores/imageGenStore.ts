@@ -25,6 +25,10 @@ interface ImageGenConfig {
   sdUrl: string;
   sdAuth: string;
   pollinationsModel: string;
+  /** Selected AI Horde model (e.g. "Flux.1-Schnell fp8 (Compact)"). */
+  hordeModel: string;
+  /** Optional Horde API key — empty string falls back to the anonymous key. */
+  hordeApiKey: string;
   dalleModel: 'dall-e-3' | 'dall-e-2';
   dalleQuality: 'standard' | 'hd';
   width: number;
@@ -37,7 +41,11 @@ const DEFAULT_CONFIG: ImageGenConfig = {
   backend: 'pollinations',
   sdUrl: 'http://localhost:7860',
   sdAuth: '',
-  pollinationsModel: 'flux',
+  // 'sana' is what Pollinations' anonymous endpoint actually serves now;
+  // older 'flux*' values get silently downgraded but render the same.
+  pollinationsModel: 'sana',
+  hordeModel: 'stable_diffusion',
+  hordeApiKey: '',
   dalleModel: 'dall-e-3',
   dalleQuality: 'standard',
   width: 1024,
@@ -130,6 +138,8 @@ export const useImageGenStore = create<ImageGenState>((set, get) => ({
         sdUrl: next.sdUrl,
         sdAuth: next.sdAuth,
         pollinationsModel: next.pollinationsModel,
+        hordeModel: next.hordeModel,
+        hordeApiKey: next.hordeApiKey,
         dalleModel: next.dalleModel,
         dalleQuality: next.dalleQuality,
         width: next.width,
@@ -144,7 +154,7 @@ export const useImageGenStore = create<ImageGenState>((set, get) => ({
 
   generate: async (prompt, negativePrompt) => {
     const {
-      backend, sdUrl, sdAuth, pollinationsModel,
+      backend, sdUrl, sdAuth, pollinationsModel, hordeModel, hordeApiKey,
       dalleModel, dalleQuality, width, height, steps, cfgScale,
     } = get();
     set({ isGenerating: true, error: null });
@@ -160,6 +170,17 @@ export const useImageGenStore = create<ImageGenState>((set, get) => ({
           height,
           steps,
           cfgScale,
+        });
+      } else if (backend === 'horde') {
+        result = await imageGenApi.generateHorde({
+          prompt,
+          negativePrompt: negativePrompt || undefined,
+          model: hordeModel,
+          width,
+          height,
+          steps,
+          cfgScale,
+          apiKey: hordeApiKey || undefined,
         });
       } else if (backend === 'dalle') {
         const size = nearestDalleSize(width, height, dalleModel);
