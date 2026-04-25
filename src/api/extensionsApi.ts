@@ -26,6 +26,13 @@ export interface ExtensionManifestData {
   slash_commands?: SlashCommandDeclaration[];
   /** When true, the extension exposes a POST /api/plugins/<name>/generate-interceptors endpoint. */
   generate_interceptor?: boolean;
+  /**
+   * Entry script(s) loaded into the iframe sandbox, relative to the extension folder.
+   * String or array. Defaults to "index.js" when omitted.
+   */
+  js?: string | string[];
+  /** Stylesheet(s) loaded into the iframe sandbox, relative to the extension folder. */
+  css?: string | string[];
 }
 
 /** Entry shape from the SillyTavern-Content extensions.json registry. */
@@ -128,10 +135,22 @@ export const extensionsApi = {
     });
   },
 
-  /** Fetch the manifest.json for an installed extension. */
-  async getManifest(extensionName: string, global?: boolean): Promise<ExtensionManifestData> {
-    const params = new URLSearchParams({ extensionName });
-    if (global) params.set('global', 'true');
-    return apiRequest<ExtensionManifestData>(`/api/extensions/manifest?${params}`);
+  /**
+   * Fetch the manifest.json for an installed extension.
+   *
+   * The upstream SillyTavern backend doesn't expose a JSON API for manifests —
+   * it only serves the raw file via its static-files mount at
+   * `/scripts/extensions/third-party/{name}/manifest.json`. We fetch that
+   * directly. The `global` flag is accepted for forward compatibility but
+   * unused: both local and global third-party extensions are served from the
+   * same URL prefix on the backend.
+   */
+  async getManifest(extensionName: string, _global?: boolean): Promise<ExtensionManifestData> {
+    const url = `/scripts/extensions/third-party/${extensionName}/manifest.json`;
+    const response = await fetch(url, { credentials: 'include' });
+    if (!response.ok) {
+      throw new Error(`manifest.json not found (HTTP ${response.status})`);
+    }
+    return response.json();
   },
 };

@@ -39,6 +39,7 @@ import {
   type PopupType,
   type PopupOptions,
 } from '../../stores/extensionPopupStore';
+import type { ExtensionManifestData } from '../../api/extensionsApi';
 
 let _frameSeq = 0;
 
@@ -50,10 +51,17 @@ export interface ExtensionFrameProps {
   /** Extension name as returned by the discovery API, e.g. "third-party/my-ext". */
   extensionName: string;
   /**
-   * URL of the extension's index.js served by the ST backend.
-   * Typically /scripts/extensions/third-party/{name}/index.js
+   * URL of the extension's default entry script served by the ST backend.
+   * Typically /scripts/extensions/third-party/{name}/index.js. Used as a
+   * fallback when the manifest doesn't declare a `js` field.
    */
   scriptUrl: string;
+  /**
+   * Parsed manifest.json for this extension. When provided, `js` and `css`
+   * fields are honored to load additional scripts and stylesheets into the
+   * sandbox iframe. When omitted, only `scriptUrl` runs.
+   */
+  manifest?: ExtensionManifestData;
   /** Optional extra CSS classes on the iframe wrapper div. */
   className?: string;
   /** Called with true the first time the iframe reports non-zero content. */
@@ -114,9 +122,49 @@ function buildContextSnapshot() {
 // srcdoc builder
 // ---------------------------------------------------------------------------
 
-function buildSrcdoc(scriptUrl: string): string {
-  // Escape the URL for safe insertion into an HTML attribute
-  const safeUrl = scriptUrl.replace(/"/g, '%22').replace(/</g, '%3C').replace(/>/g, '%3E');
+/** Escape a URL for safe use inside an HTML attribute. */
+function escapeAttrUrl(url: string): string {
+  return url.replace(/"/g, '%22').replace(/</g, '%3C').replace(/>/g, '%3E');
+}
+
+/** Coerce a manifest field that may be string | string[] | undefined into an array. */
+function asArray(v: string | string[] | undefined): string[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+/** Resolve a manifest-relative asset path to a backend-served URL. */
+function resolveAssetUrl(extensionName: string, assetPath: string): string {
+  if (/^https?:\/\//i.test(assetPath) || assetPath.startsWith('/')) return assetPath;
+  const base = extensionName.replace(/^third-party\//, '');
+  return `/scripts/extensions/third-party/${base}/${assetPath.replace(/^\.\/+/, '')}`;
+}
+
+/**
+ * Build the iframe srcdoc.
+ *
+ * Script load order:
+ *   1. shim (inline)
+ *   2. manifest.js scripts in declared order — OR fallbackScriptUrl if manifest.js is empty
+ *
+ * Stylesheet load order:
+ *   1. base iframe styles (inline)
+ *   2. manifest.css stylesheets in declared order
+ */
+function buildSrcdoc(
+  extensionName: string,
+  fallbackScriptUrl: string,
+  manifest?: ExtensionManifestData,
+): string {
+  const jsList = asArray(manifest?.js);
+  const cssList = asArray(manifest?.css);
+
+  const scriptUrls = (jsList.length > 0 ? jsList.map((p) => resolveAssetUrl(extensionName, p)) : [fallbackScriptUrl])
+    .map(escapeAttrUrl);
+  const styleUrls = cssList.map((p) => escapeAttrUrl(resolveAssetUrl(extensionName, p)));
+
+  const scriptTags = scriptUrls.map((u) => `<script src="${u}"></script>`).join('\n');
+  const styleTags = styleUrls.map((u) => `<link rel="stylesheet" href="${u}">`).join('\n');
 
   return `<!DOCTYPE html>
 <html>
@@ -138,13 +186,14 @@ function buildSrcdoc(scriptUrl: string): string {
     font-size: inherit;
   }
 </style>
+${styleTags}
 <script>${SHIM_CODE}</script>
 </head>
 <body>
 <div id="extensions_settings" class="extensions_settings"></div>
 <div id="send_form" style="display:none"></div>
 <div id="chat" style="display:none"></div>
-<script src="${safeUrl}"></script>
+${scriptTags}
 </body>
 </html>`;
 }
@@ -156,6 +205,7 @@ function buildSrcdoc(scriptUrl: string): string {
 export function ExtensionFrame({
   extensionName,
   scriptUrl,
+  manifest,
   className,
   onHasContent,
   allowSlots = false,
@@ -326,10 +376,12 @@ export function ExtensionFrame({
 
   // ── Build srcdoc once ─────────────────────────────────────────────────────
   // We use a ref so the srcdoc doesn't change on re-renders (which would cause
-  // the iframe to reload).
+  // the iframe to reload). Callers that need to react to a late-arriving
+  // manifest should remount this component via a key change rather than
+  // mutating the manifest prop after first render.
   const srcdocRef = useRef<string | null>(null);
   if (srcdocRef.current === null) {
-    srcdocRef.current = buildSrcdoc(scriptUrl);
+    srcdocRef.current = buildSrcdoc(extensionName, scriptUrl, manifest);
   }
 
   return (

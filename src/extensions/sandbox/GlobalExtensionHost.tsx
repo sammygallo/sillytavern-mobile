@@ -21,6 +21,8 @@ function extensionScriptUrl(extName: string): string {
  */
 export function GlobalExtensionHost() {
   const installed = useServerExtensionStore((s) => s.installed);
+  const manifests = useServerExtensionStore((s) => s.manifests);
+  const noManifestExtensions = useServerExtensionStore((s) => s.noManifestExtensions);
   const fetchInstalled = useServerExtensionStore((s) => s.fetchInstalled);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
@@ -29,6 +31,13 @@ export function GlobalExtensionHost() {
   }, [isAuthenticated, fetchInstalled]);
 
   if (!isAuthenticated) return null;
+
+  // Wait until manifest fetch has resolved (loaded or confirmed missing) before
+  // mounting an iframe. Mounting earlier and then re-keying when the manifest
+  // arrives would tear down any background state the extension built up.
+  const readyExtensions = installed.filter(
+    (ext) => manifests[ext.name] !== undefined || noManifestExtensions.has(ext.name),
+  );
 
   return (
     <div
@@ -42,11 +51,12 @@ export function GlobalExtensionHost() {
         visibility: 'hidden',
       }}
     >
-      {installed.map((ext) => (
+      {readyExtensions.map((ext) => (
         <ExtensionFrame
           key={ext.name}
           extensionName={ext.name}
           scriptUrl={extensionScriptUrl(ext.name)}
+          manifest={manifests[ext.name]}
           allowSlots
         />
       ))}
