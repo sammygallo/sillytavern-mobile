@@ -248,6 +248,7 @@ function InstalledCard({
             <ExtensionFrame
               extensionName={ext.name}
               scriptUrl={scriptUrl}
+              manifest={manifest}
               onHasContent={(yes) => setHasUi(yes)}
             />
           </div>
