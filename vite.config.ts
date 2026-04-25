@@ -31,6 +31,24 @@ export default defineConfig({
       '/scripts': {
         target: BACKEND,
         changeOrigin: true,
+        // Specific upstream-compat shim modules served from public/ must NOT
+        // be proxied — they shadow upstream files of the same name so
+        // ES-module-based extensions can `import { ... } from '../../../...'`
+        // without dragging in the upstream monolith. Returning the request
+        // URL bypasses the proxy and lets Vite's static middleware serve the
+        // public/ copy.
+        bypass(req) {
+          const url = req.url || ''
+          const path = url.split('?')[0]
+          if (
+            path === '/scripts/extensions.js' ||
+            path === '/scripts/slash-commands.js' ||
+            path === '/scripts/utils.js'
+          ) {
+            return url
+          }
+          return undefined
+        },
       },
     },
   },

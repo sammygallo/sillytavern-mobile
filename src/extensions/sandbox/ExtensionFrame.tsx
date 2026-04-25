@@ -140,6 +140,42 @@ function resolveAssetUrl(extensionName: string, assetPath: string): string {
   return `/scripts/extensions/third-party/${base}/${assetPath.replace(/^\.\/+/, '')}`;
 }
 
+type ScriptType = 'classic' | 'module';
+
+/**
+ * Detect whether an entry script is an ES module by fetching its source and
+ * looking for top-level `import` / `export` statements. Cached per URL across
+ * the session because the answer is stable for the lifetime of an extension
+ * install — repeat detection would just waste a network round-trip.
+ *
+ * Falls back to 'classic' on any fetch error so a misbehaving network can't
+ * permanently lock an extension out of mounting.
+ */
+const _scriptTypeCache = new Map<string, ScriptType>();
+
+async function detectScriptType(url: string): Promise<ScriptType> {
+  const cached = _scriptTypeCache.get(url);
+  if (cached) return cached;
+  try {
+    const response = await fetch(url, { credentials: 'include' });
+    if (!response.ok) {
+      _scriptTypeCache.set(url, 'classic');
+      return 'classic';
+    }
+    const source = await response.text();
+    // Multiline mode: match `import` / `export` at the start of any line,
+    // followed by a non-identifier character so we don't false-positive on
+    // identifiers like `importantThing`.
+    const isModule = /^[ \t]*(?:import|export)(?![a-zA-Z0-9_$])/m.test(source);
+    const result: ScriptType = isModule ? 'module' : 'classic';
+    _scriptTypeCache.set(url, result);
+    return result;
+  } catch {
+    _scriptTypeCache.set(url, 'classic');
+    return 'classic';
+  }
+}
+
 /**
  * Build the iframe srcdoc.
  *
@@ -150,11 +186,18 @@ function resolveAssetUrl(extensionName: string, assetPath: string): string {
  * Stylesheet load order:
  *   1. base iframe styles (inline)
  *   2. manifest.css stylesheets in declared order
+ *
+ * `scriptType` controls the `type` attribute on the entry-point script tag.
+ * 'module' lets ES-module-style upstream extensions (Live2D etc.) parse their
+ * top-level `import` statements; 'classic' preserves the legacy globals-leaking
+ * semantics that pre-module extensions like Lovense Cloud rely on. Detection
+ * happens before this is called — see {@link detectScriptType}.
  */
 function buildSrcdoc(
   extensionName: string,
   fallbackScriptUrl: string,
-  manifest?: ExtensionManifestData,
+  manifest: ExtensionManifestData | undefined,
+  scriptType: ScriptType,
 ): string {
   const jsList = asArray(manifest?.js);
   const cssList = asArray(manifest?.css);
@@ -163,7 +206,8 @@ function buildSrcdoc(
     .map(escapeAttrUrl);
   const styleUrls = cssList.map((p) => escapeAttrUrl(resolveAssetUrl(extensionName, p)));
 
-  const scriptTags = scriptUrls.map((u) => `<script src="${u}"></script>`).join('\n');
+  const typeAttr = scriptType === 'module' ? ' type="module"' : '';
+  const scriptTags = scriptUrls.map((u) => `<script${typeAttr} src="${u}"></script>`).join('\n');
   const styleTags = styleUrls.map((u) => `<link rel="stylesheet" href="${u}">`).join('\n');
 
   return `<!DOCTYPE html>
@@ -190,7 +234,15 @@ ${styleTags}
 <script>${SHIM_CODE}</script>
 </head>
 <body>
+<!--
+  Upstream ST has two separate settings containers: #extensions_settings for
+  internal/built-in extensions (e.g. Lovense Cloud appends here) and
+  #extensions_settings2 for third-party extensions (Live2D, etc.). Provide
+  both so extensions of either flavor mount their UI without us having to
+  know which container they target.
+-->
 <div id="extensions_settings" class="extensions_settings"></div>
+<div id="extensions_settings2" class="extensions_settings"></div>
 <div id="send_form" style="display:none"></div>
 <div id="chat" style="display:none"></div>
 ${scriptTags}
@@ -374,15 +426,30 @@ export function ExtensionFrame({
     };
   }, [allowSlots, frameId]);
 
-  // ── Build srcdoc once ─────────────────────────────────────────────────────
-  // We use a ref so the srcdoc doesn't change on re-renders (which would cause
-  // the iframe to reload). Callers that need to react to a late-arriving
-  // manifest should remount this component via a key change rather than
-  // mutating the manifest prop after first render.
-  const srcdocRef = useRef<string | null>(null);
-  if (srcdocRef.current === null) {
-    srcdocRef.current = buildSrcdoc(extensionName, scriptUrl, manifest);
-  }
+  // ── Build srcdoc once detection completes ─────────────────────────────────
+  // Detection is async (we fetch the entry script and check for `import` /
+  // `export` at line start) so srcdoc lives in state, not a sync ref. The
+  // iframe doesn't mount until detection resolves; subsequent renders keep
+  // the same srcdoc to avoid reload-on-rerender. Callers that need to react
+  // to a late-arriving manifest should remount via a key change.
+  const [srcdoc, setSrcdoc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    // The first script in the load list is what we probe. If manifest.js is
+    // declared we use its first entry; otherwise scriptUrl is the entry.
+    const firstJs = asArray(manifest?.js)[0];
+    const probeUrl = firstJs ? resolveAssetUrl(extensionName, firstJs) : scriptUrl;
+    detectScriptType(probeUrl).then((scriptType) => {
+      if (cancelled) return;
+      setSrcdoc(buildSrcdoc(extensionName, scriptUrl, manifest, scriptType));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // We intentionally only use the initial values — re-running on prop
+    // changes would tear down the iframe and lose extension state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -395,20 +462,22 @@ export function ExtensionFrame({
         minHeight: 0,
       }}
     >
-      <iframe
-        ref={iframeRef}
-        // Use srcDoc (React's camelCase spelling)
-        srcDoc={srcdocRef.current}
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        title={`Extension UI: ${extensionName}`}
-        style={{
-          width: '100%',
-          height: '100%',
-          border: 'none',
-          display: 'block',
-          background: 'transparent',
-        }}
-      />
+      {srcdoc !== null && (
+        <iframe
+          ref={iframeRef}
+          // Use srcDoc (React's camelCase spelling)
+          srcDoc={srcdoc}
+          sandbox="allow-scripts allow-same-origin allow-forms"
+          title={`Extension UI: ${extensionName}`}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            display: 'block',
+            background: 'transparent',
+          }}
+        />
+      )}
     </div>
   );
 }

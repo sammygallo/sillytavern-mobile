@@ -415,6 +415,13 @@ export const SHIM_CODE: string = /* javascript */ `
       serialize: function () { return ''; },
     };
 
+    // Expose els as numeric indices so the jq object is array-like — required
+    // for Array.prototype.slice / spread / for-of to iterate it. Without this,
+    // _toHtml(jqObj) returns empty for jq-wrapped HTML, which breaks
+    // pattern: \$(htmlString) → target.append(\$wrapper).
+    for (var _i = 0; _i < els.length; _i++) jq[_i] = els[_i];
+    jq.toArray = function () { return Array.prototype.slice.call(els); };
+
     return jq;
   }
 
@@ -646,7 +653,159 @@ export const SHIM_CODE: string = /* javascript */ `
   window.saveSettingsDebounced = function () {
     _post({ type: 'ST_RPC', id: 'rpc_' + (++_seq), method: 'saveSettings', args: [] });
   };
+  window.saveSettings = window.saveSettingsDebounced;
   window.loadSettings = function () {};
+
+  // ── upstream module-shim back-ends ────────────────────────────────────────
+  // The /script.js, /scripts/extensions.js, /scripts/utils.js and
+  // /scripts/slash-commands.js shim modules served from the host re-export
+  // these globals so ES-module-style upstream extensions resolve their
+  // canonical specifiers without us shipping the full upstream monolith.
+
+  window.getCharacters = function () { return _ctx.characters; };
+
+  // Best-effort CSRF token cache. Filled on first call; same-origin fetch.
+  var _csrfToken = null;
+  function _refreshCsrf() {
+    try {
+      fetch('/csrf-token', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.token) _csrfToken = j.token; })
+        .catch(function () {});
+    } catch (_) {}
+  }
+  _refreshCsrf();
+  window.getRequestHeaders = function () {
+    return {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': _csrfToken || '',
+      Accept: 'application/json',
+    };
+  };
+
+  window.sendMessageAsUser = function (text) {
+    return _rpc('sendMessageAsUser', [String(text || '')]);
+  };
+
+  // ModuleWorkerWrapper: tiny debounce-style runner upstream uses to coalesce
+  // re-entrant async work. Faithful enough for extension purposes.
+  window.ModuleWorkerWrapper = function ModuleWorkerWrapper(callback) {
+    var busy = false;
+    var queued = false;
+    function run() {
+      if (busy) { queued = true; return Promise.resolve(); }
+      busy = true;
+      return Promise.resolve()
+        .then(function () { return callback(); })
+        .catch(function (e) { try { console.error('[ModuleWorkerWrapper]', e); } catch (_) {} })
+        .then(function () {
+          busy = false;
+          if (queued) { queued = false; return run(); }
+        });
+    }
+    this.update = run;
+  };
+
+  // renderExtensionTemplate: fetch an HTML template from the extension folder
+  // and return its text. Upstream supports {{var}} substitution; we honor that
+  // with a minimal pass over the optional template-data object.
+  window.renderExtensionTemplate = function (extensionName, templateName, templateData, sanitize, localize) {
+    var url = '/scripts/extensions/third-party/' + extensionName + '/' + templateName + '.html';
+    // Some upstream call sites pass the full module path (e.g.
+    // 'third-party/Extension-Live2d'); strip the prefix so the URL is correct.
+    url = url.replace('/third-party/third-party/', '/third-party/');
+    return fetch(url, { credentials: 'include' }).then(function (r) {
+      if (!r.ok) throw new Error('Template not found: ' + url);
+      return r.text();
+    }).then(function (html) {
+      if (templateData && typeof templateData === 'object') {
+        Object.keys(templateData).forEach(function (k) {
+          html = html.split('{{' + k + '}}').join(String(templateData[k]));
+        });
+      }
+      return html;
+    });
+  };
+  window.renderExtensionTemplateAsync = window.renderExtensionTemplate;
+
+  // Extras (the python sidecar) is not implemented on mobile.
+  window.getApiUrl = function () { return ''; };
+  window.doExtrasFetch = function () {
+    return Promise.reject(new Error('Extras backend is not available on mobile.'));
+  };
+  window.modules = [];
+
+  window.registerSlashCommand = function (name, callback, aliases, helpText) {
+    try {
+      _post({
+        type: 'ST_REGISTER_SLASH_COMMAND',
+        name: String(name),
+        aliases: Array.isArray(aliases) ? aliases.map(String) : [],
+        helpText: String(helpText || ''),
+      });
+    } catch (_) {}
+    // Stash callback locally so future ST_INVOKE_SLASH_COMMAND can dispatch.
+    if (!window.__shimSlashCommands) window.__shimSlashCommands = {};
+    window.__shimSlashCommands[String(name).toLowerCase()] = callback;
+  };
+
+  window.loadFileToDocument = function (url, type) {
+    return new Promise(function (resolve, reject) {
+      var el;
+      if (type === 'css') {
+        el = document.createElement('link');
+        el.rel = 'stylesheet';
+        el.href = url;
+      } else if (type === 'js') {
+        el = document.createElement('script');
+        el.src = url;
+      } else {
+        reject(new Error('loadFileToDocument: invalid type ' + type));
+        return;
+      }
+      el.onload = resolve;
+      el.onerror = reject;
+      (type === 'css' ? document.head : document.body).appendChild(el);
+    });
+  };
+
+  // Text utilities ported from upstream public/scripts/utils.js so port
+  // extensions don't need to vendor them. Backslash-escape sequences in this
+  // block are doubled so the outer TypeScript template literal preserves them
+  // — e.g. source \\\\p becomes the JS source \\p which becomes the regex \\p
+  // in the running iframe. Single-\\ would be eaten by the template literal
+  // and the regex would fail to parse, taking down the entire shim IIFE.
+  window.trimToEndSentence = function (input) {
+    if (!input) return '';
+    var isEmoji = function (x) { return /(\\p{Emoji_Presentation}|\\p{Extended_Pictographic})/gu.test(x); };
+    var punct = { '.':1,'!':1,'?':1,'*':1,'"':1,')':1,'}':1,'\`':1,']':1,'$':1,'。':1,'！':1,'？':1,'”':1,'）':1,'】':1,'’':1,'」':1,'_':1 };
+    var last = -1;
+    var chars = Array.from(input);
+    for (var i = chars.length - 1; i >= 0; i--) {
+      var c = chars[i];
+      var em = isEmoji(c);
+      if (punct[c] || em) {
+        if (!em && i > 0 && /[\\s\\n]/.test(chars[i - 1])) last = i - 1; else last = i;
+        break;
+      }
+    }
+    if (last === -1) return input.trimEnd();
+    return chars.slice(0, last + 1).join('').trimEnd();
+  };
+  window.trimToStartSentence = function (input) {
+    if (!input) return '';
+    var p1 = input.indexOf('.');
+    var p2 = input.indexOf('!');
+    var p3 = input.indexOf('?');
+    var p4 = input.indexOf('\\n');
+    var first = p1;
+    var skip1 = false;
+    if (p2 > 0 && p2 < first) first = p2;
+    if (p3 > 0 && p3 < first) first = p3;
+    if (p4 > 0 && p4 < first) { first = p4; skip1 = true; }
+    if (first > 0) return skip1 ? input.substring(first + 1) : input.substring(first + 2);
+    return input;
+  };
 
   // ── SillyTavern global ────────────────────────────────────────────────────
   window.SillyTavern = {
