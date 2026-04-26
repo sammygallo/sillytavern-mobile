@@ -15,6 +15,8 @@ import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 import { useTranslateStore } from '../../stores/translateStore';
 import { useExtensionStore } from '../../stores/extensionStore';
 import { useSlotItems, invokeSlotItem } from '../../extensions/sandbox/sandboxSlotRegistry';
+import { LivePortrait } from './LivePortrait';
+import { useLivePortraitStore } from '../../stores/livePortraitStore';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -36,6 +38,12 @@ interface ChatMessageProps {
   characterAvatar?: string;
   /** Phase 7.2: true while this message is actively being streamed. */
   isStreaming?: boolean;
+  /**
+   * True when this is the latest message in the chat — gates expensive
+   * per-message effects like the LivePortrait animator so we only run it
+   * for the visible/current speaker rather than every AI message in history.
+   */
+  isLastMessage?: boolean;
   /** Phase 7.3: display style settings. */
   layoutMode?: ChatLayoutMode;
   avatarShape?: AvatarShape;
@@ -80,6 +88,7 @@ export function ChatMessage({
   onSwipeLeft,
   onSwipeRight,
   isStreaming: isStreamingMsg,
+  isLastMessage,
   layoutMode = 'bubbles',
   avatarShape = 'circle',
   fontSize,
@@ -462,12 +471,56 @@ export function ChatMessage({
   ) : null;
 
   // ==================================================================
+  // Avatar selection — LivePortrait for the latest AI message of a
+  // character that has anchors set up; static <Avatar> everywhere else.
+  // Falls back gracefully when anchors are missing or the feature is
+  // globally disabled.
+  // ==================================================================
+  const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
+  const livePortraitAnchors = useLivePortraitStore((s) =>
+    characterAvatar ? s.anchorsByAvatar[characterAvatar] : undefined,
+  );
+  const useLivePortrait =
+    livePortraitEnabled &&
+    !!livePortraitAnchors &&
+    !!avatar &&
+    !isUser &&
+    !isSystem &&
+    !!isLastMessage;
+  const renderAvatar = (size: 'sm' | 'md') => {
+    if (useLivePortrait && livePortraitAnchors && avatar) {
+      const px = size === 'md' ? 80 : 48;
+      return (
+        <div className="flex-shrink-0">
+          <LivePortrait
+            imageUrl={avatar}
+            size={px}
+            isSpeaking={!!isStreamingMsg}
+            anchors={livePortraitAnchors}
+          />
+        </div>
+      );
+    }
+    return (
+      <Avatar
+        src={avatar}
+        fallbackSrc={avatarFallback}
+        onFallback={onAvatarError}
+        alt={name}
+        size={size}
+        shape={avatarShape}
+        className="flex-shrink-0"
+      />
+    );
+  };
+
+  // ==================================================================
   // Bubbles layout (default — original behavior)
   // ==================================================================
   if (layoutMode === 'bubbles') {
     return (
       <div className={`flex gap-3 px-4 py-3 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        <Avatar src={avatar} fallbackSrc={avatarFallback} onFallback={onAvatarError} alt={name} size="md" shape={avatarShape} className="flex-shrink-0" />
+        {renderAvatar('md')}
 
         <div
           className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
@@ -516,7 +569,7 @@ export function ChatMessage({
       >
         {/* Header row: avatar + name + time + actions */}
         <div className="flex items-center gap-2 mb-1.5">
-          <Avatar src={avatar} fallbackSrc={avatarFallback} onFallback={onAvatarError} alt={name} size="sm" shape={avatarShape} className="flex-shrink-0" />
+          {renderAvatar('sm')}
           <span className={`text-xs font-semibold ${
             isUser ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'
           }`}>
