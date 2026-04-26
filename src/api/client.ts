@@ -2,7 +2,7 @@
 
 let csrfToken: string | null = null;
 
-async function getCsrfToken(): Promise<string> {
+export async function getCsrfToken(): Promise<string> {
   if (csrfToken) return csrfToken;
 
   const response = await fetch('/csrf-token');
