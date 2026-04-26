@@ -39,11 +39,16 @@ const STEP_LABELS: Record<Exclude<Step, 'preview'>, string> = {
 
 const STEP_ORDER: Step[] = ['leftEye', 'rightEye', 'mouth', 'preview'];
 
-/** Default radii sized for typical face proportions. cx/cy come from clicks. */
+/**
+ * Default radii sized for typical face proportions. cx/cy come from clicks.
+ * Set generously so the warp always has multiple mesh vertices to work with;
+ * tighter ellipses look anatomically truer but produce no visible motion on
+ * sparse grids.
+ */
 const DEFAULT_RADII = {
-  leftEye:  { rx: 0.05, ry: 0.025 },
-  rightEye: { rx: 0.05, ry: 0.025 },
-  mouth:    { rx: 0.06, ry: 0.025 },
+  leftEye:  { rx: 0.06, ry: 0.04 },
+  rightEye: { rx: 0.06, ry: 0.04 },
+  mouth:    { rx: 0.07, ry: 0.04 },
 };
 
 export function LivePortraitSetup({ avatar, imageUrl, isOpen, onClose }: LivePortraitSetupProps) {

@@ -58,7 +58,12 @@ export interface LivePortraitProps {
   className?: string;
 }
 
-const VERTICES_PER_AXIS = 24;
+// 48×48 mesh (2304 verts) so small anchor regions still contain multiple
+// vertices to warp. 24×24 was too sparse — eye/mouth ellipses with
+// ry≈0.025 could land entirely between vertex rows and produce no visible
+// warp at all, while breath (which displaces every vertex globally) was
+// the only thing users could see.
+const VERTICES_PER_AXIS = 48;
 
 export function LivePortrait({
   imageUrl,
@@ -79,7 +84,9 @@ export function LivePortrait({
     let restPositions: Float32Array | null = null;
     let cancelled = false;
     let raf = 0;
-    let blinkPhase = randomBlinkInterval();
+    // First blink fires ~700 ms after mount so users see *something* happen
+    // immediately. Subsequent blinks use the human-ish 3.5–6 s schedule.
+    let blinkPhase = 700;
     let blinkElapsed = 0;
     const startTime = performance.now();
 
@@ -185,11 +192,13 @@ export function LivePortrait({
         }
 
         // Mouth: when speaking, oscillate with light noise around 0.4–0.9 open.
-        // When silent, ride a tiny baseline to suggest subtle breath through nose.
+        // When silent, gentle ambient mouth motion (~10% open with sigh-like
+        // periodicity) so the user sees the mouth driver is alive even
+        // outside of streaming.
         const t = (now - startTime) / 1000;
         const mouth = speakingRef.current
           ? 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(t * 14)) + 0.1 * Math.sin(t * 23)
-          : 0.02;
+          : 0.06 + 0.04 * Math.sin((t * Math.PI * 2) / 4.2);
 
         // Breath: gentle vertical sway of the whole portrait. ~3.5s period.
         const breath = Math.sin((t * Math.PI * 2) / 3.5) * (displayHeight * 0.006);
@@ -198,9 +207,15 @@ export function LivePortrait({
         // Anchor regions are normalized 0..1 coords within the IMAGE, so
         // displacement scales need to be in the image's pixel space — not the
         // square `size`, which would distort portraits.
+        //
+        // FALLOFF_REACH widens the effective influence to 1.8× the user's
+        // chosen radius with a smooth quartic decay. Without this, sparse
+        // grids miss small ellipses entirely; with this, nearby vertices
+        // get partial warp and the motion is always visible.
         const positions = plane.geometry.positions;
-        const eyeMaxClosePx = displayHeight * 0.045;
-        const mouthMaxOpenPx = displayHeight * 0.04;
+        const eyeMaxClosePx = displayHeight * 0.07;
+        const mouthMaxOpenPx = displayHeight * 0.06;
+        const FALLOFF_REACH = 1.8;
 
         for (let i = 0; i < positions.length; i += 2) {
           const restX = restPositions[i];
@@ -208,38 +223,36 @@ export function LivePortrait({
           const nx = restX / displayWidth;
           const ny = restY / displayHeight;
 
-          let dx = 0;
           let dy = breath; // global breath sway
 
-          // Eyes: vertices inside the ellipse get pinched vertically toward
-          // the eye center, scaled by blink amount.
+          // Eyes: vertices near the ellipse get pinched vertically toward
+          // the eye center, scaled by blink amount with a smooth falloff
+          // that extends past the strict ellipse boundary.
           for (const eye of [anchors.leftEye, anchors.rightEye]) {
-            const ex = (nx - eye.cx) / eye.rx;
-            const ey = (ny - eye.cy) / eye.ry;
+            const ex = (nx - eye.cx) / (eye.rx * FALLOFF_REACH);
+            const ey = (ny - eye.cy) / (eye.ry * FALLOFF_REACH);
             const d2 = ex * ex + ey * ey;
             if (d2 < 1) {
-              const falloff = 1 - d2;
+              const falloff = (1 - d2) * (1 - d2); // quartic — sharper near peak
               const isAbove = ny < eye.cy;
               dy += (isAbove ? 1 : -1) * blink * eyeMaxClosePx * falloff;
             }
           }
 
-          // Mouth: vertices inside the ellipse stretch vertically away from
+          // Mouth: vertices near the ellipse stretch vertically away from
           // the mouth center, opening the mouth.
           {
-            const mx = (nx - anchors.mouth.cx) / anchors.mouth.rx;
-            const my = (ny - anchors.mouth.cy) / anchors.mouth.ry;
+            const mx = (nx - anchors.mouth.cx) / (anchors.mouth.rx * FALLOFF_REACH);
+            const my = (ny - anchors.mouth.cy) / (anchors.mouth.ry * FALLOFF_REACH);
             const d2 = mx * mx + my * my;
             if (d2 < 1) {
-              const falloff = 1 - d2;
+              const falloff = (1 - d2) * (1 - d2);
               const isAbove = ny < anchors.mouth.cy;
               dy += (isAbove ? -1 : 1) * mouth * mouthMaxOpenPx * falloff;
             }
           }
 
-          // dx is currently always 0 — kept here so we can add lateral warp
-          // (lip corners, eye tracking) later without restructuring.
-          if (dx !== 0) positions[i] = restX + dx; else positions[i] = restX;
+          positions[i] = restX;
           positions[i + 1] = restY + dy;
         }
 
