@@ -8,6 +8,8 @@ import { spritesApi, type CharacterInfo } from '../../api/client';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { CharacterLorebookSection } from './CharacterLorebookSection';
+import { LivePortraitSetup } from './LivePortraitSetup';
+import { useLivePortraitStore } from '../../stores/livePortraitStore';
 
 interface CharacterEditProps {
   isOpen: boolean;
@@ -46,6 +48,8 @@ export function CharacterEdit({
   const visibility = ownershipStore.getVisibility(character.avatar);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showLivePortraitSetup, setShowLivePortraitSetup] = useState(false);
+  const livePortraitAnchors = useLivePortraitStore((s) => s.anchorsByAvatar[character.avatar]);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
@@ -423,6 +427,36 @@ export function CharacterEdit({
           onExpressionsChange={setExpressionFiles}
         />
 
+        {/* Live Portrait — anchor placement for the in-chat animator */}
+        <div className="border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-[var(--color-text-primary)] flex-1">
+              Live Portrait
+            </p>
+            {livePortraitAnchors ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-violet-500/15 text-violet-400">
+                set up
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]">
+                not set
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            Mark this character's eyes and mouth so they can breathe, blink, and lip-sync in
+            chat. One-time setup, takes about 30 seconds.
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowLivePortraitSetup(true)}
+          >
+            {livePortraitAnchors ? 'Edit anchors' : 'Set up Live Portrait'}
+          </Button>
+        </div>
+
         {/* Phase 4.3: Character lorebooks */}
         <CharacterLorebookSection
           avatar={character.avatar}
@@ -591,6 +625,12 @@ export function CharacterEdit({
           </Button>
         </div>
       </form>
+      <LivePortraitSetup
+        avatar={character.avatar}
+        imageUrl={`/characters/${encodeURIComponent(character.avatar)}`}
+        isOpen={showLivePortraitSetup}
+        onClose={() => setShowLivePortraitSetup(false)}
+      />
     </Modal>
   );
 }

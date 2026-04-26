@@ -1268,6 +1268,7 @@ export function ChatView() {
                     images={message.images}
                     characterAvatar={message.isUser ? selectedCharacter?.avatar : (message.characterAvatar || selectedCharacter?.avatar)}
                     isStreaming={isLastAiMessage && isStreaming}
+                    isLastMessage={isLastAiMessage}
                     layoutMode={chatLayoutMode}
                     avatarShape={avatarShapePref}
                     fontSize={chatFontSize}
