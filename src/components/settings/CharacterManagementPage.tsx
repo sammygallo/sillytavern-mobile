@@ -7,6 +7,7 @@ import {
   Globe,
   Loader2,
   Lock,
+  Plus,
   Search,
   Trash2,
   Upload,
@@ -19,6 +20,7 @@ import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { can, hasPermission } from '../../utils/permissions';
 import { api, type CharacterInfo } from '../../api/client';
 import { Button, ConfirmDialog } from '../ui';
+import { CharacterCreation } from '../character/CharacterCreation';
 import { CharacterEdit } from '../character/CharacterEdit';
 import { CharacterImport } from '../character/CharacterImport';
 
@@ -46,6 +48,7 @@ export function CharacterManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [exportingAvatar, setExportingAvatar] = useState<string | null>(null);
 
@@ -172,6 +175,17 @@ export function CharacterManagementPage() {
               className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
+          {can(userRole, 'character:create') && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 shrink-0"
+            >
+              <Plus size={16} />
+              New
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -212,7 +226,7 @@ export function CharacterManagementPage() {
             <p className="text-sm text-[var(--color-text-secondary)]">
               {searchQuery || filterMode === 'mine'
                 ? 'No characters match your filters.'
-                : 'No characters yet. Create one from the sidebar.'}
+                : 'No characters yet. Tap + New to create one.'}
             </p>
           </div>
         ) : (
@@ -237,6 +251,16 @@ export function CharacterManagementPage() {
           </ul>
         )}
       </div>
+
+      {/* Create modal */}
+      <CharacterCreation
+        isOpen={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={() => {
+          setShowCreate(false);
+          fetchCharacters();
+        }}
+      />
 
       {/* Edit modal */}
       {editingCharacter && (

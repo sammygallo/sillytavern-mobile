@@ -162,6 +162,12 @@ export function LivePortrait({
         verticesX: VERTICES_PER_AXIS,
         verticesY: VERTICES_PER_AXIS,
       });
+      // Pixi v8 NOTE: `mesh.width = N` is a scale setter on Container — it
+      // sets `scale.x = N / localBounds.width`, leaving the underlying
+      // geometry positions in TEXTURE PIXEL space (e.g., 768×1152 for an
+      // un-resized avatar). Our warp math therefore must normalize by
+      // texture dimensions and emit displacements in mesh-pixel space too;
+      // Pixi will scale the rendered result down to displayWidth × displayHeight.
       plane.width = displayWidth;
       plane.height = displayHeight;
       localApp.stage.addChild(plane);
@@ -200,28 +206,30 @@ export function LivePortrait({
           ? 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(t * 14)) + 0.1 * Math.sin(t * 23)
           : 0.06 + 0.04 * Math.sin((t * Math.PI * 2) / 4.2);
 
-        // Breath: gentle vertical sway of the whole portrait. ~3.5s period.
-        const breath = Math.sin((t * Math.PI * 2) / 3.5) * (displayHeight * 0.006);
-
         // ── Apply to mesh ────────────────────────────────────────────────
-        // Anchor regions are normalized 0..1 coords within the IMAGE, so
-        // displacement scales need to be in the image's pixel space — not the
-        // square `size`, which would distort portraits.
+        // Anchor regions are normalized 0..1 coords within the IMAGE.
+        // Mesh positions are in TEXTURE PIXEL space (see note on plane.width
+        // above), so we normalize by texture dimensions and emit
+        // displacements in texture-pixel units. Pixi's container scale
+        // shrinks everything to the visible CSS-pixel display size.
         //
         // FALLOFF_REACH widens the effective influence to 1.8× the user's
         // chosen radius with a smooth quartic decay. Without this, sparse
         // grids miss small ellipses entirely; with this, nearby vertices
         // get partial warp and the motion is always visible.
         const positions = plane.geometry.positions;
-        const eyeMaxClosePx = displayHeight * 0.07;
-        const mouthMaxOpenPx = displayHeight * 0.06;
+        const meshW = texture.width;
+        const meshH = texture.height;
+        const breath = Math.sin((t * Math.PI * 2) / 3.5) * (meshH * 0.006);
+        const eyeMaxClosePx = meshH * 0.07;
+        const mouthMaxOpenPx = meshH * 0.06;
         const FALLOFF_REACH = 1.8;
 
         for (let i = 0; i < positions.length; i += 2) {
           const restX = restPositions[i];
           const restY = restPositions[i + 1];
-          const nx = restX / displayWidth;
-          const ny = restY / displayHeight;
+          const nx = restX / meshW;
+          const ny = restY / meshH;
 
           let dy = breath; // global breath sway
 
