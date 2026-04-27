@@ -5,7 +5,6 @@ import { ProfilePage } from './components/auth/ProfilePage';
 import { RequireRole } from './components/auth/RequireRole';
 import { MainLayout } from './components/layout/MainLayout';
 import { ChatView } from './components/chat/ChatView';
-import { LivePortraitDebug } from './components/chat/LivePortraitDebug';
 // Settings pages are now rendered inside the slide-in SettingsPanel (not routes).
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
 import { ToastProvider } from './components/ui/Toast';
@@ -24,7 +23,6 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/profile" element={<RequireRole minRole="end_user"><ProfilePage /></RequireRole>} />
         <Route path="/invite/:token" element={<InviteAcceptPage />} />
-        <Route path="/debug/live-portrait" element={<LivePortraitDebug />} />
         <Route path="/" element={<MainLayout />}>
           <Route index element={<ChatView />} />
           <Route path="chat/:characterId" element={<ChatView />} />

@@ -49,7 +49,8 @@ export function CharacterEdit({
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLivePortraitSetup, setShowLivePortraitSetup] = useState(false);
-  const livePortraitAnchors = useLivePortraitStore((s) => s.anchorsByAvatar[character.avatar]);
+  const livePortraitClips = useLivePortraitStore((s) => s.clipsByAvatar[character.avatar]);
+  const hasLivePortraitClips = !!livePortraitClips && Object.keys(livePortraitClips).length > 0;
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
@@ -427,25 +428,25 @@ export function CharacterEdit({
           onExpressionsChange={setExpressionFiles}
         />
 
-        {/* Live Portrait — anchor placement for the in-chat animator */}
+        {/* Live Portrait — generates animated MP4 clips for the in-chat avatar */}
         <div className="border border-[var(--color-border)] rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-[var(--color-text-primary)] flex-1">
               Live Portrait
             </p>
-            {livePortraitAnchors ? (
+            {hasLivePortraitClips ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-violet-500/15 text-violet-400">
-                set up
+                {Object.keys(livePortraitClips!).length} clips ready
               </span>
             ) : (
               <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]">
-                not set
+                not generated
               </span>
             )}
           </div>
           <p className="text-xs text-[var(--color-text-secondary)]">
-            Mark this character's eyes and mouth so they can breathe, blink, and lip-sync in
-            chat. One-time setup, takes about 30 seconds.
+            Generate animated clips so this character can breathe, blink, and react with
+            emotion in chat. One-time generation per character, then plays for free.
           </p>
           <Button
             type="button"
@@ -453,7 +454,7 @@ export function CharacterEdit({
             size="sm"
             onClick={() => setShowLivePortraitSetup(true)}
           >
-            {livePortraitAnchors ? 'Edit anchors' : 'Set up Live Portrait'}
+            {hasLivePortraitClips ? 'Manage clips' : 'Set up Live Portrait'}
           </Button>
         </div>
 
@@ -627,6 +628,7 @@ export function CharacterEdit({
       </form>
       <LivePortraitSetup
         avatar={character.avatar}
+        characterName={character.name}
         imageUrl={`/characters/${encodeURIComponent(character.avatar)}`}
         isOpen={showLivePortraitSetup}
         onClose={() => setShowLivePortraitSetup(false)}
