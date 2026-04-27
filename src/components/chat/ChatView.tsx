@@ -32,6 +32,7 @@ import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { LivePortraitVideo } from './LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
 import { usePortraitPositionStore } from '../../stores/portraitPositionStore';
+import { fetchExistingClips } from '../../api/livePortraitGen';
 import {
   getExpressionThumbnailUrl,
   getDefaultAvatarUrl,
@@ -227,6 +228,29 @@ export function ChatView() {
     selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
   );
   const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+
+  // Auto-discover server-side clips when a character is selected so users
+  // see Live Portrait on any device — not just the one that ran generation.
+  // Skips the fetch when the local store already has clips for this avatar.
+  useEffect(() => {
+    if (!selectedCharacter || !livePortraitEnabled) return;
+    if (livePortraitClips && Object.keys(livePortraitClips).length > 0) return;
+    const characterName = selectedCharacter.avatar.replace(/\.png$/i, '');
+    let cancelled = false;
+    fetchExistingClips(characterName)
+      .then((clips) => {
+        if (cancelled) return;
+        if (Object.keys(clips).length > 0) {
+          useLivePortraitStore.getState().setClips(selectedCharacter.avatar, clips);
+        }
+      })
+      .catch(() => {
+        // No clips, no route, or auth issue — fall back to static avatar silently.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCharacter?.avatar, livePortraitEnabled, livePortraitClips]);
 
   // Per-character draggable framing for the mobile portrait panel.
   // Stored as {x%, y%} object-position values, persisted via Zustand.
