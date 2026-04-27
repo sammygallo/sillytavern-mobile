@@ -15,8 +15,9 @@ import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 import { useTranslateStore } from '../../stores/translateStore';
 import { useExtensionStore } from '../../stores/extensionStore';
 import { useSlotItems, invokeSlotItem } from '../../extensions/sandbox/sandboxSlotRegistry';
-import { LivePortrait } from './LivePortrait';
+import { LivePortraitVideo } from './LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { parseEmotion } from '../../utils/emotions';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -471,34 +472,41 @@ export function ChatMessage({
   ) : null;
 
   // ==================================================================
-  // Avatar selection — LivePortrait for the latest AI message of a
-  // character that has anchors set up; static <Avatar> everywhere else.
-  // Falls back gracefully when anchors are missing or the feature is
+  // Avatar selection — LivePortraitVideo for the latest AI message of a
+  // character that has clips generated; static <Avatar> everywhere else.
+  // Falls back gracefully when clips are missing or the feature is
   // globally disabled.
   // ==================================================================
   const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
-  const livePortraitAnchors = useLivePortraitStore((s) =>
-    characterAvatar ? s.anchorsByAvatar[characterAvatar] : undefined,
+  const livePortraitClips = useLivePortraitStore((s) =>
+    characterAvatar ? s.clipsByAvatar[characterAvatar] : undefined,
   );
+  const hasClips = !!livePortraitClips && Object.keys(livePortraitClips).length > 0;
   const useLivePortrait =
     livePortraitEnabled &&
-    !!livePortraitAnchors &&
-    !!avatar &&
+    hasClips &&
     !isUser &&
     !isSystem &&
     !!isLastMessage;
+  // Pull the AI's emitted [emotion:...] tag if any. Falls back to idle when
+  // no tag is present or the tag doesn't match a generated clip.
+  const liveEmotion = useLivePortrait ? parseEmotion(content) : null;
   const renderAvatar = (size: 'sm' | 'md') => {
-    if (useLivePortrait && livePortraitAnchors && avatar) {
+    if (useLivePortrait && livePortraitClips) {
       const px = size === 'md' ? 80 : 48;
+      // Only show emotion overlay while streaming OR if the AI emitted a
+      // matching tag — otherwise idle alone is more lifelike.
+      const emotionToPlay =
+        isStreamingMsg && liveEmotion && livePortraitClips[liveEmotion]
+          ? liveEmotion
+          : null;
       return (
-        <div className="flex-shrink-0">
-          <LivePortrait
-            imageUrl={avatar}
-            size={px}
-            isSpeaking={!!isStreamingMsg}
-            anchors={livePortraitAnchors}
-          />
-        </div>
+        <LivePortraitVideo
+          clips={livePortraitClips}
+          emotion={emotionToPlay}
+          size={px}
+          shape={avatarShape === 'square' ? 'square' : 'circle'}
+        />
       );
     }
     return (

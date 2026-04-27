@@ -15,22 +15,37 @@ export default defineConfig({
       '/api': {
         target: BACKEND,
         changeOrigin: true,
+        headers: process.env.ST_BASIC_AUTH
+          ? { Authorization: `Basic ${Buffer.from(process.env.ST_BASIC_AUTH).toString('base64')}` }
+          : {},
       },
       '/csrf-token': {
         target: BACKEND,
         changeOrigin: true,
+        headers: process.env.ST_BASIC_AUTH
+          ? { Authorization: `Basic ${Buffer.from(process.env.ST_BASIC_AUTH).toString('base64')}` }
+          : {},
       },
       '/thumbnail': {
         target: BACKEND,
         changeOrigin: true,
+        headers: process.env.ST_BASIC_AUTH
+          ? { Authorization: `Basic ${Buffer.from(process.env.ST_BASIC_AUTH).toString('base64')}` }
+          : {},
       },
       '/characters': {
         target: BACKEND,
         changeOrigin: true,
+        headers: process.env.ST_BASIC_AUTH
+          ? { Authorization: `Basic ${Buffer.from(process.env.ST_BASIC_AUTH).toString('base64')}` }
+          : {},
       },
       '/scripts': {
         target: BACKEND,
         changeOrigin: true,
+        headers: process.env.ST_BASIC_AUTH
+          ? { Authorization: `Basic ${Buffer.from(process.env.ST_BASIC_AUTH).toString('base64')}` }
+          : {},
         // Specific upstream-compat shim modules served from public/ must NOT
         // be proxied — they shadow upstream files of the same name so
         // ES-module-based extensions can `import { ... } from '../../../...'`

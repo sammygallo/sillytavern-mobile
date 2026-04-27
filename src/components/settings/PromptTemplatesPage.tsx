@@ -12,6 +12,7 @@ import {
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
 import { Button, Input, ConfirmDialog } from '../ui';
+import { HypercodeBuilder } from './HypercodeBuilder';
 
 /**
  * Phase 9.2 — Prompt Templates & Presets.
@@ -108,7 +109,7 @@ export function PromptTemplatesPage(_props?: { params?: Record<string, string> }
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
       {/* Header */}
-      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
+      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center pl-4 pr-14 gap-3 safe-top">
         <Button
           variant="ghost"
           size="sm"
@@ -153,6 +154,9 @@ export function PromptTemplatesPage(_props?: { params?: Record<string, string> }
       />
 
       <div className="max-w-2xl mx-auto p-4 space-y-6">
+        {/* HYPERCODE builder */}
+        <HypercodeBuilder />
+
         {/* Save current */}
         <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 space-y-3">
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
