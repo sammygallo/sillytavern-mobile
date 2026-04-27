@@ -110,7 +110,7 @@ export function WorldInfoPage(_props?: { params?: Record<string, string> }) {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
-      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center pl-4 pr-14 gap-3 safe-top">
+      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center pl-4 pr-14 gap-3 safe-top sticky top-0 z-10">
         <Button
           variant="ghost"
           size="sm"

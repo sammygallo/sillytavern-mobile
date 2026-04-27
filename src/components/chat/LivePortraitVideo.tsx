@@ -16,12 +16,14 @@ export interface LivePortraitVideoProps {
   clips: EmotionClips;
   /** Current emotion to play on top of idle. `null` plays idle alone. */
   emotion?: string | null;
-  /** Diameter of the avatar in CSS pixels (square). */
+  /** Diameter of the avatar in CSS pixels (square). Ignored when `fill` is true. */
   size?: number;
   /** "circle" | "square" — matches the existing Avatar shape prop. */
   shape?: 'circle' | 'square';
   /** Optional className on the outer wrapper. */
   className?: string;
+  /** Fill the parent container (100% × 100%) instead of using a fixed `size`. */
+  fill?: boolean;
 }
 
 const FADE_MS = 250;
@@ -32,6 +34,7 @@ export function LivePortraitVideo({
   size = 80,
   shape = 'circle',
   className,
+  fill = false,
 }: LivePortraitVideoProps) {
   const idleRef = useRef<HTMLVideoElement>(null);
   const emotionRef = useRef<HTMLVideoElement>(null);
@@ -75,9 +78,9 @@ export function LivePortraitVideo({
       className={className}
       style={{
         position: 'relative',
-        width: size,
-        height: size,
-        flexShrink: 0,
+        width: fill ? '100%' : size,
+        height: fill ? '100%' : size,
+        flexShrink: fill ? undefined : 0,
         overflow: 'hidden',
         borderRadius: radius,
       }}

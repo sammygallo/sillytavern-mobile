@@ -15,9 +15,6 @@ import { applyRegexScripts, getActiveScripts } from '../../utils/regexScripts';
 import { useTranslateStore } from '../../stores/translateStore';
 import { useExtensionStore } from '../../stores/extensionStore';
 import { useSlotItems, invokeSlotItem } from '../../extensions/sandbox/sandboxSlotRegistry';
-import { LivePortraitVideo } from './LivePortraitVideo';
-import { useLivePortraitStore } from '../../stores/livePortraitStore';
-import { parseEmotion } from '../../utils/emotions';
 
 interface ChatMessageProps {
   /** Unique message id — used as TTS tracking key. */
@@ -89,7 +86,6 @@ export function ChatMessage({
   onSwipeLeft,
   onSwipeRight,
   isStreaming: isStreamingMsg,
-  isLastMessage,
   layoutMode = 'bubbles',
   avatarShape = 'circle',
   fontSize,
@@ -471,56 +467,6 @@ export function ChatMessage({
     />
   ) : null;
 
-  // ==================================================================
-  // Avatar selection — LivePortraitVideo for the latest AI message of a
-  // character that has clips generated; static <Avatar> everywhere else.
-  // Falls back gracefully when clips are missing or the feature is
-  // globally disabled.
-  // ==================================================================
-  const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
-  const livePortraitClips = useLivePortraitStore((s) =>
-    characterAvatar ? s.clipsByAvatar[characterAvatar] : undefined,
-  );
-  const hasClips = !!livePortraitClips && Object.keys(livePortraitClips).length > 0;
-  const useLivePortrait =
-    livePortraitEnabled &&
-    hasClips &&
-    !isUser &&
-    !isSystem &&
-    !!isLastMessage;
-  // Pull the AI's emitted [emotion:...] tag if any. Falls back to idle when
-  // no tag is present or the tag doesn't match a generated clip.
-  const liveEmotion = useLivePortrait ? parseEmotion(content) : null;
-  const renderAvatar = (size: 'sm' | 'md') => {
-    if (useLivePortrait && livePortraitClips) {
-      const px = size === 'md' ? 80 : 48;
-      // Only show emotion overlay while streaming OR if the AI emitted a
-      // matching tag — otherwise idle alone is more lifelike.
-      const emotionToPlay =
-        isStreamingMsg && liveEmotion && livePortraitClips[liveEmotion]
-          ? liveEmotion
-          : null;
-      return (
-        <LivePortraitVideo
-          clips={livePortraitClips}
-          emotion={emotionToPlay}
-          size={px}
-          shape={avatarShape === 'square' ? 'square' : 'circle'}
-        />
-      );
-    }
-    return (
-      <Avatar
-        src={avatar}
-        fallbackSrc={avatarFallback}
-        onFallback={onAvatarError}
-        alt={name}
-        size={size}
-        shape={avatarShape}
-        className="flex-shrink-0"
-      />
-    );
-  };
 
   // ==================================================================
   // Bubbles layout (default — original behavior)
@@ -528,7 +474,15 @@ export function ChatMessage({
   if (layoutMode === 'bubbles') {
     return (
       <div className={`flex gap-3 px-4 py-3 group ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        {renderAvatar('md')}
+        <Avatar
+          src={avatar}
+          fallbackSrc={avatarFallback}
+          onFallback={onAvatarError}
+          alt={name}
+          size="md"
+          shape={avatarShape}
+          className="flex-shrink-0"
+        />
 
         <div
           className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
@@ -577,7 +531,15 @@ export function ChatMessage({
       >
         {/* Header row: avatar + name + time + actions */}
         <div className="flex items-center gap-2 mb-1.5">
-          {renderAvatar('sm')}
+          <Avatar
+            src={avatar}
+            fallbackSrc={avatarFallback}
+            onFallback={onAvatarError}
+            alt={name}
+            size="sm"
+            shape={avatarShape}
+            className="flex-shrink-0"
+          />
           <span className={`text-xs font-semibold ${
             isUser ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'
           }`}>
