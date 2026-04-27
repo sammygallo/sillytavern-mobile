@@ -24,6 +24,8 @@ export interface LivePortraitVideoProps {
   className?: string;
   /** Fill the parent container (100% × 100%) instead of using a fixed `size`. */
   fill?: boolean;
+  /** CSS object-position string (e.g. "50% 25%"). Defaults to center. */
+  objectPosition?: string;
 }
 
 const FADE_MS = 250;
@@ -35,6 +37,7 @@ export function LivePortraitVideo({
   shape = 'circle',
   className,
   fill = false,
+  objectPosition,
 }: LivePortraitVideoProps) {
   const idleRef = useRef<HTMLVideoElement>(null);
   const emotionRef = useRef<HTMLVideoElement>(null);
@@ -99,6 +102,7 @@ export function LivePortraitVideo({
             width: '100%',
             height: '100%',
             objectFit: 'cover',
+            objectPosition,
             opacity: overlayUrl ? 0 : 1,
             transition: `opacity ${FADE_MS}ms ease`,
           }}
@@ -118,6 +122,7 @@ export function LivePortraitVideo({
             width: '100%',
             height: '100%',
             objectFit: 'cover',
+            objectPosition,
             opacity: 1,
             transition: `opacity ${FADE_MS}ms ease`,
           }}
