@@ -23,6 +23,21 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total — leaves headroom over backend's per-clip timeout
 
 /**
+ * Fetch existing clip URLs for a character (any clips already generated
+ * server-side). Lets clients auto-populate their local store on character
+ * load so users see Live Portrait everywhere — not just on the device
+ * that ran generation.
+ */
+export async function fetchExistingClips(characterName: string): Promise<EmotionClips> {
+  const r = await fetch(`/api/live-portrait/list/${encodeURIComponent(characterName)}`, {
+    credentials: 'include',
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  return data.clips ?? {};
+}
+
+/**
  * Fetch the list of emotions the backend's Replicate client supports. Cached
  * for the session.
  */
