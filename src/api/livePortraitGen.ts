@@ -3,7 +3,8 @@ import type { EmotionClips } from '../stores/livePortraitStore';
 
 /**
  * Live Portrait clip generation client — talks to the SillyTavern backend's
- * `/api/live-portrait/*` route family which proxies to Sieve.
+ * `/api/live-portrait/*` route family which proxies to Replicate's
+ * fofr/live-portrait model.
  *
  * The backend handles auth, secrets, and saving the resulting MP4s into the
  * character data dir; this module just kicks off a job and polls until it's
@@ -22,8 +23,8 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes total — leaves headroom over backend's per-clip timeout
 
 /**
- * Fetch the list of emotions the backend's Sieve client supports. Cached for
- * the session.
+ * Fetch the list of emotions the backend's Replicate client supports. Cached
+ * for the session.
  */
 let _emotionsCache: string[] | null = null;
 export async function fetchSupportedEmotions(): Promise<string[]> {

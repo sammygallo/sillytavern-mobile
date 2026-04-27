@@ -484,6 +484,58 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
           </div>
         </section>
 
+        {/* Live Portrait (Replicate) */}
+        <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
+          <div className="flex items-center gap-2 mb-1">
+            <Key size={16} className="text-[var(--color-text-secondary)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Live Portrait</h2>
+          </div>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+            Replicate API key for generating per-emotion character animation clips via{' '}
+            <span className="font-mono">fofr/live-portrait</span>.
+          </p>
+          <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-[var(--color-text-primary)]">Replicate</span>
+              {hasApiKey('api_key_replicate') && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-green-400">Configured</span>
+                  <Button variant="ghost" size="sm" onClick={() => deleteApiKey('api_key_replicate')} disabled={isSaving} className="p-1 text-red-400 hover:text-red-300">
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showApiKey['replicate-live'] ? 'text' : 'password'}
+                  value={apiKeyInputs['replicate-live'] || ''}
+                  onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, 'replicate-live': e.target.value }))}
+                  placeholder={hasApiKey('api_key_replicate') ? 'Enter new key to replace...' : 'r8_...'}
+                  className="pr-10"
+                />
+                <button type="button" onClick={() => setShowApiKey((prev) => ({ ...prev, 'replicate-live': !prev['replicate-live'] }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
+                  {showApiKey['replicate-live'] ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <Button
+                onClick={async () => {
+                  const key = apiKeyInputs['replicate-live'];
+                  if (!key?.trim()) return;
+                  await saveApiKey('api_key_replicate', key.trim());
+                  setApiKeyInputs((prev) => ({ ...prev, 'replicate-live': '' }));
+                }}
+                disabled={!apiKeyInputs['replicate-live']?.trim() || isSaving}
+                className="shrink-0"
+              >
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </section>
+
         {/* Global API Keys — Owner only */}
         {isOwner && globalSharingSupported && (
           <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
