@@ -26,6 +26,8 @@ import { CharacterCreation } from '../character/CharacterCreation';
 import { CharacterImport } from '../character/CharacterImport';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { getDefaultAvatarUrl, type Emotion } from '../../utils/emotions';
+import { LivePortraitVideo } from '../chat/LivePortraitVideo';
+import { useLivePortraitStore } from '../../stores/livePortraitStore';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -84,6 +86,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     if (characterMessages.length === 0) return null;
     return (characterMessages[characterMessages.length - 1] as { emotion?: Emotion | null }).emotion ?? null;
   }, [messages]);
+
+  const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
+  const livePortraitClips = useLivePortraitStore((s) =>
+    selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
+  );
+  const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
 
   useEffect(() => {
     fetchCharacters();
@@ -224,23 +232,31 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             {/* Full Character Portrait */}
             <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
               <div className="w-full max-w-[240px] aspect-[2/3] rounded-xl overflow-hidden shadow-lg border border-[var(--color-border)]">
-                <img
-                  key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-                  src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-                  alt={selectedCharacter.name}
-                  className="w-full h-full object-cover transition-opacity duration-300"
-                  onLoad={(e) => {
-                    console.log('[Sidebar Expression] Image loaded:', e.currentTarget.src);
-                  }}
-                  onError={(e) => {
-                    console.log('[Sidebar Expression] Image FAILED:', e.currentTarget.src);
-                    // Mark this expression as failed so we use fallback next time
-                    if (latestEmotion) {
-                      const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
-                      setFailedExpressions((prev) => new Set(prev).add(expressionKey));
-                    }
-                  }}
-                />
+                {hasLivePortrait ? (
+                  <LivePortraitVideo
+                    clips={livePortraitClips!}
+                    emotion={latestEmotion}
+                    fill
+                    shape="square"
+                  />
+                ) : (
+                  <img
+                    key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+                    src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                    alt={selectedCharacter.name}
+                    className="w-full h-full object-cover transition-opacity duration-300"
+                    onLoad={(e) => {
+                      console.log('[Sidebar Expression] Image loaded:', e.currentTarget.src);
+                    }}
+                    onError={(e) => {
+                      console.log('[Sidebar Expression] Image FAILED:', e.currentTarget.src);
+                      if (latestEmotion) {
+                        const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
+                        setFailedExpressions((prev) => new Set(prev).add(expressionKey));
+                      }
+                    }}
+                  />
+                )}
               </div>
 
               {/* Character Info */}

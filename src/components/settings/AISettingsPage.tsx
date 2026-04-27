@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Eye, EyeOff, Globe, Key, LayoutGrid, Loader2, Plug, Server, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Eye, EyeOff, Globe, Key, LayoutGrid, Loader2, Plug, Server, Trash2 } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { useCustomProviderStore } from '../../stores/customProviderStore';
-import { PROVIDERS, type SecretState } from '../../api/client';
+import { PROVIDERS, settingsApi, type SecretState } from '../../api/client';
 import { probeProviderModels } from '../../api/providerProbe';
 import { useAuthStore } from '../../stores/authStore';
 import { hasMinRole } from '../../utils/permissions';
@@ -107,6 +107,8 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [globalKeyInputs, setGlobalKeyInputs] = useState<Record<string, string>>({});
   const [showGlobalKey, setShowGlobalKey] = useState<Record<string, boolean>>({});
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const [globalKeysOpen, setGlobalKeysOpen] = useState(false);
 
   // Connection profiles
   const { profiles, activeProfileId, saveProfile, deleteProfile, renameProfile, setActiveProfileId } = useConnectionProfileStore();
@@ -179,7 +181,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-primary)]">
-      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center pl-4 pr-14 gap-3 safe-top">
+      <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center pl-4 pr-14 gap-3 safe-top sticky top-0 z-10">
         <Button variant="ghost" size="sm" onClick={() => goBack()} className="p-2" aria-label="Back">
           <ArrowLeft size={24} />
         </Button>
@@ -441,8 +443,15 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
 
         {/* API Keys */}
         <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
-          <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">API Keys</h2>
-          <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setApiKeysOpen((v) => !v)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">API Keys</h2>
+            <ChevronDown size={16} className={`text-[var(--color-text-secondary)] transition-transform ${apiKeysOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {apiKeysOpen && <div className="space-y-4 mt-3">
             {PROVIDERS.filter((p) => p.id !== 'custom').map((provider) => {
               const secretInfo = getSecretInfo(provider.secretKey);
               const configured = !!secretInfo;
@@ -481,7 +490,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                 </div>
               );
             })}
-          </div>
+          </div>}
         </section>
 
         {/* Live Portrait (Replicate) */}
@@ -492,7 +501,8 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] mb-3">
             Replicate API key for generating per-emotion character animation clips via{' '}
-            <span className="font-mono">fofr/live-portrait</span>.
+            <span className="font-mono">wan-video/wan-2.2-i2v-fast</span>.
+            Videos are generated from the character's portrait — no driving videos needed.
           </p>
           <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
             <div className="flex items-center justify-between mb-2">
@@ -524,8 +534,13 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                 onClick={async () => {
                   const key = apiKeyInputs['replicate-live'];
                   if (!key?.trim()) return;
-                  await saveApiKey('api_key_replicate', key.trim());
-                  setApiKeyInputs((prev) => ({ ...prev, 'replicate-live': '' }));
+                  try {
+                    await settingsApi.writeSecret('api_key_replicate', key.trim(), 'Replicate');
+                    await fetchSecrets();
+                    setApiKeyInputs((prev) => ({ ...prev, 'replicate-live': '' }));
+                  } catch (e) {
+                    showToastGlobal(e instanceof Error ? e.message : 'Failed to save key', 'error');
+                  }
                 }}
                 disabled={!apiKeyInputs['replicate-live']?.trim() || isSaving}
                 className="shrink-0"
@@ -539,11 +554,16 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
         {/* Global API Keys — Owner only */}
         {isOwner && globalSharingSupported && (
           <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setGlobalKeysOpen((v) => !v)}
+                className="flex items-center gap-2 flex-1"
+              >
                 <Globe size={16} className="text-[var(--color-text-secondary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Global API Keys</h2>
-              </div>
+                <ChevronDown size={16} className={`text-[var(--color-text-secondary)] transition-transform ml-1 ${globalKeysOpen ? 'rotate-180' : ''}`} />
+              </button>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[var(--color-text-secondary)]">Share with all users</span>
                 <button
@@ -561,7 +581,8 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                 </button>
               </div>
             </div>
-            <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+            {globalKeysOpen && <>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-3 mb-3">
               Keys set here are used as defaults for users who haven't entered their own. Your personal keys above always take priority.
             </p>
             <div className="space-y-4">
@@ -604,6 +625,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
                 );
               })}
             </div>
+            </>}
           </section>
         )}
       </div>

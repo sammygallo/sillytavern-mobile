@@ -4,11 +4,11 @@ import type { EmotionClips } from '../stores/livePortraitStore';
 /**
  * Live Portrait clip generation client — talks to the SillyTavern backend's
  * `/api/live-portrait/*` route family which proxies to Replicate's
- * fofr/live-portrait model.
+ * wan-video/wan-2.2-i2v-fast model.
  *
- * The backend handles auth, secrets, and saving the resulting MP4s into the
- * character data dir; this module just kicks off a job and polls until it's
- * done. Generation usually takes 30–90s per emotion clip. We surface a
+ * The backend handles auth, secrets, avatar upload, and saving the resulting
+ * MP4s into the character data dir; this module just kicks off a job and polls
+ * until it's done. Generation takes ~30–60s per emotion clip. We surface a
  * progress callback so the setup modal can show a progress bar.
  */
 

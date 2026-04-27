@@ -98,7 +98,10 @@ export function ExpressionUpload({ characterName, onExpressionsChange }: Express
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveExpression = (label: string) => {
+  const handleRemoveExpression = async (label: string, existingPath?: string) => {
+    if (existingPath && characterName) {
+      await spritesApi.deleteSprite(characterName, label).catch(console.error);
+    }
     setExpressions((prev) => {
       const updated = prev.filter((e) => e.label !== label);
       notifyChanges(updated);
@@ -268,19 +271,17 @@ export function ExpressionUpload({ characterName, onExpressionsChange }: Express
                             <X size={14} />
                           </button>
                         )}
-                        {!entry.existingPath && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveExpression(entry.label);
-                            }}
-                            className="p-1 text-red-400 hover:text-red-500"
-                            title="Remove expression"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveExpression(entry.label, entry.existingPath);
+                          }}
+                          className="p-1 text-red-400 hover:text-red-500"
+                          title="Delete expression"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
 
