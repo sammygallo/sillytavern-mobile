@@ -29,6 +29,8 @@ import { useKeyboardHeight } from '../../hooks/useKeyboardHeight';
 import { useSummarizeStore } from '../../stores/summarizeStore';
 import { useAutoMemoryStore } from '../../stores/autoMemoryStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
+import { LivePortraitVideo } from './LivePortraitVideo';
+import { useLivePortraitStore } from '../../stores/livePortraitStore';
 import {
   getExpressionThumbnailUrl,
   getDefaultAvatarUrl,
@@ -218,6 +220,12 @@ export function ChatView() {
     if (characterMessages.length === 0) return null;
     return characterMessages[characterMessages.length - 1].emotion ?? null;
   }, [messages]);
+
+  const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
+  const livePortraitClips = useLivePortraitStore((s) =>
+    selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
+  );
+  const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
 
   // Find the last AI message id for swipe control display
   const lastAiMessageId = useMemo(() => {
@@ -716,20 +724,34 @@ export function ChatView() {
 
       {/* Phase 6.4: VN sprite layer — single character (z-1) */}
       {isVnMode && !isGroupChatMode && selectedCharacter && (
-        <img
-          key={`vn-sprite-${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-          src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-          alt=""
-          aria-hidden
-          className="absolute inset-0 w-full h-full object-contain object-bottom pointer-events-none"
-          style={{ zIndex: 1 }}
-          onError={() => {
-            if (latestEmotion) {
-              const key = `${selectedCharacter.avatar}-${latestEmotion}`;
-              setFailedExpressions((prev) => new Set(prev).add(key));
-            }
-          }}
-        />
+        hasLivePortrait ? (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ zIndex: 1 }}
+          >
+            <LivePortraitVideo
+              clips={livePortraitClips!}
+              emotion={latestEmotion}
+              fill
+              shape="square"
+            />
+          </div>
+        ) : (
+          <img
+            key={`vn-sprite-${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+            src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 w-full h-full object-contain object-bottom pointer-events-none"
+            style={{ zIndex: 1 }}
+            onError={() => {
+              if (latestEmotion) {
+                const key = `${selectedCharacter.avatar}-${latestEmotion}`;
+                setFailedExpressions((prev) => new Set(prev).add(key));
+              }
+            }}
+          />
+        )
       )}
 
       {/* Phase 6.4: VN sprite layer — group chat, last 3 speakers side-by-side */}
@@ -896,18 +918,27 @@ export function ChatView() {
                 className="lg:hidden relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden"
                 style={{ height: `${portraitHeight * 100}vh` }}
               >
-                <img
-                  key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-                  src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
-                  alt={selectedCharacter.name}
-                  className="w-full h-full object-cover object-top transition-opacity duration-300"
-                  onError={() => {
-                    if (latestEmotion) {
-                      const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
-                      setFailedExpressions((prev) => new Set(prev).add(expressionKey));
-                    }
-                  }}
-                />
+                {hasLivePortrait ? (
+                  <LivePortraitVideo
+                    clips={livePortraitClips!}
+                    emotion={latestEmotion}
+                    fill
+                    shape="square"
+                  />
+                ) : (
+                  <img
+                    key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
+                    src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                    alt={selectedCharacter.name}
+                    className="w-full h-full object-cover object-top transition-opacity duration-300"
+                    onError={() => {
+                      if (latestEmotion) {
+                        const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
+                        setFailedExpressions((prev) => new Set(prev).add(expressionKey));
+                      }
+                    }}
+                  />
+                )}
                 <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
                 <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
