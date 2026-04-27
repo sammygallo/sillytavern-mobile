@@ -31,6 +31,7 @@ import { useAutoMemoryStore } from '../../stores/autoMemoryStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { LivePortraitVideo } from './LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { usePortraitPositionStore } from '../../stores/portraitPositionStore';
 import {
   getExpressionThumbnailUrl,
   getDefaultAvatarUrl,
@@ -226,6 +227,73 @@ export function ChatView() {
     selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
   );
   const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+
+  // Per-character draggable framing for the mobile portrait panel.
+  // Stored as {x%, y%} object-position values, persisted via Zustand.
+  // Selectors return primitives to avoid Zustand getSnapshot identity churn.
+  const portraitAvatar = selectedCharacter?.avatar ?? null;
+  const storedPortraitX = usePortraitPositionStore((s) =>
+    portraitAvatar ? s.positionsByAvatar[portraitAvatar]?.x ?? 50 : 50,
+  );
+  const storedPortraitY = usePortraitPositionStore((s) =>
+    portraitAvatar ? s.positionsByAvatar[portraitAvatar]?.y ?? 0 : 0,
+  );
+  const setStoredPortraitPos = usePortraitPositionStore((s) => s.setPosition);
+  const [livePortraitPos, setLivePortraitPos] = useState({ x: storedPortraitX, y: storedPortraitY });
+  useEffect(() => {
+    setLivePortraitPos({ x: storedPortraitX, y: storedPortraitY });
+  }, [storedPortraitX, storedPortraitY, portraitAvatar]);
+
+  const portraitDragRef = useRef<HTMLDivElement>(null);
+  const portraitDragState = useRef<{
+    startX: number;
+    startY: number;
+    posX: number;
+    posY: number;
+    pointerId: number;
+  } | null>(null);
+
+  const handlePortraitPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!portraitAvatar) return;
+    // Don't hijack taps on overlay buttons (search, etc.)
+    if ((e.target as HTMLElement).closest('button')) return;
+    portraitDragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      posX: livePortraitPos.x,
+      posY: livePortraitPos.y,
+      pointerId: e.pointerId,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePortraitPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = portraitDragState.current;
+    const el = portraitDragRef.current;
+    if (!drag || !el || drag.pointerId !== e.pointerId) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    // object-position decreases visually-rightward content as % grows, so a
+    // rightward finger drag should DECREASE x (reveal the left side of image).
+    const dx = -((e.clientX - drag.startX) / rect.width) * 100;
+    const dy = -((e.clientY - drag.startY) / rect.height) * 100;
+    setLivePortraitPos({
+      x: Math.max(0, Math.min(100, drag.posX + dx)),
+      y: Math.max(0, Math.min(100, drag.posY + dy)),
+    });
+  };
+
+  const handlePortraitPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = portraitDragState.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (portraitAvatar) {
+      setStoredPortraitPos(portraitAvatar, livePortraitPos);
+    }
+    portraitDragState.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
 
   // Find the last AI message id for swipe control display
   const lastAiMessageId = useMemo(() => {
@@ -915,8 +983,13 @@ export function ChatView() {
           {!isVnMode && !isMobileLandscape && (
             <>
               <div
-                className="lg:hidden relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden"
-                style={{ height: `${portraitHeight * 100}vh` }}
+                ref={portraitDragRef}
+                onPointerDown={handlePortraitPointerDown}
+                onPointerMove={handlePortraitPointerMove}
+                onPointerUp={handlePortraitPointerUp}
+                onPointerCancel={handlePortraitPointerUp}
+                className="lg:hidden relative bg-gradient-to-b from-[var(--color-bg-tertiary)] to-[var(--color-bg-primary)] overflow-hidden cursor-grab active:cursor-grabbing"
+                style={{ height: `${portraitHeight * 100}vh`, touchAction: 'none' }}
               >
                 {hasLivePortrait ? (
                   <LivePortraitVideo
@@ -924,13 +997,16 @@ export function ChatView() {
                     emotion={latestEmotion}
                     fill
                     shape="square"
+                    objectPosition={`${livePortraitPos.x}% ${livePortraitPos.y}%`}
                   />
                 ) : (
                   <img
                     key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
                     src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
                     alt={selectedCharacter.name}
-                    className="w-full h-full object-cover object-top transition-opacity duration-300"
+                    draggable={false}
+                    className="w-full h-full object-cover transition-opacity duration-300 select-none pointer-events-none"
+                    style={{ objectPosition: `${livePortraitPos.x}% ${livePortraitPos.y}%` }}
                     onError={() => {
                       if (latestEmotion) {
                         const expressionKey = `${selectedCharacter.avatar}-${latestEmotion}`;
