@@ -37,6 +37,9 @@ interface PromptTemplateState {
   activeTemplateId: string | null;
 
   saveTemplate: (name: string, includeSampler: boolean) => void;
+  /** Save a template with an explicit mainPrompt, leaving all other generation
+   *  settings at their current values. Used by the HYPERCODE builder. */
+  saveTemplateWithPrompt: (name: string, mainPrompt: string) => void;
   loadTemplate: (id: string) => void;
   deleteTemplate: (id: string) => void;
   renameTemplate: (id: string, name: string) => void;
@@ -114,6 +117,25 @@ const initial = loadFromStorage();
 export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => ({
   templates: initial.templates,
   activeTemplateId: initial.activeTemplateId,
+
+  saveTemplateWithPrompt: (name, mainPrompt) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const gen = useGenerationStore.getState();
+    const template: PromptTemplate = {
+      id: generateId(),
+      name: trimmed,
+      prompt: { ...gen.prompt, mainPrompt },
+      context: { ...gen.context },
+      instruct: { ...gen.instruct },
+      promptOrder: gen.promptOrder.map((e) => ({ ...e })),
+      createdAt: Date.now(),
+    };
+    const { templates } = get();
+    const nextTemplates = [...templates, template];
+    saveToStorage({ templates: nextTemplates, activeTemplateId: template.id });
+    set({ templates: nextTemplates, activeTemplateId: template.id });
+  },
 
   saveTemplate: (name, includeSampler) => {
     const trimmed = name.trim();
