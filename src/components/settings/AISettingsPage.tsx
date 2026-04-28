@@ -5,7 +5,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useConnectionProfileStore } from '../../stores/connectionProfileStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { useCustomProviderStore } from '../../stores/customProviderStore';
-import { PROVIDERS, settingsApi, type SecretState } from '../../api/client';
+import { PROVIDERS, settingsApi, apiRequest, type SecretState } from '../../api/client';
 import { probeProviderModels } from '../../api/providerProbe';
 import { useAuthStore } from '../../stores/authStore';
 import { hasMinRole } from '../../utils/permissions';
@@ -17,6 +17,93 @@ type TestState =
   | { kind: 'pending' }
   | { kind: 'success'; count: number }
   | { kind: 'error'; message: string };
+
+// Provider model-list loader. Strategy per provider:
+//   - 'openrouter'                              → public `/api/v1/models` (no auth, CORS-friendly).
+//   - providers in BACKEND_STATUS_PROVIDERS     → POST to `/api/backends/chat-completions/status`,
+//                                                 which proxies to the provider's `/models` using
+//                                                 the user's stored API key. Skipped when no key.
+//   - everything else (Anthropic, Vertex AI,
+//     Perplexity, AI21, 01.AI, Zhipu, Block
+//     Entropy)                                  → static `defaultModels` (backend `/status` doesn't
+//                                                 support these yet).
+// Results are cached at module scope per provider id.
+const BACKEND_STATUS_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai', 'makersuite', 'mistralai', 'groq', 'deepseek', 'cohere',
+  'xai', 'moonshot', 'nanogpt', 'pollinations', 'aimlapi', 'electronhub',
+]);
+
+const modelsCache: Record<string, string[]> = {};
+const inFlightLoads: Record<string, Promise<string[] | null>> = {};
+
+function extractModelIds(payload: unknown): string[] {
+  if (!payload) return [];
+  const p = payload as { data?: unknown; models?: unknown };
+  // Upstream shapes: OpenAI-style { data: [{id}] }, Cohere { models: [{name}] },
+  // bare arrays, or the backend's error wrapper { data: { data: [] } }.
+  const candidates: unknown[] = [
+    p.data,
+    p.models,
+    (p.data as { data?: unknown } | undefined)?.data,
+    Array.isArray(payload) ? payload : null,
+  ];
+  for (const list of candidates) {
+    if (Array.isArray(list)) {
+      const ids = list
+        .map((m) => (m && typeof m === 'object' ? ((m as { id?: unknown; name?: unknown }).id ?? (m as { name?: unknown }).name) : null))
+        .filter((x): x is string => typeof x === 'string' && x.length > 0);
+      if (ids.length > 0) return ids;
+    }
+  }
+  return [];
+}
+
+async function fetchOpenrouterModels(): Promise<string[] | null> {
+  const res = await probeProviderModels('https://openrouter.ai/api/v1');
+  return res.ok && res.models.length > 0 ? [...new Set(res.models)].sort() : null;
+}
+
+async function fetchBackendModels(providerId: string): Promise<string[] | null> {
+  try {
+    const data = await apiRequest<unknown>('/api/backends/chat-completions/status', {
+      method: 'POST',
+      body: JSON.stringify({ chat_completion_source: providerId }),
+    });
+    const ids = extractModelIds(data);
+    return ids.length > 0 ? [...new Set(ids)].sort() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadProviderModels(providerId: string, hasKey: boolean): Promise<string[] | null> {
+  const cached = modelsCache[providerId];
+  if (cached) return cached;
+  const existing = inFlightLoads[providerId];
+  if (existing) return existing;
+
+  let promise: Promise<string[] | null>;
+  if (providerId === 'openrouter') {
+    promise = fetchOpenrouterModels();
+  } else if (BACKEND_STATUS_PROVIDERS.has(providerId)) {
+    if (!hasKey) return null;
+    promise = fetchBackendModels(providerId);
+  } else {
+    return null;
+  }
+
+  inFlightLoads[providerId] = promise
+    .then((list) => {
+      if (list) modelsCache[providerId] = list;
+      return list;
+    })
+    .finally(() => { delete inFlightLoads[providerId]; });
+  return inFlightLoads[providerId];
+}
+
+function isDynamicProvider(providerId: string): boolean {
+  return providerId === 'openrouter' || BACKEND_STATUS_PROVIDERS.has(providerId);
+}
 
 interface LocalPreset { name: string; url: string; defaultModel?: string }
 const LOCAL_PRESETS: LocalPreset[] = [
@@ -124,6 +211,11 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
 
+  // Live model catalog per provider. `undefined` = not loaded; `null` = fetch failed/skipped.
+  const [dynamicModels, setDynamicModels] = useState<Record<string, string[] | null>>(() => ({ ...modelsCache }));
+  const [modelsLoadingFor, setModelsLoadingFor] = useState<string | null>(null);
+  const [modelsErrorFor, setModelsErrorFor] = useState<Record<string, string>>({});
+
   useEffect(() => {
     fetchSecrets();
     fetchSettings();
@@ -139,6 +231,35 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
   useEffect(() => { setCustomUrlInput(customUrl); }, [customUrl]);
   useEffect(() => { setCustomModelInput(activeModel); }, [activeModel]);
   useEffect(() => { setTestState({ kind: 'idle' }); setDiscoveredModels([]); }, [customUrlInput]);
+
+  // Lazily load the active provider's live model catalog when supported.
+  // Re-runs when the user adds an API key for a key-gated provider.
+  useEffect(() => {
+    if (!isDynamicProvider(activeProvider)) return;
+    if (dynamicModels[activeProvider] !== undefined) return;
+    const provider = PROVIDERS.find((p) => p.id === activeProvider);
+    const secret = provider ? secrets[provider.secretKey] : undefined;
+    const hasKey = Array.isArray(secret) && secret.length > 0;
+    // Backend `/status` requires a key; OpenRouter's public endpoint doesn't.
+    if (activeProvider !== 'openrouter' && !hasKey) return;
+
+    let cancelled = false;
+    const providerId = activeProvider;
+    setModelsLoadingFor(providerId);
+    setModelsErrorFor((prev) => { const { [providerId]: _, ...rest } = prev; return rest; });
+    loadProviderModels(providerId, hasKey).then((list) => {
+      if (cancelled) return;
+      if (list && list.length > 0) {
+        setDynamicModels((prev) => ({ ...prev, [providerId]: list }));
+      } else {
+        setDynamicModels((prev) => ({ ...prev, [providerId]: null }));
+        setModelsErrorFor((prev) => ({ ...prev, [providerId]: "Couldn't load this provider's model list — using defaults." }));
+      }
+    }).finally(() => {
+      if (!cancelled) setModelsLoadingFor((cur) => (cur === providerId ? null : cur));
+    });
+    return () => { cancelled = true; };
+  }, [activeProvider, secrets, dynamicModels]);
 
   const handleSaveApiKey = async (providerId: string) => {
     const key = apiKeyInputs[providerId];
@@ -384,15 +505,41 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
         )}
 
         {/* Model Selection (non-custom) */}
-        {currentProvider && activeProvider !== 'custom' && (
-          <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
-            <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">Model</h2>
-            <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} disabled={isSaving}
-              className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]">
-              {currentProvider.models.map((model) => <option key={model} value={model}>{model}</option>)}
-            </select>
-          </section>
-        )}
+        {currentProvider && activeProvider !== 'custom' && (() => {
+          const liveList = dynamicModels[activeProvider];
+          const useLive = !!(liveList && liveList.length > 0);
+          const baseList = useLive ? liveList! : (currentProvider.models as readonly string[]);
+          const modelList = activeModel && !baseList.includes(activeModel) ? [activeModel, ...baseList] : baseList;
+          const isLoading = modelsLoadingFor === activeProvider;
+          const errorMsg = modelsErrorFor[activeProvider];
+          const liveSource = activeProvider === 'openrouter'
+            ? 'openrouter.ai/api/v1/models'
+            : `${currentProvider.name} /models`;
+          return (
+            <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Model</h2>
+                {isLoading && (
+                  <span className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> Loading models…
+                  </span>
+                )}
+              </div>
+              <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} disabled={isSaving}
+                className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]">
+                {modelList.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+              {useLive && (
+                <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
+                  {liveList!.length} models from <code>{liveSource}</code>.
+                </p>
+              )}
+              {errorMsg && !useLive && (
+                <p className="mt-1.5 text-xs text-amber-400">{errorMsg}</p>
+              )}
+            </section>
+          );
+        })()}
 
         {/* Connection Profiles */}
         <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
