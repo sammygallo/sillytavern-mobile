@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Key, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
+import { Download, HelpCircle, Key, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
@@ -8,6 +8,7 @@ import { can } from '../../utils/permissions';
 import { Avatar, Button } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
 import { ChatHistoryPanel } from '../chat/ChatHistoryPanel';
+import { HelpChat } from '../help/HelpChat';
 import { PersonaSelector, PersonaManager } from '../persona';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
 import type { CharacterInfo } from '../../api/client';
@@ -26,6 +27,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { canInstall, install: installPwa } = usePwaInstall();
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [convertToPersonaData, setConvertToPersonaData] = useState<
     { name: string; description: string } | null
   >(null);
@@ -110,6 +112,15 @@ export function Header({ onMenuClick }: HeaderProps) {
           </Button>
         )}
         <PersonaSelector />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="p-2"
+          aria-label="Help"
+          onClick={() => setShowHelp(true)}
+        >
+          <HelpCircle size={20} />
+        </Button>
         {canViewSettings && (
           <Button
             variant="ghost"
@@ -168,6 +179,9 @@ export function Header({ onMenuClick }: HeaderProps) {
         isOpen={showHistoryPanel}
         onClose={() => setShowHistoryPanel(false)}
       />
+
+      {/* In-app help assistant */}
+      <HelpChat isOpen={showHelp} onClose={() => setShowHelp(false)} />
 
       {/* Persona Manager (opened from convert-to-persona) */}
       {convertToPersonaData && (
