@@ -521,7 +521,7 @@ export function ChatInput({
         )}
 
         {/* Input Area */}
-        <div className="flex-1 flex items-end bg-[var(--color-bg-tertiary)] rounded-2xl px-4 py-2 relative">
+        <div className="flex-1 min-w-0 flex items-end bg-[var(--color-bg-tertiary)] rounded-2xl px-4 py-2 relative">
           {/* Phase 8.7: Slash command autocomplete */}
           <CommandAutocomplete
             prefix={autocompletePrefix}
