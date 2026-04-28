@@ -8,9 +8,13 @@ and pointing at where to find the setting in the UI.
 
 ## Where do the prompts come from? Do I write the main prompt and jailbreak myself?
 
-Yes — they're yours to fill in. The app ships with the **Main Prompt**,
-**Jailbreak / Auxiliary Prompt**, and **Post-History Instructions** fields all
-blank by default.
+The app ships with sensible defaults for the **Main Prompt** and
+**Jailbreak / Auxiliary Prompt** — a third-person roleplay style guide and a
+permissive system note for adult fiction — so bots behave reasonably out of
+the box. **Post-History Instructions** ships blank.
+
+You can edit, replace, or clear any of them. Hit **Reset to Defaults** in
+Generation Settings to restore the shipped versions.
 
 **Where:** Settings → Generation Settings.
 
