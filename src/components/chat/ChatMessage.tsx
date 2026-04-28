@@ -258,7 +258,7 @@ export function ChatMessage({
       <button
         onClick={() => { setShowMenu(!showMenu); haptic(); }}
         disabled={disabled}
-        className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+        className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
         aria-label="Message actions"
       >
         <MoreHorizontal size={16} />
@@ -310,7 +310,7 @@ export function ChatMessage({
           className={`p-1.5 rounded-lg transition-all ${
             isSpeaking
               ? 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 opacity-100'
-              : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-0 group-hover:opacity-100 focus:opacity-100'
+              : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100'
           }`}
           aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
           title={isSpeaking ? 'Stop' : 'Read aloud'}
