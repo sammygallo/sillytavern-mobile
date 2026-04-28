@@ -64,7 +64,7 @@ export function MainLayout() {
   }
 
   return (
-    <div ref={swipeRef} className="h-screen flex bg-[var(--color-bg-primary)] overflow-hidden">
+    <div ref={swipeRef} className="flex bg-[var(--color-bg-primary)] overflow-hidden" style={{ height: '100dvh' }}>
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 

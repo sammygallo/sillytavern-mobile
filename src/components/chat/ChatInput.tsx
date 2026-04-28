@@ -313,8 +313,10 @@ export function ChatInput({
     }
   };
 
+  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -383,7 +385,7 @@ export function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 pb-4 input-safe-bottom"
+      className="flex-shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 pb-4 input-safe-bottom"
     >
       {/* Hidden file picker, driven by the paperclip button. */}
       <input
@@ -543,7 +545,7 @@ export function ChatInput({
               setShowAutocomplete(trimmed.startsWith('/') && !trimmed.includes(' '));
             }}
             onKeyDown={handleKeyDown}
-            enterKeyHint="send"
+            enterKeyHint={isTouchDevice ? 'enter' : 'send'}
             placeholder={isListening ? 'Listening…' : placeholder}
             disabled={disabled || isListening}
             rows={1}
