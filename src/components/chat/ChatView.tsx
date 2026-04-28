@@ -31,6 +31,8 @@ import { useAutoMemoryStore } from '../../stores/autoMemoryStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { LivePortraitVideo } from './LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { useGenerationStore } from '../../stores/generationStore';
+import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
 import { usePortraitPositionStore } from '../../stores/portraitPositionStore';
 import { fetchExistingClips } from '../../api/livePortraitGen';
 import {
@@ -494,6 +496,46 @@ export function ChatView() {
       setActiveCostumeState(null);
     }
   }, [selectedCharacter?.avatar]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-load character-linked generation preset (Option B). On character switch,
+  // if the active character has a linked preset, load it transiently. On unmount
+  // or unlinked-character switch, restore the user's default preset.
+  useEffect(() => {
+    const avatar = selectedCharacter?.avatar;
+    if (!avatar) {
+      useGenerationStore.getState().restoreDefault();
+      return;
+    }
+    const linked = useGenerationStore.getState().linkedPresetByAvatar[avatar];
+    if (linked) {
+      useGenerationStore.getState().loadPresetTransient(linked);
+    } else {
+      useGenerationStore.getState().restoreDefault();
+    }
+    return () => {
+      useGenerationStore.getState().restoreDefault();
+    };
+  }, [selectedCharacter?.avatar]);
+
+  // Auto-load character-linked HYPERCODE/prompt template. Only the
+  // mainPrompt is swapped — the user's other generation settings are
+  // preserved. On exit, the original mainPrompt is restored.
+  useEffect(() => {
+    const avatar = selectedCharacter?.avatar;
+    if (!avatar) {
+      usePromptTemplateStore.getState().restoreDefaultMainPrompt();
+      return;
+    }
+    const linked = usePromptTemplateStore.getState().linkedTemplateByAvatar[avatar];
+    if (linked) {
+      usePromptTemplateStore.getState().loadTemplateMainPromptTransient(linked);
+    } else {
+      usePromptTemplateStore.getState().restoreDefaultMainPrompt();
+    }
+    return () => {
+      usePromptTemplateStore.getState().restoreDefaultMainPrompt();
+    };
+  }, [selectedCharacter?.avatar]);
 
   // Phase 6.4: track the last 3 distinct AI speakers for VN group sprite layout
   const recentSpeakers = useMemo<string[]>(() => {

@@ -189,6 +189,15 @@ interface GenerationState {
   sampler: SamplerParams;
   presets: GenerationPreset[];
   activePresetId: string | null;
+  /**
+   * The user's "default" preset — set whenever they manually load one. When a
+   * character with a linked preset is opened, the linked preset overrides the
+   * sampler transiently without touching this. Restored on character switch /
+   * chat exit.
+   */
+  defaultPresetId: string | null;
+  /** Per-character linked preset, keyed by avatar filename. */
+  linkedPresetByAvatar: Record<string, string>;
 
   prompt: PromptConfig;
   context: ContextConfig;
@@ -204,7 +213,15 @@ interface GenerationState {
   resetSampler: () => void;
   savePreset: (name: string) => void;
   loadPreset: (id: string) => void;
+  /** Load a preset's sampler without updating defaultPresetId (used for character-linked autoload). */
+  loadPresetTransient: (id: string) => void;
+  /** Reload the default preset's sampler. No-op if defaultPresetId is null. */
+  restoreDefault: () => void;
   deletePreset: (id: string) => void;
+  /** Save current sampler as a preset and link it to a character avatar. Returns the new preset id. */
+  savePresetAndLink: (name: string, avatar: string) => string;
+  /** Link an existing preset to a character (or unlink with null). */
+  setLinkedPreset: (avatar: string, presetId: string | null) => void;
 
   setPrompt: (prompt: Partial<PromptConfig>) => void;
   resetPrompt: () => void;
@@ -228,6 +245,8 @@ interface PersistedShape {
   sampler: SamplerParams;
   presets: GenerationPreset[];
   activePresetId: string | null;
+  defaultPresetId?: string | null;
+  linkedPresetByAvatar?: Record<string, string>;
   prompt: PromptConfig;
   context: ContextConfig;
   instruct: InstructConfig;
@@ -257,6 +276,8 @@ function persist(state: GenerationState) {
     sampler: state.sampler,
     presets: state.presets,
     activePresetId: state.activePresetId,
+    defaultPresetId: state.defaultPresetId,
+    linkedPresetByAvatar: state.linkedPresetByAvatar,
     prompt: state.prompt,
     context: state.context,
     instruct: state.instruct,
@@ -303,6 +324,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
   sampler: { ...DEFAULT_SAMPLER, ...(initial.sampler ?? {}) },
   presets: initial.presets ?? [],
   activePresetId: initial.activePresetId ?? null,
+  defaultPresetId: initial.defaultPresetId ?? initial.activePresetId ?? null,
+  linkedPresetByAvatar: initial.linkedPresetByAvatar ?? {},
   prompt: { ...DEFAULT_PROMPT_CONFIG, ...(initial.prompt ?? {}) },
   context: { ...DEFAULT_CONTEXT_CONFIG, ...(initial.context ?? {}) },
   instruct: { ...DEFAULT_INSTRUCT_CONFIG, ...(initial.instruct ?? {}) },
@@ -341,13 +364,38 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
         ...state,
         presets: nextPresets,
         activePresetId: preset.id,
+        defaultPresetId: preset.id,
       };
       persist(next);
-      return { presets: nextPresets, activePresetId: preset.id };
+      return {
+        presets: nextPresets,
+        activePresetId: preset.id,
+        defaultPresetId: preset.id,
+      };
     });
   },
 
   loadPreset: (id) => {
+    const { presets } = get();
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    set((state) => {
+      const next = {
+        ...state,
+        sampler: { ...preset.sampler },
+        activePresetId: preset.id,
+        defaultPresetId: preset.id,
+      };
+      persist(next);
+      return {
+        sampler: next.sampler,
+        activePresetId: preset.id,
+        defaultPresetId: preset.id,
+      };
+    });
+  },
+
+  loadPresetTransient: (id) => {
     const { presets } = get();
     const preset = presets.find((p) => p.id === id);
     if (!preset) return;
@@ -362,18 +410,101 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
     });
   },
 
+  restoreDefault: () => {
+    const { defaultPresetId, presets, activePresetId } = get();
+    if (!defaultPresetId) {
+      // No default — just clear the transient marker if it points at a different
+      // preset than what the user last chose. Leave the sampler alone.
+      if (activePresetId !== null) {
+        set((state) => {
+          const next = { ...state, activePresetId: null };
+          persist(next);
+          return { activePresetId: null };
+        });
+      }
+      return;
+    }
+    if (activePresetId === defaultPresetId) return;
+    const preset = presets.find((p) => p.id === defaultPresetId);
+    if (!preset) return;
+    set((state) => {
+      const next = {
+        ...state,
+        sampler: { ...preset.sampler },
+        activePresetId: preset.id,
+      };
+      persist(next);
+      return { sampler: next.sampler, activePresetId: preset.id };
+    });
+  },
+
   deletePreset: (id) => {
-    const { presets, activePresetId } = get();
+    const { presets, activePresetId, defaultPresetId, linkedPresetByAvatar } = get();
     const nextPresets = presets.filter((p) => p.id !== id);
     const nextActive = activePresetId === id ? null : activePresetId;
+    const nextDefault = defaultPresetId === id ? null : defaultPresetId;
+    // Drop any character links that point at the deleted preset.
+    const nextLinks: Record<string, string> = {};
+    for (const [avatar, presetId] of Object.entries(linkedPresetByAvatar)) {
+      if (presetId !== id) nextLinks[avatar] = presetId;
+    }
     set((state) => {
       const next = {
         ...state,
         presets: nextPresets,
         activePresetId: nextActive,
+        defaultPresetId: nextDefault,
+        linkedPresetByAvatar: nextLinks,
       };
       persist(next);
-      return { presets: nextPresets, activePresetId: nextActive };
+      return {
+        presets: nextPresets,
+        activePresetId: nextActive,
+        defaultPresetId: nextDefault,
+        linkedPresetByAvatar: nextLinks,
+      };
+    });
+  },
+
+  savePresetAndLink: (name, avatar) => {
+    const { sampler, presets, linkedPresetByAvatar } = get();
+    const trimmed = name.trim() || 'Linked Preset';
+    const preset: GenerationPreset = {
+      id: generatePresetId(),
+      name: trimmed,
+      sampler: { ...sampler },
+      createdAt: Date.now(),
+    };
+    const nextPresets = [...presets, preset];
+    const nextLinks = { ...linkedPresetByAvatar, [avatar]: preset.id };
+    set((state) => {
+      const next = {
+        ...state,
+        presets: nextPresets,
+        activePresetId: preset.id,
+        linkedPresetByAvatar: nextLinks,
+      };
+      persist(next);
+      return {
+        presets: nextPresets,
+        activePresetId: preset.id,
+        linkedPresetByAvatar: nextLinks,
+      };
+    });
+    return preset.id;
+  },
+
+  setLinkedPreset: (avatar, presetId) => {
+    set((state) => {
+      const nextLinks = { ...state.linkedPresetByAvatar };
+      if (presetId === null) {
+        delete nextLinks[avatar];
+      } else {
+        nextLinks[avatar] = presetId;
+      }
+      const next = { ...state, linkedPresetByAvatar: nextLinks };
+      persist(next);
+      return { linkedPresetByAvatar: nextLinks };
     });
   },
 

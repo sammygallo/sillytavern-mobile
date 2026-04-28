@@ -5,7 +5,7 @@ import { useGenerationStore, DEFAULT_SAMPLER } from '../../stores/generationStor
 import { useSettingsStore } from '../../stores/settingsStore';
 import { getDefaultContextSize } from '../../utils/tokenizer';
 import { INSTRUCT_TEMPLATES } from '../../utils/instructTemplates';
-import { Button, Input, TextArea } from '../ui';
+import { Button, Input, TextArea, HelpTip } from '../ui';
 import { PromptOrderEditor } from './PromptOrderEditor';
 
 type TabId = 'samplers' | 'prompts' | 'order' | 'context' | 'instruct';
@@ -200,6 +200,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.05}
                 onChange={(v) => setSampler({ temperature: v })}
                 hint={`Randomness. Lower = more deterministic. Default: ${DEFAULT_SAMPLER.temperature}`}
+                helpTip="Controls creativity and randomness. 0.1 = very predictable, robotic. 0.7 = natural and varied. 1.0+ = highly creative but may drift or hallucinate. For roleplay, 0.75–0.9 is a sweet spot. For task-focused assistants, try 0.3–0.6."
               />
 
               <SliderField
@@ -210,6 +211,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={64}
                 onChange={(v) => setSampler({ maxTokens: v })}
                 hint="Maximum tokens in the AI response"
+                helpTip="Caps how long each AI reply can be. ~100 tokens ≈ a short paragraph. ~500 = 2–3 paragraphs. ~1500+ = long, elaborate responses. This doesn't affect how much context the AI reads — only how much it writes back."
               />
 
               <SliderField
@@ -220,6 +222,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.01}
                 onChange={(v) => setSampler({ topP: v })}
                 hint="Nucleus sampling. 1.0 disables it"
+                helpTip="Nucleus sampling — the AI only picks from tokens whose combined probability reaches this threshold. 0.9 = top 90% of likely tokens. Lower = more conservative, less surprising. Set to 1.0 to disable and rely on Temperature alone. Most users keep this at 0.9–1.0."
               />
 
               <SliderField
@@ -230,6 +233,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={1}
                 onChange={(v) => setSampler({ topK: v })}
                 hint="Top-K sampling. 0 disables it"
+                helpTip="Limits the AI to choosing from only the K most likely next tokens. 40–100 is common for local models. 0 disables it. Works alongside Top P — both limits apply. Cloud models (OpenAI, Anthropic) often ignore this; it's most useful for local models like llama.cpp."
               />
 
               <SliderField
@@ -240,6 +244,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.01}
                 onChange={(v) => setSampler({ minP: v })}
                 hint="Minimum probability threshold. 0 disables it"
+                helpTip="Filters out tokens that are much less probable than the top choice. E.g., 0.05 cuts any token less than 5% as likely as the best token. Helps prevent garbage output at high temperatures without making responses feel restricted. 0 disables it."
               />
 
               <SliderField
@@ -250,6 +255,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.1}
                 onChange={(v) => setSampler({ frequencyPenalty: v })}
                 hint="Penalize frequent tokens"
+                helpTip="Reduces repetition by penalizing tokens based on how many times they've already appeared. Higher values = more varied vocabulary. 0 = off. Negative values can actually encourage repetition (rarely useful). Supported by OpenAI and Anthropic."
               />
 
               <SliderField
@@ -260,6 +266,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.1}
                 onChange={(v) => setSampler({ presencePenalty: v })}
                 hint="Encourage new topics"
+                helpTip="Penalizes any token that has appeared at all, regardless of how often. Encourages the AI to introduce new topics and concepts. Unlike Frequency Penalty, it doesn't scale with repetition count — a single mention is enough to trigger the penalty."
               />
 
               <SliderField
@@ -270,6 +277,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
                 step={0.01}
                 onChange={(v) => setSampler({ repetitionPenalty: v })}
                 hint="1.0 disables it (text completion only)"
+                helpTip="Alternative repetition control used by local/text-completion models (llama.cpp, KoboldCpp, etc.). 1.0 = off. 1.1–1.3 is a common range. Penalizes recently-used tokens. Not supported by most cloud providers — use Frequency Penalty instead for those."
               />
 
               <div>
@@ -431,6 +439,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
               step={512}
               onChange={(v) => setContext({ maxTokens: v })}
               hint="Total token budget for the prompt"
+              helpTip="The total number of tokens your AI provider will see per request — chat history, character card, world info, and system prompt combined. Set this to match your model's actual context window. Going over causes older messages to be trimmed. Check your provider's docs for the correct value."
             />
 
             <SliderField
@@ -441,6 +450,7 @@ export function GenerationSettingsPage(_props?: { params?: Record<string, string
               step={64}
               onChange={(v) => setContext({ responseReserve: v })}
               hint="Tokens held back for the AI response"
+              helpTip="Tokens reserved exclusively for the AI's reply. This is subtracted from Max Context before fitting history. If your Max Response Tokens is 1000, set this to at least 1000 so the AI always has room to write a full response without being cut off mid-sentence."
             />
 
             <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
@@ -592,6 +602,7 @@ interface SliderFieldProps {
   step: number;
   onChange: (v: number) => void;
   hint?: string;
+  helpTip?: string;
 }
 
 function SliderField({
@@ -602,13 +613,17 @@ function SliderField({
   step,
   onChange,
   hint,
+  helpTip,
 }: SliderFieldProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <label className="text-sm font-medium text-[var(--color-text-secondary)]">
-          {label}
-        </label>
+        <div className="flex items-center gap-1.5">
+          <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+            {label}
+          </label>
+          {helpTip && <HelpTip tip={helpTip} />}
+        </div>
         <input
           type="number"
           value={value}

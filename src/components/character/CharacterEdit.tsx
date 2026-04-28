@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2 } from 'lucide-react';
+import { Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
 import { useAuthStore } from '../../stores/authStore';
 import { hasPermission } from '../../utils/permissions';
 import { spritesApi, type CharacterInfo } from '../../api/client';
-import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
+import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput, HelpTip } from '../ui';
+import { showToastGlobal } from '../ui/Toast';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { CharacterLorebookSection } from './CharacterLorebookSection';
 import { LivePortraitSetup } from './LivePortraitSetup';
+import { CharacterSetupWizard } from './CharacterSetupWizard';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { useGenerationStore } from '../../stores/generationStore';
+import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
+import { estimateTokens } from '../../utils/tokenizer';
 
 interface CharacterEditProps {
   isOpen: boolean;
@@ -49,8 +54,19 @@ export function CharacterEdit({
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLivePortraitSetup, setShowLivePortraitSetup] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const livePortraitClips = useLivePortraitStore((s) => s.clipsByAvatar[character.avatar]);
   const hasLivePortraitClips = !!livePortraitClips && Object.keys(livePortraitClips).length > 0;
+  const linkedPresetId = useGenerationStore((s) => s.linkedPresetByAvatar[character.avatar]);
+  const linkedPreset = useGenerationStore((s) =>
+    linkedPresetId ? s.presets.find((p) => p.id === linkedPresetId) : undefined
+  );
+  const setLinkedPreset = useGenerationStore((s) => s.setLinkedPreset);
+  const linkedTemplateId = usePromptTemplateStore((s) => s.linkedTemplateByAvatar[character.avatar]);
+  const linkedTemplate = usePromptTemplateStore((s) =>
+    linkedTemplateId ? s.templates.find((t) => t.id === linkedTemplateId) : undefined
+  );
+  const setLinkedTemplate = usePromptTemplateStore((s) => s.setLinkedTemplate);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
@@ -264,7 +280,7 @@ export function CharacterEdit({
         />
 
         {/* Character Actions */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -285,6 +301,16 @@ export function CharacterEdit({
           >
             <UserCircle size={16} className="mr-1.5" />
             To Persona
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowWizard(true)}
+            title="Get personalized settings recommendations for this character"
+          >
+            <Wand2 size={16} className="mr-1.5" />
+            Setup Wizard
           </Button>
           <div className="relative">
             <Button
@@ -337,6 +363,63 @@ export function CharacterEdit({
           </div>
         </div>
 
+        {/* Linked Generation Preset (auto-loads on chat open) */}
+        {linkedPreset && (
+          <div className="flex items-center justify-between rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <Link2 size={14} className="text-[var(--color-primary)] shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                  Linked preset: {linkedPreset.name}
+                </p>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Sampler auto-loads when you chat with {character.name}.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setLinkedPreset(character.avatar, null)}
+              className="shrink-0"
+              title="Remove the link (the preset itself is kept)"
+            >
+              <Unlink size={14} className="mr-1.5" />
+              Unlink
+            </Button>
+          </div>
+        )}
+
+        {/* Linked Prompt Template (HYPERCODE / etc.) */}
+        {linkedTemplate && (
+          <div className="flex items-center justify-between rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <Link2 size={14} className="text-[var(--color-primary)] shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                  Linked prompt: {linkedTemplate.name}
+                </p>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  System prompt auto-loads when you chat with {character.name} (~
+                  {estimateTokens(linkedTemplate.prompt.mainPrompt)} tok / turn).
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setLinkedTemplate(character.avatar, null)}
+              className="shrink-0"
+              title="Remove the link (the template itself is kept)"
+            >
+              <Unlink size={14} className="mr-1.5" />
+              Unlink
+            </Button>
+          </div>
+        )}
+
         {/* Visibility (global vs personal) — gated on character:set_global */}
         {canSetGlobal && (
           <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 py-2">
@@ -383,6 +466,7 @@ export function CharacterEdit({
         {/* Description */}
         <TextArea
           label="Description"
+          labelExtra={<HelpTip tip="The AI's mental image of the character. Describe physical appearance, background, world context, and relevant history. This is included in every prompt — be thorough but not redundant." />}
           placeholder="Describe the character's appearance, background, and other details..."
           value={formData.description}
           onChange={handleChange('description')}
@@ -392,6 +476,7 @@ export function CharacterEdit({
         {/* Personality */}
         <TextArea
           label="Personality"
+          labelExtra={<HelpTip tip="How the character thinks, speaks, and feels. Focus on speech patterns, emotional tendencies, and quirks. Specific phrases like 'speaks in short, clipped sentences' or 'always deflects with humor' lead to more consistent character behavior than abstract traits like 'kind.'" />}
           placeholder="Character's personality traits, mannerisms, speech patterns..."
           value={formData.personality}
           onChange={handleChange('personality')}
@@ -401,6 +486,7 @@ export function CharacterEdit({
         {/* First Message */}
         <TextArea
           label="First Message"
+          labelExtra={<HelpTip tip="The character's opening line when a new chat starts. Sets the tone and scene for the whole conversation. Opening mid-action or mid-moment works better than a generic greeting — it immediately pulls the user into the world." />}
           placeholder="The character's opening message when starting a new chat..."
           value={formData.firstMessage}
           onChange={handleChange('firstMessage')}
@@ -416,6 +502,7 @@ export function CharacterEdit({
         {/* Scenario */}
         <TextArea
           label="Scenario"
+          labelExtra={<HelpTip tip="The specific situation when the chat begins — location, what just happened, the stakes. Unlike Description (which is always-on), Scenario sets the starting context for this particular conversation. Keep it focused; save world-building for World Info." />}
           placeholder="The setting or context for conversations..."
           value={formData.scenario}
           onChange={handleChange('scenario')}
@@ -476,6 +563,7 @@ export function CharacterEdit({
             {/* Example Messages */}
             <TextArea
               label="Example Messages"
+              labelExtra={<HelpTip tip="Sample dialogue that teaches the AI the character's voice. Use the format: {{user}}: [message]\n{{char}}: [response]\n\nA few good examples (3–5 exchanges) are more effective than many mediocre ones. Focus on capturing distinctive speech patterns or reactions rather than plot." />}
               placeholder="Example dialogue to help the AI understand the character's voice..."
               value={formData.exampleMessages}
               onChange={handleChange('exampleMessages')}
@@ -486,6 +574,7 @@ export function CharacterEdit({
             <div className="space-y-2">
               <TextArea
                 label="Character's Note"
+                labelExtra={<HelpTip tip="A reminder injected at a specific position in the chat history (controlled by Injection Depth). Useful for keeping the AI on-track during long conversations where early instructions start to fade. Acts as a nudge rather than a full system prompt." />}
                 placeholder="Injected at a configurable depth in the chat to reinforce behavior..."
                 value={depthPromptPrompt}
                 onChange={(e) => setDepthPromptPrompt(e.target.value)}
@@ -529,6 +618,7 @@ export function CharacterEdit({
             {/* System Prompt Override */}
             <TextArea
               label="System Prompt Override"
+              labelExtra={<HelpTip tip="Replaces the global Main Prompt for this character only. Use when a character needs a fundamentally different system prompt than your default. Only active if 'Honor character's System Prompt override' is enabled in Generation Settings → Prompts." />}
               placeholder="Overrides the main system prompt for this character..."
               value={systemPromptOverride}
               onChange={(e) => setSystemPromptOverride(e.target.value)}
@@ -538,6 +628,7 @@ export function CharacterEdit({
             {/* Post-History Instructions */}
             <TextArea
               label="Post-History Instructions"
+              labelExtra={<HelpTip tip="A system message inserted after the chat history, just before the AI responds. This is the last thing the AI reads before generating a reply — great for final behavioral nudges or reminders. Requires 'Honor character's Post-History Instructions' in Generation Settings → Prompts." />}
               placeholder="Instructions appended after the chat history..."
               value={postHistoryInstructions}
               onChange={(e) => setPostHistoryInstructions(e.target.value)}
@@ -632,6 +723,26 @@ export function CharacterEdit({
         imageUrl={`/characters/${encodeURIComponent(character.avatar)}`}
         isOpen={showLivePortraitSetup}
         onClose={() => setShowLivePortraitSetup(false)}
+      />
+      <CharacterSetupWizard
+        isOpen={showWizard}
+        onClose={() => setShowWizard(false)}
+        characterName={character.name}
+        characterAvatar={character.avatar}
+        onApplyToCharacterSystemPrompt={(text) => {
+          setSystemPromptOverride(text);
+          showToastGlobal(
+            `HYPERCODE prompt set on ${character.name}. Click Save Changes to persist.`,
+            'success'
+          );
+        }}
+        existingSystemPromptOverride={systemPromptOverride}
+        characterFieldsTokens={
+          estimateTokens(formData.description) +
+          estimateTokens(formData.personality) +
+          estimateTokens(formData.scenario) +
+          estimateTokens(formData.firstMessage)
+        }
       />
     </Modal>
   );

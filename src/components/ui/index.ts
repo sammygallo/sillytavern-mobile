@@ -8,3 +8,4 @@ export { ExpressionUpload } from './ExpressionUpload';
 export { ConfirmDialog } from './ConfirmDialog';
 export { TagInput } from './TagInput';
 export { BottomSheet } from './BottomSheet';
+export { HelpTip } from './HelpTip';
