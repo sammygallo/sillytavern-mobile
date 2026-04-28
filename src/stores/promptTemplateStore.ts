@@ -35,14 +35,37 @@ export interface PromptTemplate {
 interface PromptTemplateState {
   templates: PromptTemplate[];
   activeTemplateId: string | null;
+  /** Per-character linked template, keyed by avatar filename. Loaded
+   *  transiently on chat enter and restored on switch-away. */
+  linkedTemplateByAvatar: Record<string, string>;
+  /**
+   * Snapshot of the user's mainPrompt when a transient (character-linked)
+   * template was loaded. Restored on exit so per-character links don't
+   * silently overwrite global settings.
+   */
+  mainPromptSnapshot: string | null;
 
   saveTemplate: (name: string, includeSampler: boolean) => void;
   /** Save a template with an explicit mainPrompt, leaving all other generation
    *  settings at their current values. Used by the HYPERCODE builder. */
   saveTemplateWithPrompt: (name: string, mainPrompt: string) => void;
+  /** Save a template with explicit mainPrompt and link it to a character avatar.
+   *  Returns the new template id. */
+  saveTemplateWithPromptAndLink: (name: string, mainPrompt: string, avatar: string) => string;
   loadTemplate: (id: string) => void;
+  /**
+   * Apply just the mainPrompt portion of a template, snapshotting the
+   * current mainPrompt so it can be restored. Does NOT touch context,
+   * instruct, or promptOrder — those stay at the user's global settings.
+   * Used for character-linked auto-load.
+   */
+  loadTemplateMainPromptTransient: (id: string) => void;
+  /** Restore the snapshotted mainPrompt and clear the snapshot. */
+  restoreDefaultMainPrompt: () => void;
   deleteTemplate: (id: string) => void;
   renameTemplate: (id: string, name: string) => void;
+  /** Link an existing template to a character (or unlink with null). */
+  setLinkedTemplate: (avatar: string, templateId: string | null) => void;
   importTemplates: (json: string) => { imported: number; errors: number };
   exportTemplates: () => string;
   exportTemplate: (id: string) => string | null;
@@ -53,6 +76,11 @@ const STORAGE_KEY = 'stm:prompt-templates';
 interface PersistedShape {
   templates: PromptTemplate[];
   activeTemplateId: string | null;
+  linkedTemplateByAvatar?: Record<string, string>;
+  /** Persisted so a mid-chat refresh doesn't lose the user's original
+   *  mainPrompt. If the page reloads while a transient template is active,
+   *  the snapshot survives and gets restored on switch-away. */
+  mainPromptSnapshot?: string | null;
 }
 
 function loadFromStorage(): PersistedShape {
@@ -64,17 +92,34 @@ function loadFromStorage(): PersistedShape {
       templates: Array.isArray(parsed.templates) ? parsed.templates : [],
       activeTemplateId:
         typeof parsed.activeTemplateId === 'string' ? parsed.activeTemplateId : null,
+      linkedTemplateByAvatar:
+        parsed.linkedTemplateByAvatar &&
+        typeof parsed.linkedTemplateByAvatar === 'object' &&
+        !Array.isArray(parsed.linkedTemplateByAvatar)
+          ? (parsed.linkedTemplateByAvatar as Record<string, string>)
+          : {},
+      mainPromptSnapshot:
+        typeof parsed.mainPromptSnapshot === 'string' ? parsed.mainPromptSnapshot : null,
     };
   } catch {
     return { templates: [], activeTemplateId: null };
   }
 }
 
+/**
+ * Persist state, merging with any existing fields in storage. This means
+ * actions that only care about a subset of the persisted shape (e.g.
+ * `renameTemplate` doesn't touch the mainPromptSnapshot) won't accidentally
+ * drop fields they didn't pass.
+ */
 function saveToStorage(state: PersistedShape) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    const existing: Partial<PersistedShape> = existingRaw ? JSON.parse(existingRaw) : {};
+    const merged: PersistedShape = { ...existing, ...state };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   } catch {
-    // ignore quota errors
+    // ignore quota / parse errors
   }
 }
 
@@ -117,6 +162,8 @@ const initial = loadFromStorage();
 export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => ({
   templates: initial.templates,
   activeTemplateId: initial.activeTemplateId,
+  linkedTemplateByAvatar: initial.linkedTemplateByAvatar ?? {},
+  mainPromptSnapshot: initial.mainPromptSnapshot ?? null,
 
   saveTemplateWithPrompt: (name, mainPrompt) => {
     const trimmed = name.trim();
@@ -131,10 +178,38 @@ export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => 
       promptOrder: gen.promptOrder.map((e) => ({ ...e })),
       createdAt: Date.now(),
     };
-    const { templates } = get();
+    const { templates, linkedTemplateByAvatar } = get();
     const nextTemplates = [...templates, template];
-    saveToStorage({ templates: nextTemplates, activeTemplateId: template.id });
+    saveToStorage({ templates: nextTemplates, activeTemplateId: template.id, linkedTemplateByAvatar });
     set({ templates: nextTemplates, activeTemplateId: template.id });
+  },
+
+  saveTemplateWithPromptAndLink: (name, mainPrompt, avatar) => {
+    const trimmed = name.trim() || 'Linked Template';
+    const gen = useGenerationStore.getState();
+    const template: PromptTemplate = {
+      id: generateId(),
+      name: trimmed,
+      prompt: { ...gen.prompt, mainPrompt },
+      context: { ...gen.context },
+      instruct: { ...gen.instruct },
+      promptOrder: gen.promptOrder.map((e) => ({ ...e })),
+      createdAt: Date.now(),
+    };
+    const { templates, linkedTemplateByAvatar } = get();
+    const nextTemplates = [...templates, template];
+    const nextLinks = { ...linkedTemplateByAvatar, [avatar]: template.id };
+    saveToStorage({
+      templates: nextTemplates,
+      activeTemplateId: template.id,
+      linkedTemplateByAvatar: nextLinks,
+    });
+    set({
+      templates: nextTemplates,
+      activeTemplateId: template.id,
+      linkedTemplateByAvatar: nextLinks,
+    });
+    return template.id;
   },
 
   saveTemplate: (name, includeSampler) => {
@@ -151,14 +226,14 @@ export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => 
       sampler: includeSampler ? { ...gen.sampler } : undefined,
       createdAt: Date.now(),
     };
-    const { templates } = get();
+    const { templates, linkedTemplateByAvatar } = get();
     const nextTemplates = [...templates, template];
-    saveToStorage({ templates: nextTemplates, activeTemplateId: template.id });
+    saveToStorage({ templates: nextTemplates, activeTemplateId: template.id, linkedTemplateByAvatar });
     set({ templates: nextTemplates, activeTemplateId: template.id });
   },
 
   loadTemplate: (id) => {
-    const { templates } = get();
+    const { templates, linkedTemplateByAvatar } = get();
     const template = templates.find((t) => t.id === id);
     if (!template) return;
     const gen = useGenerationStore.getState();
@@ -169,26 +244,93 @@ export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => 
     if (template.sampler) {
       gen.setSampler(template.sampler);
     }
-    saveToStorage({ templates, activeTemplateId: template.id });
+    saveToStorage({ templates, activeTemplateId: template.id, linkedTemplateByAvatar });
     set({ activeTemplateId: template.id });
   },
 
+  loadTemplateMainPromptTransient: (id) => {
+    const state = get();
+    const template = state.templates.find((t) => t.id === id);
+    if (!template) return;
+    const gen = useGenerationStore.getState();
+    // Only snapshot once — repeated transient loads from the same default
+    // shouldn't clobber the original. The snapshot is persisted so a
+    // mid-chat refresh can't silently turn the linked prompt into the new
+    // "default" on next restore.
+    let snapshot = state.mainPromptSnapshot;
+    if (snapshot === null) {
+      snapshot = gen.prompt.mainPrompt;
+    }
+    gen.setPrompt({ mainPrompt: template.prompt.mainPrompt });
+    saveToStorage({
+      templates: state.templates,
+      activeTemplateId: template.id,
+      linkedTemplateByAvatar: state.linkedTemplateByAvatar,
+      mainPromptSnapshot: snapshot,
+    });
+    set({ activeTemplateId: template.id, mainPromptSnapshot: snapshot });
+  },
+
+  restoreDefaultMainPrompt: () => {
+    const state = get();
+    if (state.mainPromptSnapshot === null) return;
+    const gen = useGenerationStore.getState();
+    gen.setPrompt({ mainPrompt: state.mainPromptSnapshot });
+    saveToStorage({
+      templates: state.templates,
+      activeTemplateId: null,
+      linkedTemplateByAvatar: state.linkedTemplateByAvatar,
+      mainPromptSnapshot: null,
+    });
+    set({ mainPromptSnapshot: null, activeTemplateId: null });
+  },
+
+  setLinkedTemplate: (avatar, templateId) => {
+    set((state) => {
+      const nextLinks = { ...state.linkedTemplateByAvatar };
+      if (templateId === null) {
+        delete nextLinks[avatar];
+      } else {
+        nextLinks[avatar] = templateId;
+      }
+      saveToStorage({
+        templates: state.templates,
+        activeTemplateId: state.activeTemplateId,
+        linkedTemplateByAvatar: nextLinks,
+      });
+      return { linkedTemplateByAvatar: nextLinks };
+    });
+  },
+
   deleteTemplate: (id) => {
-    const { templates, activeTemplateId } = get();
+    const { templates, activeTemplateId, linkedTemplateByAvatar } = get();
     const nextTemplates = templates.filter((t) => t.id !== id);
     const nextActive = activeTemplateId === id ? null : activeTemplateId;
-    saveToStorage({ templates: nextTemplates, activeTemplateId: nextActive });
-    set({ templates: nextTemplates, activeTemplateId: nextActive });
+    // Drop any character links that pointed at the deleted template.
+    const nextLinks: Record<string, string> = {};
+    for (const [avatar, templateId] of Object.entries(linkedTemplateByAvatar)) {
+      if (templateId !== id) nextLinks[avatar] = templateId;
+    }
+    saveToStorage({
+      templates: nextTemplates,
+      activeTemplateId: nextActive,
+      linkedTemplateByAvatar: nextLinks,
+    });
+    set({
+      templates: nextTemplates,
+      activeTemplateId: nextActive,
+      linkedTemplateByAvatar: nextLinks,
+    });
   },
 
   renameTemplate: (id, name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const { templates, activeTemplateId } = get();
+    const { templates, activeTemplateId, linkedTemplateByAvatar } = get();
     const nextTemplates = templates.map((t) =>
       t.id === id ? { ...t, name: trimmed } : t
     );
-    saveToStorage({ templates: nextTemplates, activeTemplateId });
+    saveToStorage({ templates: nextTemplates, activeTemplateId, linkedTemplateByAvatar });
     set({ templates: nextTemplates });
   },
 
@@ -205,7 +347,7 @@ export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => 
 
       if (arr.length === 0) return { imported: 0, errors: 0 };
 
-      const { templates, activeTemplateId } = get();
+      const { templates, activeTemplateId, linkedTemplateByAvatar } = get();
       const newTemplates: PromptTemplate[] = [];
       for (const raw of arr) {
         const t = coerceTemplate(raw);
@@ -219,7 +361,7 @@ export const usePromptTemplateStore = create<PromptTemplateState>((set, get) => 
       if (newTemplates.length === 0) return { imported: 0, errors };
 
       const nextTemplates = [...templates, ...newTemplates];
-      saveToStorage({ templates: nextTemplates, activeTemplateId });
+      saveToStorage({ templates: nextTemplates, activeTemplateId, linkedTemplateByAvatar });
       set({ templates: nextTemplates });
       return { imported, errors };
     } catch {
