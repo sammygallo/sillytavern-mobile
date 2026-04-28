@@ -48,7 +48,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const getAvatarUrl = (avatar: string) => `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`;
 
   return (
-    <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
+    <header className="sticky top-0 z-50 flex-shrink-0 h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex items-center px-4 gap-3 safe-top">
       {/* Menu Button (Mobile) */}
       <Button
         variant="ghost"
