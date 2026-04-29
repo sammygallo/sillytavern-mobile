@@ -25,21 +25,31 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  // Lock body scroll while open
+  // iOS-safe scroll lock: freeze scroll position rather than overflow:hidden,
+  // which breaks touch events on fixed elements in iOS Safari.
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = ''; };
-    }
+    if (!isOpen) return;
+    const scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, scrollY);
+    };
   }, [isOpen]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    dragState.current = { startY: e.touches[0].clientY };
+  // Use pointer events for drag-to-dismiss — more reliable than touch events
+  // across browsers and avoids iOS ghost-click issues.
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    dragState.current = { startY: e.clientY };
   }, []);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState.current) return;
-    const deltaY = e.changedTouches[0].clientY - dragState.current.startY;
+    const deltaY = e.clientY - dragState.current.startY;
     dragState.current = null;
     if (deltaY > 60) onClose(); // swipe down to dismiss
   }, [onClose]);
@@ -60,11 +70,12 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
         ref={sheetRef}
         className="w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
       >
-        {/* Drag handle */}
+        {/* Drag handle — uses pointer events, not touch, for cross-platform reliability */}
         <div
-          className="sticky top-0 flex justify-center pt-3 pb-2 bg-[var(--color-bg-secondary)] cursor-grab touch-none"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
+          className="sticky top-0 flex justify-center pt-3 pb-2 bg-[var(--color-bg-secondary)] cursor-grab"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          style={{ touchAction: 'none' }}
         >
           <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
         </div>
