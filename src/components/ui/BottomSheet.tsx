@@ -47,17 +47,20 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end">
-      {/* Backdrop — closes sheet on tap */}
-      <div
-        className="absolute inset-0 bg-black/50 transition-opacity"
-        onClick={onClose}
-      />
+    // Outer container handles backdrop-tap dismiss via target check.
+    // The dark overlay is pointer-events:none so it can NEVER intercept taps
+    // meant for sheet buttons — on iOS, overlapping clickable divs cause the
+    // backdrop to swallow button taps regardless of z-index.
+    <div
+      className="fixed inset-0 z-50 flex items-end"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Visual backdrop — pointer-events:none, purely cosmetic */}
+      <div className="absolute inset-0 bg-black/50 pointer-events-none" />
 
-      {/* Sheet — explicit z-index so iOS hit-tests the sheet above the backdrop */}
+      {/* Sheet */}
       <div
         ref={sheetRef}
-        onClick={(e) => e.stopPropagation()}
         className="relative z-10 w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
       >
         {/* Drag handle — owns the drag-to-dismiss gesture so taps on action
