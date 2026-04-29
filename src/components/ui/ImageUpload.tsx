@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, Crop } from 'lucide-react';
 import { Button } from './Button';
+import { ImageCropModal } from './ImageCropModal';
 
 interface ImageUploadProps {
   currentImage?: string;
@@ -10,33 +11,41 @@ interface ImageUploadProps {
 
 export function ImageUpload({ currentImage, onImageSelect, label = 'Avatar' }: ImageUploadProps) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openCrop = (dataUrl: string) => setCropSrc(dataUrl);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        return;
-      }
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
 
-      // Create preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      openCrop(dataUrl);
+    };
+    reader.readAsDataURL(file);
 
-      onImageSelect(file);
-    }
+    // Reset so re-selecting same file fires change again
+    e.target.value = '';
+  };
+
+  const handleCropConfirm = (file: File) => {
+    setCropSrc(null);
+    const url = URL.createObjectURL(file);
+    // Revoke previous blob URL to avoid leaks
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
+    setPreview(url);
+    onImageSelect(file);
   };
 
   const handleClear = () => {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
     setPreview(null);
     onImageSelect(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const displayImage = preview || currentImage;
@@ -48,27 +57,36 @@ export function ImageUpload({ currentImage, onImageSelect, label = 'Avatar' }: I
       </label>
 
       <div className="flex items-start gap-4">
-        {/* Preview Area */}
-        <div className="relative">
-          <div
+        {/* Preview — click to open file picker */}
+        <div className="relative flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Click to upload or change image"
             className={`
               w-24 h-24 rounded-lg border-2 border-dashed
               ${displayImage ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)]'}
               bg-[var(--color-bg-tertiary)]
               flex items-center justify-center
-              overflow-hidden
+              overflow-hidden group relative
             `}
           >
             {displayImage ? (
-              <img
-                src={displayImage}
-                alt="Avatar preview"
-                className="w-full h-full object-cover"
-              />
+              <>
+                <img
+                  src={displayImage}
+                  alt="Avatar preview"
+                  className="w-full h-full object-cover"
+                />
+                {/* Hover overlay */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Crop size={20} className="text-white" />
+                </div>
+              </>
             ) : (
               <Upload size={24} className="text-[var(--color-text-secondary)]" />
             )}
-          </div>
+          </button>
 
           {/* Clear button */}
           {preview && (
@@ -82,7 +100,7 @@ export function ImageUpload({ currentImage, onImageSelect, label = 'Avatar' }: I
           )}
         </div>
 
-        {/* Upload Controls */}
+        {/* Upload / re-crop controls */}
         <div className="flex-1 flex flex-col gap-2">
           <input
             ref={fileInputRef}
@@ -102,11 +120,31 @@ export function ImageUpload({ currentImage, onImageSelect, label = 'Avatar' }: I
             {displayImage ? 'Change Image' : 'Upload Image'}
           </Button>
 
+          {displayImage && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => openCrop(displayImage)}
+            >
+              <Crop size={16} className="mr-2" />
+              Crop
+            </Button>
+          )}
+
           <p className="text-xs text-[var(--color-text-secondary)]">
             PNG, JPG, or GIF. Will be resized to 400x600.
           </p>
         </div>
       </div>
+
+      {cropSrc && (
+        <ImageCropModal
+          imageSrc={cropSrc}
+          onConfirm={handleCropConfirm}
+          onClose={() => setCropSrc(null)}
+        />
+      )}
     </div>
   );
 }
