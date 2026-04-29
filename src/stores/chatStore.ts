@@ -39,6 +39,7 @@ import { useChatHistoryRagStore } from './chatHistoryRagStore';
 import { extensionRegistry } from '../extensions/registry';
 import type { ContextContribution } from '../extensions/types';
 import { useAuthStore } from './authStore';
+import { showToastGlobal } from '../components/ui/Toast';
 import { parseChatTranscript, toSaveChatPayload } from '../utils/chatTranscript';
 
 // Resolve the display name for the current user: active persona → auth user name → fallback.
@@ -1391,6 +1392,34 @@ function getProviderAndModel(): { provider: string; model: string } {
   return { provider, model };
 }
 
+function getFallbackProviderAndModel(): { provider: string; model: string } | null {
+  const { fallbackProvider, fallbackModel } = useSettingsStore.getState();
+  if (!fallbackProvider) return null;
+  return { provider: fallbackProvider, model: fallbackModel || fallbackProvider };
+}
+
+async function generateWithFallback(
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
+  characterName: string,
+  provider: string,
+  model: string,
+  signal: AbortSignal,
+  generationOptions: GenerationOptions,
+  images: GenerationImage[] | undefined,
+  textCompletionMode: boolean,
+): Promise<{ stream: ReadableStream<Uint8Array> | null; usedFallback: boolean }> {
+  try {
+    const stream = await api.generateMessage(messages, characterName, provider, model, signal, generationOptions, images, textCompletionMode);
+    return { stream, usedFallback: false };
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    const fallback = getFallbackProviderAndModel();
+    if (!fallback) throw err;
+    const stream = await api.generateMessage(messages, characterName, fallback.provider, fallback.model, signal, generationOptions, images, textCompletionMode);
+    return { stream, usedFallback: true };
+  }
+}
+
 // Helper: build generation options from the current sampler + instruct config.
 function getGenerationOptions(): GenerationOptions {
   const { sampler, instruct } = useGenerationStore.getState();
@@ -2528,7 +2557,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         maybeApplyInstructMode(context),
         character.name,
       );
-      const stream = await api.generateMessage(
+      const { stream, usedFallback } = await generateWithFallback(
         finalContext,
         character.name,
         provider,
@@ -2538,6 +2567,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         resolveImagesForSend(attachedImages),
         isTextCompletionMode()
       );
+      if (usedFallback) showToastGlobal('Primary provider failed — using fallback', 'warning');
 
       if (stream) {
         const aiMessageId = generateId();

@@ -33,6 +33,25 @@ function modelFieldFor(provider: string): string {
   return PROVIDER_MODEL_FIELD[provider] ?? `${provider}_model`;
 }
 
+const FALLBACK_STORAGE_KEY = 'sillytavern_fallback_provider';
+
+function loadFallback(): { provider: string; model: string } | null {
+  try {
+    const raw = localStorage.getItem(FALLBACK_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveFallback(provider: string, model: string) {
+  localStorage.setItem(FALLBACK_STORAGE_KEY, JSON.stringify({ provider, model }));
+}
+
+function clearFallback() {
+  localStorage.removeItem(FALLBACK_STORAGE_KEY);
+}
+
 interface SettingsState {
   secrets: SecretsResponse;
   activeProvider: string;
@@ -46,6 +65,9 @@ interface SettingsState {
   globalSecrets: SecretsResponse;
   globalSharingEnabled: boolean;
   globalSharingSupported: boolean;
+  /** Fallback provider/model used when the primary fails. Stored locally. */
+  fallbackProvider: string;
+  fallbackModel: string;
 
   // Actions
   fetchSecrets: () => Promise<void>;
@@ -60,6 +82,9 @@ interface SettingsState {
   saveGlobalApiKey: (provider: string, apiKey: string) => Promise<void>;
   deleteGlobalApiKey: (secretKey: string) => Promise<void>;
   setGlobalSharing: (enabled: boolean) => Promise<void>;
+  setFallbackProvider: (provider: string) => void;
+  setFallbackModel: (model: string) => void;
+  clearFallbackProvider: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -73,6 +98,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   successMessage: null,
   globalSecrets: {},
   globalSharingEnabled: false,
+  fallbackProvider: loadFallback()?.provider ?? '',
+  fallbackModel: loadFallback()?.model ?? '',
   globalSharingSupported: false,
 
   fetchSecrets: async () => {
@@ -360,5 +387,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (error) {
       set({ isSaving: false, error: error instanceof Error ? error.message : 'Failed to toggle global sharing' });
     }
+  },
+
+  setFallbackProvider: (provider: string) => {
+    const { fallbackModel } = get();
+    const model = fallbackModel || '';
+    saveFallback(provider, model);
+    set({ fallbackProvider: provider });
+  },
+
+  setFallbackModel: (model: string) => {
+    const { fallbackProvider } = get();
+    saveFallback(fallbackProvider, model);
+    set({ fallbackModel: model });
+  },
+
+  clearFallbackProvider: () => {
+    clearFallback();
+    set({ fallbackProvider: '', fallbackModel: '' });
   },
 }));
