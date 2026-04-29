@@ -10,6 +10,10 @@ interface BottomSheetProps {
 /**
  * Mobile-optimized bottom sheet with drag-to-dismiss.
  * Slides up from the bottom with a drag handle pill.
+ *
+ * Architecture: backdrop (z-40) + sheet (z-50) as siblings so iOS Safari
+ * z-index stacking (not flex hit-testing) determines event routing. Buttons
+ * inside the z-50 sheet always win over the z-40 backdrop.
  */
 export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -25,8 +29,8 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  // iOS-safe scroll lock: freeze scroll position rather than overflow:hidden,
-  // which breaks touch events on fixed elements in iOS Safari.
+  // iOS-safe scroll lock: position:fixed avoids the overflow:hidden bug in
+  // iOS Safari that breaks touch events on fixed-position children.
   useEffect(() => {
     if (!isOpen) return;
     const scrollY = window.scrollY;
@@ -41,8 +45,6 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
     };
   }, [isOpen]);
 
-  // Use pointer events for drag-to-dismiss — more reliable than touch events
-  // across browsers and avoids iOS ghost-click issues.
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     dragState.current = { startY: e.clientY };
   }, []);
@@ -51,28 +53,36 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
     if (!dragState.current) return;
     const deltaY = e.clientY - dragState.current.startY;
     dragState.current = null;
-    if (deltaY > 60) onClose(); // swipe down to dismiss
+    if (deltaY > 60) onClose();
   }, [onClose]);
 
   if (!isOpen) return null;
 
   return (
-    // flex-col: dismiss zone stacks on top of sheet, no overlap at all.
-    // bg-black/50 on the outer container provides the dark overlay without
-    // any separate clickable backdrop div that could intercept button taps.
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50">
+    <>
+      {/*
+        Backdrop — z-40, covers full screen, click/tap outside sheet closes it.
+        Lives in a separate layer from the sheet so iOS Safari routes events via
+        z-index stacking (reliable) rather than flex hit-testing (not reliable).
+      */}
+      <div
+        className="fixed inset-0 z-40 bg-black/50"
+        onClick={onClose}
+      />
 
-      {/* Dismiss zone — sits ABOVE the sheet, never overlaps it */}
-      <div className="flex-1 cursor-default" onClick={onClose} />
-
-      {/* Sheet */}
+      {/*
+        Sheet — z-50 (above backdrop). Buttons here always win because they're
+        in the topmost stacking layer. Content scrolls inside an inner div so
+        the sheet's own box never needs overflow:auto (avoids the iOS
+        scroll-vs-tap ambiguity on the outer container).
+      */}
       <div
         ref={sheetRef}
-        className="w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
+        className="fixed bottom-0 left-0 right-0 z-50 max-h-[80dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl flex flex-col animate-slide-up"
       >
-        {/* Drag handle — uses pointer events, not touch, for cross-platform reliability */}
+        {/* Drag handle */}
         <div
-          className="sticky top-0 flex justify-center pt-3 pb-2 bg-[var(--color-bg-secondary)] cursor-grab"
+          className="flex-shrink-0 flex justify-center pt-3 pb-2 cursor-grab"
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           style={{ touchAction: 'none' }}
@@ -81,15 +91,16 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
         </div>
 
         {title && (
-          <div className="px-4 pb-2">
+          <div className="flex-shrink-0 px-4 pb-2">
             <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
           </div>
         )}
 
-        <div className="px-4 pb-6 safe-bottom">
+        {/* Scrollable content — overflow lives here, not on the sheet itself */}
+        <div className="flex-1 overflow-y-auto min-h-0 pb-6 safe-bottom">
           {children}
         </div>
       </div>
-    </div>
+    </>
   );
 }
