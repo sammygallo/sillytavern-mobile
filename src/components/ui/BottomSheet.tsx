@@ -54,10 +54,11 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
         onClick={onClose}
       />
 
-      {/* Sheet */}
+      {/* Sheet — explicit z-index so iOS hit-tests the sheet above the backdrop */}
       <div
         ref={sheetRef}
-        className="relative w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
       >
         {/* Drag handle — owns the drag-to-dismiss gesture so taps on action
             buttons inside the sheet don't get consumed as part of a gesture
@@ -76,7 +77,9 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
           </div>
         )}
 
-        <div className="px-4 pb-6 safe-bottom">
+        {/* touch-action: manipulation tells iOS to treat touches as taps
+            immediately, not delay them waiting to see if it's a scroll */}
+        <div className="px-4 pb-6 safe-bottom" style={{ touchAction: 'manipulation' }}>
           {children}
         </div>
       </div>
