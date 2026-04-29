@@ -313,7 +313,18 @@ export function ChatInput({
     }
   };
 
-  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches;
+  // Treat as touch if any of: coarse pointer, no hover, touch points, or mobile UA.
+  // Errs toward "newline on Enter" for ambiguous hybrid devices (Surface, Chromebook
+  // with touchscreen) — minor inconvenience for those, but the right default for
+  // every actual phone/tablet, including Samsung Internet, Android in DeX mode,
+  // and Android Chrome with a paired stylus that reports hover capability.
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(pointer: coarse)').matches ||
+      window.matchMedia('(hover: none)').matches ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+      (typeof navigator !== 'undefined' &&
+        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)));
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {

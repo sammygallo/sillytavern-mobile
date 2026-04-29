@@ -47,22 +47,26 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 transition-opacity" />
+    <div className="fixed inset-0 z-50 flex items-end">
+      {/* Backdrop — closes sheet on tap */}
+      <div
+        className="absolute inset-0 bg-black/50 transition-opacity"
+        onClick={onClose}
+      />
 
       {/* Sheet */}
       <div
         ref={sheetRef}
         className="relative w-full max-h-[60dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl overflow-y-auto animate-slide-up"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
       >
-        {/* Drag handle */}
-        <div className="sticky top-0 flex justify-center pt-3 pb-2 bg-[var(--color-bg-secondary)]">
+        {/* Drag handle — owns the drag-to-dismiss gesture so taps on action
+            buttons inside the sheet don't get consumed as part of a gesture
+            (was suppressing synthesized clicks on iOS and Android). */}
+        <div
+          className="sticky top-0 flex justify-center pt-3 pb-2 bg-[var(--color-bg-secondary)] cursor-grab touch-none"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
         </div>
 
