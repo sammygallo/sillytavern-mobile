@@ -10,6 +10,7 @@ import { processMacros, type MacroContext } from '../../utils/macros';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatOptionsMenu } from './ChatOptionsMenu';
+import { BottomSheet } from '../ui/BottomSheet';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
 import { ChatLorebookModal } from './ChatLorebookModal';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
@@ -78,7 +79,7 @@ import { fireSandboxLifecycleEvent } from '../../extensions/sandbox/sandboxEvent
 
 export function ChatView() {
   const routerNavigate = useNavigate();
-  const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat } = useCharacterStore();
+  const { selectedCharacter, isGroupChatMode, groupChatCharacters, exitGroupChat, characters: allCharacters } = useCharacterStore();
   const {
     messages,
     isSending,
@@ -104,6 +105,7 @@ export function ChatView() {
     currentChatFile,
     currentSpeakerName,
     setGroupTitle,
+    convertCurrentToGroup,
   } = useChatStore();
   // Subscribe to the current group-chat record for title + strategy display.
   const groupChatRecord = useChatStore((s) =>
@@ -213,6 +215,8 @@ export function ChatView() {
 
   // Phase 9.1: in-chat message search
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isConvertToGroupOpen, setIsConvertToGroupOpen] = useState(false);
+  const [convertGroupSelected, setConvertGroupSelected] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatchIndex, setSearchMatchIndex] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
@@ -1770,7 +1774,7 @@ export function ChatView() {
           onManageChatFiles={() => setIsHistoryPanelOpen(true)}
           onSaveCheckpoint={currentChatFile && lastAiMessageId ? () => handleCheckpoint(lastAiMessageId) : undefined}
           onDeleteMessages={() => startNewChat(selectedCharacter)}
-          onConvertToGroup={undefined}
+          onConvertToGroup={!isGroupChatMode && selectedCharacter ? () => { setConvertGroupSelected([]); setIsConvertToGroupOpen(true); } : undefined}
           onRegenerate={hasAiMessage && !isGroupChatMode ? handleRegenerate : undefined}
           onContinue={hasAiMessage && !isGroupChatMode ? handleContinue : undefined}
           onImpersonate={!isGroupChatMode ? handleImpersonate : undefined}
@@ -1780,6 +1784,67 @@ export function ChatView() {
           isGroupChat={isGroupChatMode}
         />
       )}
+
+      {/* Convert to Group — character picker sheet */}
+      <BottomSheet
+        isOpen={isConvertToGroupOpen}
+        onClose={() => setIsConvertToGroupOpen(false)}
+        title="Add characters to group"
+      >
+        <div className="px-4 pb-4">
+          <p className="text-xs text-[var(--color-text-secondary)] mb-3">
+            Select characters to add alongside <strong>{selectedCharacter?.name}</strong>.
+          </p>
+          <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+            {allCharacters
+              .filter((c) => c.avatar !== selectedCharacter?.avatar)
+              .map((c) => {
+                const selected = convertGroupSelected.includes(c.avatar);
+                return (
+                  <button
+                    key={c.avatar}
+                    type="button"
+                    onClick={() =>
+                      setConvertGroupSelected((prev) =>
+                        selected ? prev.filter((a) => a !== c.avatar) : [...prev, c.avatar]
+                      )
+                    }
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors border
+                      ${selected
+                        ? 'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/40 text-[var(--color-primary)]'
+                        : 'border-transparent text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]'
+                      }`}
+                  >
+                    <img
+                      src={`/api/avatar/${c.avatar}`}
+                      alt={c.name}
+                      className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    <span className="flex-1 truncate">{c.name}</span>
+                    {selected && <Check size={14} className="flex-shrink-0" />}
+                  </button>
+                );
+              })}
+          </div>
+          <button
+            type="button"
+            disabled={convertGroupSelected.length === 0}
+            onClick={async () => {
+              if (!selectedCharacter) return;
+              const additional = allCharacters.filter((c) => convertGroupSelected.includes(c.avatar));
+              setIsConvertToGroupOpen(false);
+              await convertCurrentToGroup(selectedCharacter, additional);
+            }}
+            className="mt-4 w-full py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-sm font-medium
+              disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          >
+            {convertGroupSelected.length === 0
+              ? 'Select at least 1 character'
+              : `Convert to group (${convertGroupSelected.length + 1} characters)`}
+          </button>
+        </div>
+      </BottomSheet>
 
       {/* Chat History Panel (also opened from chat options menu) */}
       <ChatHistoryPanel
