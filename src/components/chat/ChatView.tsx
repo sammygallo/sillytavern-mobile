@@ -9,7 +9,6 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { processMacros, type MacroContext } from '../../utils/macros';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
-import { ChatActionBar } from './ChatActionBar';
 import { ChatOptionsMenu } from './ChatOptionsMenu';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
 import { ChatLorebookModal } from './ChatLorebookModal';
@@ -1493,18 +1492,8 @@ export function ChatView() {
         )}
       </div>
 
-      {/* Action Bar (regenerate/continue/impersonate/stop) */}
-      {!isGroupChatMode ? (
-        <ChatActionBar
-          onRegenerate={handleRegenerate}
-          onContinue={handleContinue}
-          onImpersonate={handleImpersonate}
-          onStop={stopGeneration}
-          isSending={isSending}
-          hasAiMessage={hasAiMessage}
-          disabled={isSending}
-        />
-      ) : isSending ? (
+      {/* Stop button — shown during generation for both solo and group chat */}
+      {isSending ? (
         <div className="flex items-center justify-center gap-2 px-4 py-2 border-t border-[var(--color-border)]">
           <button
             onClick={stopGeneration}
@@ -1701,6 +1690,9 @@ export function ChatView() {
           onSaveCheckpoint={currentChatFile && lastAiMessageId ? () => handleCheckpoint(lastAiMessageId) : undefined}
           onDeleteMessages={() => startNewChat(selectedCharacter)}
           onConvertToGroup={undefined}
+          onRegenerate={hasAiMessage && !isGroupChatMode ? handleRegenerate : undefined}
+          onContinue={hasAiMessage && !isGroupChatMode ? handleContinue : undefined}
+          onImpersonate={!isGroupChatMode ? handleImpersonate : undefined}
           isGroupChat={isGroupChatMode}
         />
       )}
