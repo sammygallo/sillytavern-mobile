@@ -13,7 +13,7 @@
 import { useEffect, useRef } from 'react';
 import {
   BookOpen, FileText, GitFork, Library, MessageSquare, FolderOpen,
-  Trash2, Flag, Users,
+  Trash2, Flag, Users, RefreshCw, ArrowRight, User,
 } from 'lucide-react';
 import { BottomSheet } from '../ui/BottomSheet';
 
@@ -43,6 +43,9 @@ interface ChatOptionsMenuProps {
   onSaveCheckpoint?: () => void;
   onDeleteMessages: () => void;
   onConvertToGroup?: () => void;
+  onRegenerate?: () => void;
+  onContinue?: () => void;
+  onImpersonate?: () => void;
 
   isGroupChat: boolean;
 }
@@ -98,6 +101,9 @@ function MenuBody({
   onSaveCheckpoint,
   onDeleteMessages,
   onConvertToGroup,
+  onRegenerate,
+  onContinue,
+  onImpersonate,
   isGroupChat,
 }: {
   wrap: (fn: () => void) => () => void;
@@ -114,8 +120,13 @@ function MenuBody({
   onSaveCheckpoint?: () => void;
   onDeleteMessages: () => void;
   onConvertToGroup?: () => void;
+  onRegenerate?: () => void;
+  onContinue?: () => void;
+  onImpersonate?: () => void;
   isGroupChat: boolean;
 }) {
+  const hasAiActions = !!(onRegenerate || onContinue || onImpersonate);
+
   return (
     <>
       {/* Extension panel pills */}
@@ -156,6 +167,17 @@ function MenuBody({
           <ActionRow icon={Users} label="Convert to group" onClick={wrap(onConvertToGroup)} />
         )}
       </div>
+
+      {hasAiActions && (
+        <>
+          <Divider />
+          <div className="py-1">
+            {onRegenerate && <ActionRow icon={RefreshCw} label="Regenerate" onClick={wrap(onRegenerate)} />}
+            {onContinue && <ActionRow icon={ArrowRight} label="Continue" onClick={wrap(onContinue)} />}
+            {onImpersonate && <ActionRow icon={User} label="Impersonate" onClick={wrap(onImpersonate)} />}
+          </div>
+        </>
+      )}
 
       <Divider />
 
@@ -244,6 +266,9 @@ export function ChatOptionsMenu({
   onSaveCheckpoint,
   onDeleteMessages,
   onConvertToGroup,
+  onRegenerate,
+  onContinue,
+  onImpersonate,
   isGroupChat,
 }: ChatOptionsMenuProps) {
   const wrap = (fn: () => void) => () => { fn(); onClose(); };
@@ -294,6 +319,9 @@ export function ChatOptionsMenu({
       onSaveCheckpoint={onSaveCheckpoint}
       onDeleteMessages={onDeleteMessages}
       onConvertToGroup={onConvertToGroup}
+      onRegenerate={onRegenerate}
+      onContinue={onContinue}
+      onImpersonate={onImpersonate}
       isGroupChat={isGroupChat}
     />
   );
