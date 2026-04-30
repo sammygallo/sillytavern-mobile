@@ -34,6 +34,9 @@ const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
   { key: 'textBold', label: 'Bold Text' },
   { key: 'textItalic', label: 'Italic Text' },
   { key: 'textQuote', label: 'Quote Text' },
+  { key: 'textAction', label: 'Character Action' },
+  { key: 'textThought', label: 'Character Thought' },
+  { key: 'textDialogue', label: 'Character Dialogue' },
 ];
 
 // ---------------------------------------------------------------------------
