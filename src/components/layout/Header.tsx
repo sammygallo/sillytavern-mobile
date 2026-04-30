@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Download, HelpCircle, Key, Menu, Settings, LogOut, Pencil, UserCircle } from 'lucide-react';
+import { BookOpen, Download, HelpCircle, Key, Menu, Settings, LogOut, Pencil, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
+import { useGuidesPanelStore } from '../../stores/guidesPanelStore';
 import { useCharacterStore } from '../../stores/characterStore';
 import { can } from '../../utils/permissions';
 import { Avatar, Button } from '../ui';
@@ -23,6 +24,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const userRole = currentUser?.role;
   const canEdit = can(userRole, 'character:edit');
   const canViewSettings = can(userRole, 'settings:view');
+  const canViewGuides = canEdit;
   const { canInstall, install: installPwa } = usePwaInstall();
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -100,6 +102,17 @@ export function Header({ onMenuClick }: HeaderProps) {
           </Button>
         )}
         <PersonaSelector />
+        {canViewGuides && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-2"
+            aria-label="Guides"
+            onClick={() => useGuidesPanelStore.getState().open()}
+          >
+            <BookOpen size={20} />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

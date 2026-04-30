@@ -6,6 +6,7 @@ import { useSwipeSidebar } from '../../hooks/useSwipeSidebar';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { SettingsPanel } from '../settings/SettingsPanel';
+import { GuidesPanel } from '../guides/GuidesPanel';
 import { OnboardingWalkthrough } from '../onboarding/OnboardingWalkthrough';
 import { useOnboardingStore } from '../../stores/onboardingStore';
 
@@ -79,6 +80,9 @@ export function MainLayout() {
 
       {/* Settings Panel — slides in from right, overlays chat */}
       <SettingsPanel />
+
+      {/* Guides Panel — slides in from right, overlays chat */}
+      <GuidesPanel />
 
       {/* Onboarding Walkthrough */}
       <OnboardingWalkthrough />
