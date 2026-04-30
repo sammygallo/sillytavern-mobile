@@ -9,11 +9,11 @@ interface BottomSheetProps {
 
 /**
  * Mobile-optimized bottom sheet with drag-to-dismiss.
- * Slides up from the bottom with a drag handle pill.
  *
- * Architecture: backdrop (z-40) + sheet (z-50) as siblings so iOS Safari
- * z-index stacking (not flex hit-testing) determines event routing. Buttons
- * inside the z-50 sheet always win over the z-40 backdrop.
+ * Pattern: one full-screen container owns the onClose click handler.
+ * The sheet inside calls e.stopPropagation() so taps on sheet content
+ * never bubble up to the container's onClose. This is the standard
+ * overlay pattern and works identically on every browser/platform.
  */
 export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -29,8 +29,8 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  // iOS-safe scroll lock: position:fixed avoids the overflow:hidden bug in
-  // iOS Safari that breaks touch events on fixed-position children.
+  // iOS-safe scroll lock: position:fixed avoids the overflow:hidden iOS Safari
+  // bug that breaks touch events on fixed-position children.
   useEffect(() => {
     if (!isOpen) return;
     const scrollY = window.scrollY;
@@ -59,26 +59,20 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
   if (!isOpen) return null;
 
   return (
-    <>
-      {/*
-        Backdrop — z-40, covers full screen, click/tap outside sheet closes it.
-        Lives in a separate layer from the sheet so iOS Safari routes events via
-        z-index stacking (reliable) rather than flex hit-testing (not reliable).
-      */}
-      <div
-        className="fixed inset-0 z-40 bg-black/50"
-        onClick={onClose}
-      />
-
-      {/*
-        Sheet — z-50 (above backdrop). Buttons here always win because they're
-        in the topmost stacking layer. Content scrolls inside an inner div so
-        the sheet's own box never needs overflow:auto (avoids the iOS
-        scroll-vs-tap ambiguity on the outer container).
-      */}
+    /*
+      Full-screen overlay — clicking/tapping the dark area calls onClose.
+      The sheet inside stops propagation so nothing inside it accidentally
+      bubbles up and triggers this handler.
+    */
+    <div
+      className="fixed inset-0 z-50 bg-black/50"
+      onClick={onClose}
+    >
+      {/* Sheet — stopPropagation keeps all inner taps from reaching the overlay's onClose */}
       <div
         ref={sheetRef}
-        className="fixed bottom-0 left-0 right-0 z-50 max-h-[80dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl flex flex-col animate-slide-up"
+        className="absolute bottom-0 left-0 right-0 max-h-[80dvh] bg-[var(--color-bg-secondary)] rounded-t-2xl flex flex-col animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle */}
         <div
@@ -96,11 +90,11 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
           </div>
         )}
 
-        {/* Scrollable content — overflow lives here, not on the sheet itself */}
+        {/* Scrollable content — overflow-y lives on the inner div, not the sheet */}
         <div className="flex-1 overflow-y-auto min-h-0 pb-6 safe-bottom">
           {children}
         </div>
       </div>
-    </>
+    </div>
   );
 }
