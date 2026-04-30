@@ -209,7 +209,7 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
           return (
             <span
               key={index}
-              className={`italic ${isUser ? 'text-white/70' : 'text-amber-400/90'}`}
+              className={`italic ${isUser ? 'text-white/70' : 'rp-action'}`}
             >
               {segment.content}
               {isStreaming && isLast && <span className="streaming-cursor" />}
@@ -220,7 +220,7 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
           return (
             <span
               key={index}
-              className={`italic ${isUser ? 'text-white/60' : 'text-purple-400/80'}`}
+              className={`italic ${isUser ? 'text-white/60' : 'rp-thought'}`}
             >
               {segment.content}
               {isStreaming && isLast && <span className="streaming-cursor" />}

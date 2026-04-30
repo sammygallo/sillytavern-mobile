@@ -27,6 +27,12 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   border: string;
+  textBold: string;
+  textItalic: string;
+  textQuote: string;
+  textAction: string;
+  textThought: string;
+  textDialogue: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,31 +44,43 @@ const DARK_THEMES: Record<ThemePreset, ThemeColors> = {
     primary: '#8b5cf6', primaryHover: '#7c3aed',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
+    textAction: '#fbbf24', textThought: '#a78bfa', textDialogue: '#ffffff',
   },
   blue: {
     primary: '#3b82f6', primaryHover: '#2563eb',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
+    textAction: '#fbbf24', textThought: '#a78bfa', textDialogue: '#ffffff',
   },
   green: {
     primary: '#22c55e', primaryHover: '#16a34a',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
+    textAction: '#fbbf24', textThought: '#a78bfa', textDialogue: '#ffffff',
   },
   red: {
     primary: '#ef4444', primaryHover: '#dc2626',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
+    textAction: '#fbbf24', textThought: '#a78bfa', textDialogue: '#ffffff',
   },
   amber: {
     primary: '#f59e0b', primaryHover: '#d97706',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
+    textAction: '#fbbf24', textThought: '#a78bfa', textDialogue: '#ffffff',
   },
   cyberpunk: {
     primary: '#e040fb', primaryHover: '#ea80fc',
     bgPrimary: '#0a0a0f', bgSecondary: '#12121a', bgTertiary: '#1a1a28',
     textPrimary: '#f0e6ff', textSecondary: '#9a8fad', border: '#2a2540',
+    textBold: '#f0e6ff', textItalic: '#f0e6ff', textQuote: '#9a8fad',
+    textAction: '#fbbf24', textThought: '#c4b5fd', textDialogue: '#f0e6ff',
   },
 };
 
@@ -71,32 +89,44 @@ const LIGHT_THEMES: Record<ThemePreset, ThemeColors> = {
     primary: '#7c3aed', primaryHover: '#6d28d9',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
+    textAction: '#d97706', textThought: '#7c3aed', textDialogue: '#18181b',
   },
   blue: {
     primary: '#2563eb', primaryHover: '#1d4ed8',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
+    textAction: '#d97706', textThought: '#7c3aed', textDialogue: '#18181b',
   },
   green: {
     primary: '#16a34a', primaryHover: '#15803d',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
+    textAction: '#d97706', textThought: '#7c3aed', textDialogue: '#18181b',
   },
   red: {
     primary: '#dc2626', primaryHover: '#b91c1c',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
+    textAction: '#d97706', textThought: '#7c3aed', textDialogue: '#18181b',
   },
   amber: {
     primary: '#d97706', primaryHover: '#b45309',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
+    textAction: '#d97706', textThought: '#7c3aed', textDialogue: '#18181b',
   },
   cyberpunk: {
     // Light mode still uses the neon palette but softened for readability.
     primary: '#c026d3', primaryHover: '#a21caf',
     bgPrimary: '#faf5ff', bgSecondary: '#f3e8ff', bgTertiary: '#e9d5ff',
     textPrimary: '#1a0a2e', textSecondary: '#6b21a8', border: '#d8b4fe',
+    textBold: '#1a0a2e', textItalic: '#1a0a2e', textQuote: '#6b21a8',
+    textAction: '#a16207', textThought: '#7c3aed', textDialogue: '#1a0a2e',
   },
 };
 
@@ -170,6 +200,10 @@ export interface CustomTheme {
   name: string;
   dark: ThemeColors;
   light: ThemeColors;
+  /** When true, applies the cyberpunk rainbow border + glow effects regardless
+   *  of color choices. Defaults true for themes forked from the cyberpunk
+   *  preset, false otherwise. */
+  rainbowEffects?: boolean;
 }
 
 export interface CustomThemeExport {
@@ -177,6 +211,7 @@ export interface CustomThemeExport {
   version: 1;
   dark: ThemeColors;
   light: ThemeColors;
+  rainbowEffects?: boolean;
 }
 
 export function getCustomThemes(): CustomTheme[] {
@@ -235,6 +270,23 @@ export function isValidThemeColors(obj: unknown): obj is ThemeColors {
   return keys.every(k => typeof (obj as Record<string, unknown>)[k] === 'string');
 }
 
+/**
+ * Fill in defaults for the formatting/RP color keys when loading a theme that
+ * was saved before those fields existed. Defaults preserve current rendering.
+ */
+export function fillThemeDefaults(colors: ThemeColors): ThemeColors {
+  const c = colors as Partial<ThemeColors> & ThemeColors;
+  return {
+    ...colors,
+    textBold: c.textBold ?? colors.textPrimary,
+    textItalic: c.textItalic ?? colors.textPrimary,
+    textQuote: c.textQuote ?? colors.textSecondary,
+    textAction: c.textAction ?? '#fbbf24',
+    textThought: c.textThought ?? '#a78bfa',
+    textDialogue: c.textDialogue ?? colors.textPrimary,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Theme application
 // ---------------------------------------------------------------------------
@@ -268,6 +320,43 @@ export function applyColors(colors: ThemeColors): void {
   root.style.setProperty('--color-text-primary', colors.textPrimary);
   root.style.setProperty('--color-text-secondary', colors.textSecondary);
   root.style.setProperty('--color-border', colors.border);
+  // Fallback for legacy custom themes saved before these keys existed.
+  const legacy = colors as Partial<ThemeColors>;
+  root.style.setProperty('--color-text-bold', legacy.textBold ?? colors.textPrimary);
+  root.style.setProperty('--color-text-italic', legacy.textItalic ?? colors.textPrimary);
+  root.style.setProperty('--color-text-quote', legacy.textQuote ?? colors.textSecondary);
+  root.style.setProperty('--color-text-action', legacy.textAction ?? '#fbbf24');
+  root.style.setProperty('--color-text-thought', legacy.textThought ?? '#a78bfa');
+  root.style.setProperty('--color-text-dialogue', legacy.textDialogue ?? colors.textPrimary);
+}
+
+/** True if the cyberpunk rainbow effects (animated borders + neon glow) should
+ *  apply for the given active preset. The cyberpunk built-in preset always
+ *  enables them; custom themes opt in via the `rainbowEffects` flag. */
+export function isRainbowEffectsEnabled(active: ActivePreset): boolean {
+  if (active === 'cyberpunk') return true;
+  if (active.startsWith('custom:')) {
+    const id = active.slice(7);
+    const theme = getCustomThemes().find(t => t.id === id);
+    return theme?.rainbowEffects === true;
+  }
+  return false;
+}
+
+/** Toggle the rainbow effects on the document root. Used by the theme editor
+ *  for live preview while a custom theme is being edited. */
+export function applyRainbowEffects(enabled: boolean): void {
+  const root = document.documentElement;
+  if (enabled) {
+    root.setAttribute('data-theme', 'cyberpunk');
+    root.style.setProperty(
+      '--rainbow-gradient',
+      'linear-gradient(135deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6)'
+    );
+  } else {
+    root.removeAttribute('data-theme');
+    root.style.removeProperty('--rainbow-gradient');
+  }
 }
 
 export function applyTheme(): void {
@@ -286,22 +375,10 @@ export function applyTheme(): void {
   }
 
   applyColors(colors);
-  const root = document.documentElement;
-
-  // Cyberpunk preset: set a data attribute so CSS can target special effects.
-  if (active === 'cyberpunk') {
-    root.setAttribute('data-theme', 'cyberpunk');
-    root.style.setProperty(
-      '--rainbow-gradient',
-      'linear-gradient(135deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6)'
-    );
-  } else {
-    root.removeAttribute('data-theme');
-    root.style.removeProperty('--rainbow-gradient');
-  }
+  applyRainbowEffects(isRainbowEffectsEnabled(active));
 
   // Native form controls and scrollbars respect color-scheme
-  root.style.colorScheme = resolved;
+  document.documentElement.style.colorScheme = resolved;
 
   // Update mobile status bar color
   const meta = document.querySelector('meta[name="theme-color"]');
