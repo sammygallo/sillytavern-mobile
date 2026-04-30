@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Copy, Download, RotateCcw, Save, Upload } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { ArrowLeft, Copy, Download, RotateCcw, Save, Sparkles, Upload } from 'lucide-react';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
 import { Button } from '../ui';
 import {
@@ -8,6 +8,7 @@ import {
   type CustomThemeExport,
   type ThemePreset,
   applyColors,
+  applyRainbowEffects,
   applyTheme,
   fillThemeDefaults,
   getPresetColors,
@@ -82,6 +83,18 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
   const [darkColors, setDarkColors] = useState<ThemeColors>(() => getInitialColors().dark);
   const [lightColors, setLightColors] = useState<ThemeColors>(() => getInitialColors().light);
   const [editingMode, setEditingMode] = useState<'dark' | 'light'>(resolved);
+  const [rainbowEffects, setRainbowEffectsState] = useState<boolean>(() => {
+    if (editId) {
+      const existing = useThemeStore.getState().customThemes.find(t => t.id === editId);
+      return existing?.rainbowEffects === true;
+    }
+    return fromPreset === 'cyberpunk';
+  });
+
+  // Live preview: sync the rainbow toggle to the document root while editing.
+  useEffect(() => {
+    applyRainbowEffects(rainbowEffects);
+  }, [rainbowEffects]);
 
   const activeColors = editingMode === 'dark' ? darkColors : lightColors;
   const setActiveColors = editingMode === 'dark' ? setDarkColors : setLightColors;
@@ -107,7 +120,13 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
 
   // Save and go back
   const handleSave = () => {
-    const theme: CustomTheme = { id: themeId, name: themeName.trim() || 'Untitled', dark: darkColors, light: lightColors };
+    const theme: CustomTheme = {
+      id: themeId,
+      name: themeName.trim() || 'Untitled',
+      dark: darkColors,
+      light: lightColors,
+      rainbowEffects,
+    };
     saveCustomTheme(theme);
     setActivePreset(`custom:${themeId}`);
     goBack();
@@ -121,7 +140,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
 
   // Export as JSON
   const handleExport = () => {
-    const data: CustomThemeExport = { name: themeName, version: 1, dark: darkColors, light: lightColors };
+    const data: CustomThemeExport = { name: themeName, version: 1, dark: darkColors, light: lightColors, rainbowEffects };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -133,7 +152,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
 
   // Copy to clipboard
   const handleCopy = async () => {
-    const data: CustomThemeExport = { name: themeName, version: 1, dark: darkColors, light: lightColors };
+    const data: CustomThemeExport = { name: themeName, version: 1, dark: darkColors, light: lightColors, rainbowEffects };
     await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
   };
 
@@ -151,6 +170,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
           setDarkColors(dark);
           setLightColors(light);
           if (data.name) setThemeName(data.name);
+          if (typeof data.rainbowEffects === 'boolean') setRainbowEffectsState(data.rainbowEffects);
           applyColors(editingMode === 'dark' ? dark : light);
         }
       } catch { /* invalid JSON */ }
@@ -210,6 +230,34 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Rainbow effects toggle (cyberpunk borders + neon glow) */}
+        <div className="bg-[var(--color-bg-secondary)] rounded-lg p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles size={16} className="text-[var(--color-text-secondary)] shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs text-[var(--color-text-primary)]">Rainbow Effects</div>
+              <div className="text-[10px] text-[var(--color-text-secondary)] truncate">
+                Animated borders + neon glow (Cyberpunk style)
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={rainbowEffects}
+            onClick={() => setRainbowEffectsState(v => !v)}
+            className={`shrink-0 w-10 h-6 rounded-full transition-colors relative ${
+              rainbowEffects ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-bg-tertiary)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                rainbowEffects ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Color pickers */}

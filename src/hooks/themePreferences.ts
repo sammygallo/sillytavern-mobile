@@ -200,6 +200,10 @@ export interface CustomTheme {
   name: string;
   dark: ThemeColors;
   light: ThemeColors;
+  /** When true, applies the cyberpunk rainbow border + glow effects regardless
+   *  of color choices. Defaults true for themes forked from the cyberpunk
+   *  preset, false otherwise. */
+  rainbowEffects?: boolean;
 }
 
 export interface CustomThemeExport {
@@ -207,6 +211,7 @@ export interface CustomThemeExport {
   version: 1;
   dark: ThemeColors;
   light: ThemeColors;
+  rainbowEffects?: boolean;
 }
 
 export function getCustomThemes(): CustomTheme[] {
@@ -325,6 +330,35 @@ export function applyColors(colors: ThemeColors): void {
   root.style.setProperty('--color-text-dialogue', legacy.textDialogue ?? colors.textPrimary);
 }
 
+/** True if the cyberpunk rainbow effects (animated borders + neon glow) should
+ *  apply for the given active preset. The cyberpunk built-in preset always
+ *  enables them; custom themes opt in via the `rainbowEffects` flag. */
+export function isRainbowEffectsEnabled(active: ActivePreset): boolean {
+  if (active === 'cyberpunk') return true;
+  if (active.startsWith('custom:')) {
+    const id = active.slice(7);
+    const theme = getCustomThemes().find(t => t.id === id);
+    return theme?.rainbowEffects === true;
+  }
+  return false;
+}
+
+/** Toggle the rainbow effects on the document root. Used by the theme editor
+ *  for live preview while a custom theme is being edited. */
+export function applyRainbowEffects(enabled: boolean): void {
+  const root = document.documentElement;
+  if (enabled) {
+    root.setAttribute('data-theme', 'cyberpunk');
+    root.style.setProperty(
+      '--rainbow-gradient',
+      'linear-gradient(135deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6)'
+    );
+  } else {
+    root.removeAttribute('data-theme');
+    root.style.removeProperty('--rainbow-gradient');
+  }
+}
+
 export function applyTheme(): void {
   const mode = getThemeMode();
   const active = getActivePreset();
@@ -341,22 +375,10 @@ export function applyTheme(): void {
   }
 
   applyColors(colors);
-  const root = document.documentElement;
-
-  // Cyberpunk preset: set a data attribute so CSS can target special effects.
-  if (active === 'cyberpunk') {
-    root.setAttribute('data-theme', 'cyberpunk');
-    root.style.setProperty(
-      '--rainbow-gradient',
-      'linear-gradient(135deg, #8b5cf6, #3b82f6, #22c55e, #f59e0b, #ef4444, #e040fb, #8b5cf6)'
-    );
-  } else {
-    root.removeAttribute('data-theme');
-    root.style.removeProperty('--rainbow-gradient');
-  }
+  applyRainbowEffects(isRainbowEffectsEnabled(active));
 
   // Native form controls and scrollbars respect color-scheme
-  root.style.colorScheme = resolved;
+  document.documentElement.style.colorScheme = resolved;
 
   // Update mobile status bar color
   const meta = document.querySelector('meta[name="theme-color"]');
