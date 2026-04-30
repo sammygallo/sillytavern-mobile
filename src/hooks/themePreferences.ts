@@ -27,6 +27,9 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   border: string;
+  textBold: string;
+  textItalic: string;
+  textQuote: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,31 +41,37 @@ const DARK_THEMES: Record<ThemePreset, ThemeColors> = {
     primary: '#8b5cf6', primaryHover: '#7c3aed',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
   },
   blue: {
     primary: '#3b82f6', primaryHover: '#2563eb',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
   },
   green: {
     primary: '#22c55e', primaryHover: '#16a34a',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
   },
   red: {
     primary: '#ef4444', primaryHover: '#dc2626',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
   },
   amber: {
     primary: '#f59e0b', primaryHover: '#d97706',
     bgPrimary: '#0f0f0f', bgSecondary: '#1a1a1a', bgTertiary: '#262626',
     textPrimary: '#ffffff', textSecondary: '#a1a1aa', border: '#3f3f46',
+    textBold: '#ffffff', textItalic: '#ffffff', textQuote: '#a1a1aa',
   },
   cyberpunk: {
     primary: '#e040fb', primaryHover: '#ea80fc',
     bgPrimary: '#0a0a0f', bgSecondary: '#12121a', bgTertiary: '#1a1a28',
     textPrimary: '#f0e6ff', textSecondary: '#9a8fad', border: '#2a2540',
+    textBold: '#f0e6ff', textItalic: '#f0e6ff', textQuote: '#9a8fad',
   },
 };
 
@@ -71,32 +80,38 @@ const LIGHT_THEMES: Record<ThemePreset, ThemeColors> = {
     primary: '#7c3aed', primaryHover: '#6d28d9',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
   },
   blue: {
     primary: '#2563eb', primaryHover: '#1d4ed8',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
   },
   green: {
     primary: '#16a34a', primaryHover: '#15803d',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
   },
   red: {
     primary: '#dc2626', primaryHover: '#b91c1c',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
   },
   amber: {
     primary: '#d97706', primaryHover: '#b45309',
     bgPrimary: '#ffffff', bgSecondary: '#f4f4f5', bgTertiary: '#e4e4e7',
     textPrimary: '#18181b', textSecondary: '#71717a', border: '#d4d4d8',
+    textBold: '#18181b', textItalic: '#18181b', textQuote: '#71717a',
   },
   cyberpunk: {
     // Light mode still uses the neon palette but softened for readability.
     primary: '#c026d3', primaryHover: '#a21caf',
     bgPrimary: '#faf5ff', bgSecondary: '#f3e8ff', bgTertiary: '#e9d5ff',
     textPrimary: '#1a0a2e', textSecondary: '#6b21a8', border: '#d8b4fe',
+    textBold: '#1a0a2e', textItalic: '#1a0a2e', textQuote: '#6b21a8',
   },
 };
 
@@ -235,6 +250,21 @@ export function isValidThemeColors(obj: unknown): obj is ThemeColors {
   return keys.every(k => typeof (obj as Record<string, unknown>)[k] === 'string');
 }
 
+/**
+ * Fill in defaults for the bold/italic/quote keys when loading a theme that
+ * was saved before those fields existed. Defaults preserve current rendering:
+ * bold and italic inherit textPrimary, quote inherits textSecondary.
+ */
+export function fillThemeDefaults(colors: ThemeColors): ThemeColors {
+  const c = colors as Partial<ThemeColors> & ThemeColors;
+  return {
+    ...colors,
+    textBold: c.textBold ?? colors.textPrimary,
+    textItalic: c.textItalic ?? colors.textPrimary,
+    textQuote: c.textQuote ?? colors.textSecondary,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Theme application
 // ---------------------------------------------------------------------------
@@ -268,6 +298,11 @@ export function applyColors(colors: ThemeColors): void {
   root.style.setProperty('--color-text-primary', colors.textPrimary);
   root.style.setProperty('--color-text-secondary', colors.textSecondary);
   root.style.setProperty('--color-border', colors.border);
+  // Fallback for legacy custom themes saved before bold/italic/quote keys existed.
+  const legacy = colors as Partial<ThemeColors>;
+  root.style.setProperty('--color-text-bold', legacy.textBold ?? colors.textPrimary);
+  root.style.setProperty('--color-text-italic', legacy.textItalic ?? colors.textPrimary);
+  root.style.setProperty('--color-text-quote', legacy.textQuote ?? colors.textSecondary);
 }
 
 export function applyTheme(): void {

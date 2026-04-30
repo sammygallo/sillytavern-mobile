@@ -9,6 +9,7 @@ import {
   type ThemePreset,
   applyColors,
   applyTheme,
+  fillThemeDefaults,
   getPresetColors,
   generateThemeId,
   isValidThemeColors,
@@ -30,6 +31,9 @@ const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
   { key: 'textPrimary', label: 'Text' },
   { key: 'textSecondary', label: 'Muted Text' },
   { key: 'border', label: 'Border' },
+  { key: 'textBold', label: 'Bold Text' },
+  { key: 'textItalic', label: 'Italic Text' },
+  { key: 'textQuote', label: 'Quote Text' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -60,7 +64,10 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
   const getInitialColors = useCallback((): { dark: ThemeColors; light: ThemeColors } => {
     if (editId) {
       const existing = useThemeStore.getState().customThemes.find(t => t.id === editId);
-      if (existing) return { dark: { ...existing.dark }, light: { ...existing.light } };
+      if (existing) return {
+        dark: fillThemeDefaults({ ...existing.dark }),
+        light: fillThemeDefaults({ ...existing.light }),
+      };
     }
     const base = fromPreset && THEME_PRESETS.includes(fromPreset) ? fromPreset : 'purple';
     return {
@@ -136,10 +143,12 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
       try {
         const data = JSON.parse(reader.result as string);
         if (data && isValidThemeColors(data.dark) && isValidThemeColors(data.light)) {
-          setDarkColors({ ...data.dark });
-          setLightColors({ ...data.light });
+          const dark = fillThemeDefaults({ ...data.dark });
+          const light = fillThemeDefaults({ ...data.light });
+          setDarkColors(dark);
+          setLightColors(light);
           if (data.name) setThemeName(data.name);
-          applyColors(editingMode === 'dark' ? data.dark : data.light);
+          applyColors(editingMode === 'dark' ? dark : light);
         }
       } catch { /* invalid JSON */ }
     };

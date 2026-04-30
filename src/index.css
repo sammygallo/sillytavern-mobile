@@ -13,6 +13,9 @@
   --color-text-primary: #ffffff;
   --color-text-secondary: #a1a1aa;
   --color-border: #3f3f46;
+  --color-text-bold: #ffffff;
+  --color-text-italic: #ffffff;
+  --color-text-quote: #a1a1aa;
   color-scheme: dark;
 }
 
@@ -88,7 +91,17 @@ body {
   border-left: 3px solid var(--color-primary);
   padding-left: 0.75em;
   margin: 0.5em 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-quote);
+}
+
+/* --- Bold / Italic — themeable color hooks ------------------------ */
+.markdown-content .md-segment strong,
+.markdown-content .md-segment b {
+  color: var(--color-text-bold);
+}
+.markdown-content .md-segment em,
+.markdown-content .md-segment i {
+  color: var(--color-text-italic);
 }
 
 /* --- Lists -------------------------------------------------------- */
