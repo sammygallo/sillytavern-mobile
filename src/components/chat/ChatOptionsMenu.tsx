@@ -14,7 +14,7 @@ import { useEffect, useRef } from 'react';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import {
   BookOpen, FileText, GitFork, Library, MessageSquare, FolderOpen,
-  Trash2, Flag, Users, RefreshCw, ArrowRight, User,
+  Trash2, Flag, Users, RefreshCw, ArrowRight, User, Image, ImageOff,
 } from 'lucide-react';
 import { BottomSheet } from '../ui/BottomSheet';
 
@@ -47,6 +47,9 @@ interface ChatOptionsMenuProps {
   onRegenerate?: () => void;
   onContinue?: () => void;
   onImpersonate?: () => void;
+  onSetBackground?: () => void;
+  onClearBackground?: () => void;
+  hasBackground?: boolean;
 
   isGroupChat: boolean;
 }
@@ -105,6 +108,9 @@ function MenuBody({
   onRegenerate,
   onContinue,
   onImpersonate,
+  onSetBackground,
+  onClearBackground,
+  hasBackground,
   isGroupChat,
 }: {
   wrap: (fn: () => void) => () => void;
@@ -124,6 +130,9 @@ function MenuBody({
   onRegenerate?: () => void;
   onContinue?: () => void;
   onImpersonate?: () => void;
+  onSetBackground?: () => void;
+  onClearBackground?: () => void;
+  hasBackground?: boolean;
   isGroupChat: boolean;
 }) {
   const hasAiActions = !!(onRegenerate || onContinue || onImpersonate);
@@ -166,6 +175,20 @@ function MenuBody({
         )}
         {!isGroupChat && onConvertToGroup && (
           <ActionRow icon={Users} label="Convert to group" onClick={wrap(onConvertToGroup)} />
+        )}
+        {onSetBackground && (
+          <ActionRow
+            icon={Image}
+            label={hasBackground ? 'Change background image' : 'Add background image'}
+            onClick={wrap(onSetBackground)}
+          />
+        )}
+        {hasBackground && onClearBackground && (
+          <ActionRow
+            icon={ImageOff}
+            label="Remove background image"
+            onClick={wrap(onClearBackground)}
+          />
         )}
       </div>
 
@@ -270,6 +293,9 @@ export function ChatOptionsMenu({
   onRegenerate,
   onContinue,
   onImpersonate,
+  onSetBackground,
+  onClearBackground,
+  hasBackground,
   isGroupChat,
 }: ChatOptionsMenuProps) {
   const isMobile = useIsMobile();
@@ -324,6 +350,9 @@ export function ChatOptionsMenu({
       onRegenerate={onRegenerate}
       onContinue={onContinue}
       onImpersonate={onImpersonate}
+      onSetBackground={onSetBackground}
+      onClearBackground={onClearBackground}
+      hasBackground={hasBackground}
       isGroupChat={isGroupChat}
     />
   );

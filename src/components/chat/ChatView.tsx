@@ -60,6 +60,7 @@ import {
   getChatFontSize,
   getChatMaxWidth,
   getVnMode,
+  setVnMode,
   getVnBgForCharacter,
   setVnBgForCharacter,
   clearVnBgForCharacter,
@@ -120,7 +121,7 @@ export function ChatView() {
   const chatFontSize = getChatFontSize();
   const chatMaxWidth = getChatMaxWidth();
   // Phase 6.4: VN mode (re-read on every render so settings changes take effect immediately)
-  const isVnMode = getVnMode();
+  const [isVnMode, setIsVnModeState] = useState<boolean>(() => getVnMode());
   // Phase 6.3: Mobile UX hooks
   const isMobile = useIsMobile();
   const { isLandscape } = useOrientation();
@@ -680,6 +681,13 @@ export function ChatView() {
         setVnBgGlobal(dataUrl);
       }
       setVnBgState(dataUrl);
+      // Auto-enable VN mode so the user immediately sees the background they
+      // just chose. Without this, the upload would silently store the image
+      // but render nothing because the bg <img> is gated on isVnMode.
+      if (!getVnMode()) {
+        setVnMode(true);
+        setIsVnModeState(true);
+      }
     };
     reader.readAsDataURL(file);
     // Reset so the same file can be re-selected later
@@ -1693,6 +1701,9 @@ export function ChatView() {
           onRegenerate={hasAiMessage && !isGroupChatMode ? handleRegenerate : undefined}
           onContinue={hasAiMessage && !isGroupChatMode ? handleContinue : undefined}
           onImpersonate={!isGroupChatMode ? handleImpersonate : undefined}
+          onSetBackground={() => bgInputRef.current?.click()}
+          onClearBackground={handleClearBg}
+          hasBackground={!!vnBg}
           isGroupChat={isGroupChatMode}
         />
       )}
