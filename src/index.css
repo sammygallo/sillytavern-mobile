@@ -416,3 +416,76 @@ body {
 .animate-fade-in-up {
   animation: fade-in-up 0.35s ease-out;
 }
+
+/* --- Guide page fade-in -------------------------------------------- */
+@keyframes guide-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-guide-fade-in {
+  animation: guide-fade-in 0.22s ease-out;
+}
+
+/* --- Guide drawer entrance ----------------------------------------- */
+@keyframes guide-drawer-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+.animate-guide-drawer-in {
+  animation: guide-drawer-in 0.22s ease-out;
+}
+@keyframes guide-drawer-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-guide-drawer-backdrop-in {
+  animation: guide-drawer-backdrop-in 0.2s ease-out;
+}
+
+/* --- Modal entrance / exit ----------------------------------------- */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-modal-in {
+  animation: modal-in 0.2s ease-out;
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+.animate-modal-out {
+  animation: modal-out 0.18s ease-in forwards;
+}
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-modal-backdrop-in {
+  animation: modal-backdrop-in 0.2s ease-out;
+}
+@keyframes modal-backdrop-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.animate-modal-backdrop-out {
+  animation: modal-backdrop-out 0.18s ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-guide-fade-in,
+  .animate-guide-drawer-in,
+  .animate-guide-drawer-backdrop-in,
+  .animate-modal-in,
+  .animate-modal-out,
+  .animate-modal-backdrop-in,
+  .animate-modal-backdrop-out {
+    animation: none;
+  }
+}

@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button } from './Button';
 
@@ -10,25 +11,40 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+const EXIT_MS = 180;
+
 export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
-  // Close on escape key
+  const [mounted, setMounted] = useState(isOpen);
+  const [exiting, setExiting] = useState(false);
+
   useEffect(() => {
+    if (isOpen) {
+      setMounted(true);
+      setExiting(false);
+      return;
+    }
+    if (mounted) {
+      setExiting(true);
+      const t = setTimeout(() => setMounted(false), EXIT_MS);
+      return () => clearTimeout(t);
+    }
+  }, [isOpen, mounted]);
+
+  // Body scroll lock + escape handler — active while mounted (covers exit anim).
+  useEffect(() => {
+    if (!mounted) return;
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
-    }
-
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';
     };
-  }, [isOpen, onClose]);
+  }, [mounted, onClose]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   const sizes = {
     sm: 'max-w-sm',
@@ -36,11 +52,13 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     lg: 'max-w-2xl',
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm motion-reduce:animate-none ${
+          exiting ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop-in'
+        }`}
         onClick={onClose}
       />
 
@@ -53,6 +71,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
           rounded-xl shadow-2xl
           max-h-[90vh] overflow-hidden
           flex flex-col
+          motion-reduce:animate-none
+          ${exiting ? 'animate-modal-out' : 'animate-modal-in'}
         `}
       >
         {/* Header */}
@@ -76,6 +96,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink } from 'lucide-react';
+import { BookOpen, Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -9,6 +9,7 @@ import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput
 import { showToastGlobal } from '../ui/Toast';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { CharacterLorebookSection } from './CharacterLorebookSection';
+import { GuideDrawer } from '../guides/GuideDrawer';
 import { LivePortraitSetup } from './LivePortraitSetup';
 import { CharacterSetupWizard } from './CharacterSetupWizard';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
@@ -55,6 +56,12 @@ export function CharacterEdit({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLivePortraitSetup, setShowLivePortraitSetup] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [guideSection, setGuideSection] = useState<string | undefined>(undefined);
+  const [showGuide, setShowGuide] = useState(false);
+  const openGuide = (sectionId?: string) => {
+    setGuideSection(sectionId);
+    setShowGuide(true);
+  };
   const livePortraitClips = useLivePortraitStore((s) => s.clipsByAvatar[character.avatar]);
   const hasLivePortraitClips = !!livePortraitClips && Object.keys(livePortraitClips).length > 0;
   const linkedPresetId = useGenerationStore((s) => s.linkedPresetByAvatar[character.avatar]);
@@ -312,6 +319,16 @@ export function CharacterEdit({
             <Wand2 size={16} className="mr-1.5" />
             Setup Wizard
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => openGuide()}
+            title="Open the character building guide"
+          >
+            <BookOpen size={16} className="mr-1.5" />
+            Building Guide
+          </Button>
           <div className="relative">
             <Button
               type="button"
@@ -546,6 +563,15 @@ export function CharacterEdit({
         </div>
 
         {/* Phase 4.3: Character lorebooks */}
+        <div className="flex items-center justify-end -mb-2">
+          <button
+            type="button"
+            onClick={() => openGuide('lorebooks')}
+            className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] inline-flex items-center gap-1"
+          >
+            <BookOpen size={12} /> Lorebook guide
+          </button>
+        </div>
         <CharacterLorebookSection
           avatar={character.avatar}
           characterName={formData.name || character.name}
@@ -743,6 +769,12 @@ export function CharacterEdit({
           estimateTokens(formData.scenario) +
           estimateTokens(formData.firstMessage)
         }
+      />
+      <GuideDrawer
+        isOpen={showGuide}
+        onClose={() => setShowGuide(false)}
+        guideSlug="character-guide"
+        sectionId={guideSection}
       />
     </Modal>
   );

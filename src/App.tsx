@@ -7,6 +7,7 @@ import { MainLayout } from './components/layout/MainLayout';
 import { ChatView } from './components/chat/ChatView';
 // Settings pages are now rendered inside the slide-in SettingsPanel (not routes).
 import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
+import { GuidesRouteRedirect } from './components/guides/GuidesRouteRedirect';
 import { ToastProvider } from './components/ui/Toast';
 import { GlobalExtensionHost } from './extensions/sandbox/GlobalExtensionHost';
 import { ExtensionPopupRoot } from './extensions/sandbox/ExtensionPopupRoot';
@@ -26,6 +27,22 @@ function App() {
         <Route path="/" element={<MainLayout />}>
           <Route index element={<ChatView />} />
           <Route path="chat/:characterId" element={<ChatView />} />
+          <Route
+            path="guides"
+            element={
+              <RequireRole minRole="contributor">
+                <GuidesRouteRedirect />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="guides/:slug"
+            element={
+              <RequireRole minRole="contributor">
+                <GuidesRouteRedirect />
+              </RequireRole>
+            }
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
