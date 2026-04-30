@@ -11,6 +11,7 @@
  * live in the inline message action strip directly above the input bar.
  */
 import { useEffect, useRef } from 'react';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import {
   BookOpen, FileText, GitFork, Library, MessageSquare, FolderOpen,
   Trash2, Flag, Users, RefreshCw, ArrowRight, User,
@@ -271,6 +272,7 @@ export function ChatOptionsMenu({
   onImpersonate,
   isGroupChat,
 }: ChatOptionsMenuProps) {
+  const isMobile = useIsMobile();
   const wrap = (fn: () => void) => () => { fn(); onClose(); };
 
   const extensionPanels = [
@@ -326,21 +328,21 @@ export function ChatOptionsMenu({
     />
   );
 
-  return (
-    <>
-      {/* Mobile: bottom sheet */}
-      <div className="lg:hidden">
-        <BottomSheet isOpen={isOpen} onClose={onClose} title="Chat Options">
-          {body}
-        </BottomSheet>
-      </div>
+  // Render only one branch — never both simultaneously. The DesktopDropdown
+  // registers a document-level mousedown listener when open; if it rendered
+  // alongside the BottomSheet (even CSS-hidden), that listener would fire on
+  // every tap inside the sheet and call onClose, closing the menu.
+  if (isMobile) {
+    return (
+      <BottomSheet isOpen={isOpen} onClose={onClose} title="Chat Options">
+        {body}
+      </BottomSheet>
+    );
+  }
 
-      {/* Desktop: anchored dropdown */}
-      <div className="hidden lg:block">
-        <DesktopDropdown isOpen={isOpen} onClose={onClose} anchor={anchor}>
-          {body}
-        </DesktopDropdown>
-      </div>
-    </>
+  return (
+    <DesktopDropdown isOpen={isOpen} onClose={onClose} anchor={anchor}>
+      {body}
+    </DesktopDropdown>
   );
 }
