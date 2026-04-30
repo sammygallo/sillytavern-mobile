@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, HelpCircle, Key, Menu, Settings, LogOut, Pencil, History, UserCircle } from 'lucide-react';
+import { Download, HelpCircle, Key, Menu, Settings, LogOut, Pencil, UserCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsPanelStore } from '../../stores/settingsPanelStore';
@@ -7,7 +7,6 @@ import { useCharacterStore } from '../../stores/characterStore';
 import { can } from '../../utils/permissions';
 import { Avatar, Button } from '../ui';
 import { CharacterEdit } from '../character/CharacterEdit';
-import { ChatHistoryPanel } from '../chat/ChatHistoryPanel';
 import { HelpChat } from '../help/HelpChat';
 import { PersonaSelector, PersonaManager } from '../persona';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
@@ -20,13 +19,12 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuthStore();
-  const { selectedCharacter, isGroupChatMode, fetchCharacters } = useCharacterStore();
+  const { selectedCharacter, fetchCharacters } = useCharacterStore();
   const userRole = currentUser?.role;
   const canEdit = can(userRole, 'character:edit');
   const canViewSettings = can(userRole, 'settings:view');
   const { canInstall, install: installPwa } = usePwaInstall();
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [convertToPersonaData, setConvertToPersonaData] = useState<
     { name: string; description: string } | null
@@ -89,17 +87,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
       {/* User Menu */}
       <div className="flex items-center gap-1">
-        {selectedCharacter && !isGroupChatMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-2"
-            aria-label="Chat history"
-            onClick={() => setShowHistoryPanel(true)}
-          >
-            <History size={20} />
-          </Button>
-        )}
+
         {canInstall && (
           <Button
             variant="ghost"
@@ -174,11 +162,6 @@ export function Header({ onMenuClick }: HeaderProps) {
         />
       )}
 
-      {/* Chat History Panel */}
-      <ChatHistoryPanel
-        isOpen={showHistoryPanel}
-        onClose={() => setShowHistoryPanel(false)}
-      />
 
       {/* In-app help assistant */}
       <HelpChat isOpen={showHelp} onClose={() => setShowHelp(false)} />
