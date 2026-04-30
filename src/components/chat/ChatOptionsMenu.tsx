@@ -196,7 +196,7 @@ function MenuBody({
         <>
           <Divider />
           <div className="py-1">
-            {onRegenerate && <ActionRow icon={RefreshCw} label="Regenerate" onClick={wrap(onRegenerate)} />}
+            {onRegenerate && <ActionRow icon={RefreshCw} label="Generate alternative" onClick={wrap(onRegenerate)} />}
             {onContinue && <ActionRow icon={ArrowRight} label="Continue" onClick={wrap(onContinue)} />}
             {onImpersonate && <ActionRow icon={User} label="Impersonate" onClick={wrap(onImpersonate)} />}
           </div>
