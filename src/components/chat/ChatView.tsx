@@ -1700,9 +1700,7 @@ export function ChatView() {
           onManageChatFiles={() => setIsHistoryPanelOpen(true)}
           onSaveCheckpoint={currentChatFile && lastAiMessageId ? () => handleCheckpoint(lastAiMessageId) : undefined}
           onDeleteMessages={() => startNewChat(selectedCharacter)}
-          onRegenerate={hasAiMessage && !isGroupChatMode ? handleRegenerate : undefined}
-          onContinue={hasAiMessage && !isGroupChatMode ? handleContinue : undefined}
-          onImpersonate={!isGroupChatMode ? handleImpersonate : undefined}
+          onConvertToGroup={undefined}
           isGroupChat={isGroupChatMode}
         />
       )}

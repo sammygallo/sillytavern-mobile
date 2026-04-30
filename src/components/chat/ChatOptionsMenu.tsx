@@ -6,11 +6,14 @@
  *
  * Extensions (Author's Note, Summary, Branches) are shown as a compact pill
  * strip rather than individual rows, saving vertical screen real estate.
+ *
+ * Regenerate / Continue / Impersonate are intentionally absent — those actions
+ * live in the inline message action strip directly above the input bar.
  */
 import { useEffect, useRef } from 'react';
 import {
   BookOpen, FileText, GitFork, Library, MessageSquare, FolderOpen,
-  Trash2, RefreshCw, ArrowRight, User, Flag, Users,
+  Trash2, Flag, Users,
 } from 'lucide-react';
 import { BottomSheet } from '../ui/BottomSheet';
 
@@ -39,10 +42,7 @@ interface ChatOptionsMenuProps {
   onManageChatFiles: () => void;
   onSaveCheckpoint?: () => void;
   onDeleteMessages: () => void;
-
-  onRegenerate?: () => void;
-  onContinue?: () => void;
-  onImpersonate?: () => void;
+  onConvertToGroup?: () => void;
 
   isGroupChat: boolean;
 }
@@ -97,9 +97,7 @@ function MenuBody({
   onManageChatFiles,
   onSaveCheckpoint,
   onDeleteMessages,
-  onRegenerate,
-  onContinue,
-  onImpersonate,
+  onConvertToGroup,
   isGroupChat,
 }: {
   wrap: (fn: () => void) => () => void;
@@ -115,13 +113,9 @@ function MenuBody({
   onManageChatFiles: () => void;
   onSaveCheckpoint?: () => void;
   onDeleteMessages: () => void;
-  onRegenerate?: () => void;
-  onContinue?: () => void;
-  onImpersonate?: () => void;
+  onConvertToGroup?: () => void;
   isGroupChat: boolean;
 }) {
-  const hasAiActions = !!(onRegenerate || onContinue || onImpersonate);
-
   return (
     <>
       {/* Extension panel pills */}
@@ -158,21 +152,10 @@ function MenuBody({
         {onSaveCheckpoint && (
           <ActionRow icon={Flag} label="Save checkpoint" onClick={wrap(onSaveCheckpoint)} />
         )}
-        {!isGroupChat && (
-          <ActionRow icon={Users} label="Convert to group" onClick={wrap(() => {})} disabled />
+        {!isGroupChat && onConvertToGroup && (
+          <ActionRow icon={Users} label="Convert to group" onClick={wrap(onConvertToGroup)} />
         )}
       </div>
-
-      {hasAiActions && (
-        <>
-          <Divider />
-          <div className="py-1">
-            {onRegenerate && <ActionRow icon={RefreshCw} label="Regenerate" onClick={wrap(onRegenerate)} />}
-            {onContinue && <ActionRow icon={ArrowRight} label="Continue" onClick={wrap(onContinue)} />}
-            {onImpersonate && <ActionRow icon={User} label="Impersonate" onClick={wrap(onImpersonate)} />}
-          </div>
-        </>
-      )}
 
       <Divider />
 
@@ -260,9 +243,7 @@ export function ChatOptionsMenu({
   onManageChatFiles,
   onSaveCheckpoint,
   onDeleteMessages,
-  onRegenerate,
-  onContinue,
-  onImpersonate,
+  onConvertToGroup,
   isGroupChat,
 }: ChatOptionsMenuProps) {
   const wrap = (fn: () => void) => () => { fn(); onClose(); };
@@ -312,9 +293,7 @@ export function ChatOptionsMenu({
       onManageChatFiles={onManageChatFiles}
       onSaveCheckpoint={onSaveCheckpoint}
       onDeleteMessages={onDeleteMessages}
-      onRegenerate={onRegenerate}
-      onContinue={onContinue}
-      onImpersonate={onImpersonate}
+      onConvertToGroup={onConvertToGroup}
       isGroupChat={isGroupChat}
     />
   );
