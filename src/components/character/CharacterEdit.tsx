@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink } from 'lucide-react';
+import { BookOpen, Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink, ArrowRightLeft } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -12,6 +12,7 @@ import { CharacterLorebookSection } from './CharacterLorebookSection';
 import { GuideDrawer } from '../guides/GuideDrawer';
 import { LivePortraitSetup } from './LivePortraitSetup';
 import { CharacterSetupWizard } from './CharacterSetupWizard';
+import { TransferOwnershipModal } from './TransferOwnershipModal';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
@@ -53,6 +54,10 @@ export function CharacterEdit({
   const canSetGlobal = hasPermission(currentUser, 'character:set_global');
   const visibility = ownershipStore.getVisibility(character.avatar);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const isCharacterOwner =
+    !!currentUser && ownershipStore.isOwnedBy(character.avatar, currentUser.handle);
+  const canTransferOwnership = visibility === 'global' && isCharacterOwner;
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLivePortraitSetup, setShowLivePortraitSetup] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
@@ -470,6 +475,30 @@ export function CharacterEdit({
           </div>
         )}
 
+        {/* Transfer Ownership — only the current owner of a global character can hand it off */}
+        {canTransferOwnership && (
+          <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                You own this character
+              </p>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Transfer ownership to another user. The character stays global.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowTransferModal(true)}
+              className="shrink-0"
+            >
+              <ArrowRightLeft size={14} className="mr-1.5" />
+              Transfer
+            </Button>
+          </div>
+        )}
+
         {/* Name - Required */}
         <Input
           label="Name *"
@@ -775,6 +804,16 @@ export function CharacterEdit({
         onClose={() => setShowGuide(false)}
         guideSlug="character-guide"
         sectionId={guideSection}
+      />
+      <TransferOwnershipModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        character={character}
+        onTransferred={() => {
+          // After a successful transfer the caller is no longer the owner —
+          // close the editor so the UI re-checks permissions on next open.
+          onClose();
+        }}
       />
     </Modal>
   );

@@ -38,6 +38,7 @@ export interface CharacterOwnershipState {
   // Mutations — these hit the server. On success the cache is updated in
   // place; on failure the error field is set and the cache is left alone.
   setVisibility: (avatar: string, visibility: 'global' | 'personal') => Promise<void>;
+  transferOwnership: (avatar: string, newOwnerHandle: string) => Promise<void>;
 
   // Queries — synchronous against the in-memory cache.
   getOwner: (avatar: string) => string | null;
@@ -89,6 +90,19 @@ export const useCharacterOwnershipStore = create<CharacterOwnershipState>((set, 
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : 'Failed to update visibility',
+      });
+      throw err;
+    }
+  },
+
+  transferOwnership: async (avatar, newOwnerHandle) => {
+    set({ error: null });
+    try {
+      await api.transferCharacterOwnership(avatar, newOwnerHandle);
+      await get().fetchOwnership();
+    } catch (err) {
+      set({
+        error: err instanceof Error ? err.message : 'Failed to transfer ownership',
       });
       throw err;
     }
