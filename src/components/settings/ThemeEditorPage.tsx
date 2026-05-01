@@ -248,13 +248,13 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
             role="switch"
             aria-checked={rainbowEffects}
             onClick={() => setRainbowEffectsState(v => !v)}
-            className={`shrink-0 w-10 h-6 rounded-full transition-colors relative ${
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
               rainbowEffects ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-bg-tertiary)]'
             }`}
           >
             <span
-              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-                rainbowEffects ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                rainbowEffects ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
           </button>
