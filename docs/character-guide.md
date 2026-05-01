@@ -187,7 +187,7 @@ If you link a prompt template, the editor shows you how many tokens it costs. If
 None of these cost prompt tokens.
 
 - **Linked Sampler Preset** — Auto-loads the right "creativity dial" settings when this character is picked.
-- **Linked Prompt Template** — Auto-loads a writing style template (this DOES cost tokens — shown inline).
+- **Linked Prompt Template** — Auto-loads a writing style template (this DOES cost tokens — shown inline). For narrative characters, see the [HYPERCODE Prompt Framework guide](/guides/hypercode-guide).
 - **Visibility** — Share with everyone or keep private.
 - **Expression Sprites** — Picture changes with emotion. Only shown to you, never sent to the AI.
 - **Live Portrait** — Animated video clips for emotions. Made once, replay free.
