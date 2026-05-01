@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BookOpen, Download, FileImage, FileJson, Copy, UserCircle, Globe, Lock, Loader2, Wand2, Link2, Unlink, ArrowRightLeft } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useCharacterOwnershipStore } from '../../stores/characterOwnershipStore';
@@ -9,6 +9,7 @@ import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput
 import { showToastGlobal } from '../ui/Toast';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
 import { CharacterLorebookSection } from './CharacterLorebookSection';
+import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { GuideDrawer } from '../guides/GuideDrawer';
 import { LivePortraitSetup } from './LivePortraitSetup';
 import { CharacterSetupWizard } from './CharacterSetupWizard';
@@ -79,6 +80,13 @@ export function CharacterEdit({
     linkedTemplateId ? s.templates.find((t) => t.id === linkedTemplateId) : undefined
   );
   const setLinkedTemplate = usePromptTemplateStore((s) => s.setLinkedTemplate);
+
+  const lorebookSectionRef = useRef<HTMLDivElement>(null);
+  const embeddedBook = useWorldInfoStore((s) =>
+    s.books.find((b) => b.ownerCharacterAvatar === character.avatar)
+  );
+  const hasEmbeddedLorebook = !!embeddedBook;
+  const embeddedEntryCount = embeddedBook?.entries.length ?? 0;
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [expressionFiles, setExpressionFiles] = useState<Map<string, File>>(new Map());
@@ -334,6 +342,20 @@ export function CharacterEdit({
             <BookOpen size={16} className="mr-1.5" />
             Building Guide
           </Button>
+          {hasEmbeddedLorebook && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                lorebookSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              title="Jump to this character's lorebook"
+            >
+              <BookOpen size={16} className="mr-1.5" />
+              Lorebook ({embeddedEntryCount})
+            </Button>
+          )}
           <div className="relative">
             <Button
               type="button"
@@ -592,21 +614,23 @@ export function CharacterEdit({
         </div>
 
         {/* Phase 4.3: Character lorebooks */}
-        <div className="flex items-center justify-end -mb-2">
-          <button
-            type="button"
-            onClick={() => openGuide('lorebooks')}
-            className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] inline-flex items-center gap-1"
-          >
-            <BookOpen size={12} /> Lorebook guide
-          </button>
+        <div ref={lorebookSectionRef} className="scroll-mt-16 space-y-2">
+          <div className="flex items-center justify-end -mb-2">
+            <button
+              type="button"
+              onClick={() => openGuide('lorebooks')}
+              className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] inline-flex items-center gap-1"
+            >
+              <BookOpen size={12} /> Lorebook guide
+            </button>
+          </div>
+          <CharacterLorebookSection
+            avatar={character.avatar}
+            characterName={formData.name || character.name}
+            linkedBookIds={linkedBookIds}
+            onLinkedBookIdsChange={setLinkedBookIdsLocal}
+          />
         </div>
-        <CharacterLorebookSection
-          avatar={character.avatar}
-          characterName={formData.name || character.name}
-          linkedBookIds={linkedBookIds}
-          onLinkedBookIdsChange={setLinkedBookIdsLocal}
-        />
 
         {/* Collapsible Advanced Section */}
         <details className="group">
