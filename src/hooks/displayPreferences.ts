@@ -137,6 +137,25 @@ export function setStandardizeMessageFormatting(on: boolean): void {
   try { localStorage.setItem(STANDARDIZE_FMT_KEY, on ? 'true' : 'false'); } catch { /* ignore */ }
 }
 
+// ---- Enter Key Send Behavior ----------------------------------------
+
+export type EnterToSendMode = 'auto' | 'always' | 'never';
+
+const ENTER_TO_SEND_KEY = 'stm:enter-to-send-mode';
+const VALID_ENTER_MODES: EnterToSendMode[] = ['auto', 'always', 'never'];
+
+export function getEnterToSendMode(): EnterToSendMode {
+  try {
+    const v = localStorage.getItem(ENTER_TO_SEND_KEY);
+    if (v && VALID_ENTER_MODES.includes(v as EnterToSendMode)) return v as EnterToSendMode;
+  } catch { /* ignore */ }
+  return 'auto';
+}
+
+export function setEnterToSendMode(mode: EnterToSendMode): void {
+  try { localStorage.setItem(ENTER_TO_SEND_KEY, mode); } catch { /* ignore */ }
+}
+
 // ---- Sprite Costume -------------------------------------------------
 
 export function getCostume(avatar: string): string | null {

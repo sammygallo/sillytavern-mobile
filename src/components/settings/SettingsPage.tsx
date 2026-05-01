@@ -33,8 +33,11 @@ import {
   setVnMode,
   getStandardizeMessageFormatting,
   setStandardizeMessageFormatting,
+  getEnterToSendMode,
+  setEnterToSendMode,
   type ChatLayoutMode,
   type AvatarShape,
+  type EnterToSendMode,
 } from '../../hooks/displayPreferences';
 import {
   THEME_PRESETS,
@@ -82,6 +85,7 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
   // Phase 6.4: VN mode
   const [vnModeOn, setVnModeState] = useState<boolean>(() => getVnMode());
   const [standardizeFmt, setStandardizeFmtState] = useState<boolean>(() => getStandardizeMessageFormatting());
+  const [enterToSendMode, setEnterToSendModeState] = useState<EnterToSendMode>(() => getEnterToSendMode());
 
   // Phase 6.3: TTS settings state
   const { isSupported: isTtsSupported, voices: ttsVoices } = useSpeechSynthesis();
@@ -664,6 +668,27 @@ export function SettingsPage(_props?: { params?: Record<string, string> }) {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* Enter Key Behavior */}
+              <div className="mt-4">
+                <p className="text-xs font-medium text-[var(--color-text-primary)]">Enter Key Sends Message</p>
+                <p className="text-[10px] text-[var(--color-text-secondary)] mt-0.5 mb-2">
+                  Auto: send on desktop, newline on phones/tablets. Always: Enter sends everywhere (Shift+Enter for newline). Never: Enter is always a newline; tap the send button to send.
+                </p>
+                <select
+                  value={enterToSendMode}
+                  onChange={(e) => {
+                    const next = e.target.value as EnterToSendMode;
+                    setEnterToSendModeState(next);
+                    setEnterToSendMode(next);
+                  }}
+                  className="w-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] text-xs rounded px-2 py-1.5 border border-[var(--color-border)]"
+                >
+                  <option value="auto">Auto (device-aware)</option>
+                  <option value="always">Always send on Enter</option>
+                  <option value="never">Never send on Enter</option>
+                </select>
               </div>
 
               {/* Visual Novel Mode */}
