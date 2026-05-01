@@ -735,12 +735,18 @@ export const api = {
   },
 
   async renameChat(avatarUrl: string, originalFile: string, renamedFile: string): Promise<string> {
+    // Upstream /api/chats/rename does not auto-append the extension the way
+    // /delete does, so it fails with "Source file not available" when the
+    // client passes the bare basename (which is what we list everywhere
+    // else). Append .jsonl client-side until the server is patched.
+    const withExt = (name: string): string =>
+      /\.jsonl$/i.test(name) ? name : `${name}.jsonl`;
     const result = await apiRequest<{ ok: boolean; sanitizedFileName: string }>('/api/chats/rename', {
       method: 'POST',
       body: JSON.stringify({
         avatar_url: avatarUrl,
-        original_file: originalFile,
-        renamed_file: renamedFile,
+        original_file: withExt(originalFile),
+        renamed_file: withExt(renamedFile),
       }),
     });
     return result.sanitizedFileName;
