@@ -433,10 +433,18 @@ export async function embedCharacterInPNG(
     }
   }
 
-  // Convert character to V2 card and encode as base64
+  // Convert character to V2 card and encode as base64. Mirror the decode
+  // path: encode the JSON to UTF-8 bytes first, then base64. Raw btoa()
+  // throws on any character above U+00FF (em-dashes, smart quotes, emoji,
+  // CJK), which is exactly what real character cards contain.
   const cardData = characterToCardV2(character, characterBook);
   const jsonString = JSON.stringify(cardData);
-  const base64Data = btoa(jsonString);
+  const utf8Bytes = new TextEncoder().encode(jsonString);
+  let binary = '';
+  for (let i = 0; i < utf8Bytes.length; i++) {
+    binary += String.fromCharCode(utf8Bytes[i]);
+  }
+  const base64Data = btoa(binary);
 
   // Create the tEXt chunk
   const textChunk = createTextChunk('chara', base64Data);
