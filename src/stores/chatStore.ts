@@ -2383,8 +2383,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ---- Rename Chat File ----
   renameChat: async (avatarUrl: string, originalFile: string, renamedFile: string) => {
     try {
-      await api.renameChat(avatarUrl, originalFile, renamedFile);
-      const { fetchChatFiles } = get();
+      const sanitized = await api.renameChat(avatarUrl, originalFile, renamedFile);
+      // If the renamed chat is the one currently loaded, update the
+      // in-memory pointer so subsequent saves target the new filename
+      // instead of the (now non-existent) original file.
+      const { currentChatFile, fetchChatFiles } = get();
+      if (currentChatFile === originalFile) {
+        set({ currentChatFile: sanitized });
+      }
       await fetchChatFiles(avatarUrl);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to rename chat' });
