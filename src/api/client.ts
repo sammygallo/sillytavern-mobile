@@ -116,6 +116,11 @@ export interface CharacterMetadataEntry {
 
 export type CharacterMetadataMap = Record<string, CharacterMetadataEntry>;
 
+export interface UserHandleSummary {
+  handle: string;
+  name: string;
+}
+
 export interface CharacterInfo {
   name: string;
   avatar: string; // filename like "CharacterName.png"
@@ -511,6 +516,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ avatar_url: avatarUrl, visibility }),
     });
+  },
+
+  /**
+   * Transfers ownership of a global character to another user. The current
+   * owner must be the requester; metadata-only update on the server.
+   */
+  async transferCharacterOwnership(avatarUrl: string, newOwnerHandle: string): Promise<void> {
+    await apiRequest('/api/characters/transfer-ownership', {
+      method: 'POST',
+      body: JSON.stringify({ avatar_url: avatarUrl, new_owner_handle: newOwnerHandle }),
+    });
+  },
+
+  /**
+   * Returns enabled users' handles + display names (excluding the caller),
+   * for recipient pickers. Authenticated request, no special permission.
+   */
+  async listUserHandles(): Promise<UserHandleSummary[]> {
+    const result = await apiRequest<UserHandleSummary[]>('/api/users/handles', {
+      method: 'POST',
+    });
+    return Array.isArray(result) ? result : [];
   },
 
   // Chat endpoints - use avatar filename directly for consistency
