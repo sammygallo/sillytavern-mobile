@@ -155,6 +155,36 @@ const SANITIZE_CONFIG = {
 const BLOCK_PATTERN = /\n\n|^#{1,6}\s|^```|^>\s|^[-*+]\s|^\d+\.\s|^\|.+\|/m;
 
 /**
+ * Split text into paragraphs on `\n\n` boundaries while keeping fenced code
+ * blocks intact (a fenced block can legitimately contain blank lines and
+ * must NOT be split). Returns one entry per paragraph, in order; empty
+ * paragraphs are dropped.
+ *
+ * Splitting first — then parsing RP markers inside each paragraph — is what
+ * keeps inline italics anchored to their paragraph instead of appearing as
+ * orphan inline content sandwiched between two block-level dialogue
+ * segments.
+ */
+function splitParagraphs(text: string): string[] {
+  const codePH: Map<string, string> = new Map();
+  let n = 0;
+  // Shelter fenced code blocks (only these can contain \n\n we must preserve).
+  const safe = text.replace(/```[\s\S]*?```/g, (m) => {
+    const k = `\x00P${n++}\x00`;
+    codePH.set(k, m);
+    return k;
+  });
+  const paragraphs = safe.split(/\n{2,}/);
+  return paragraphs
+    .map((p) => {
+      let restored = p;
+      for (const [k, v] of codePH) restored = restored.replaceAll(k, v);
+      return restored;
+    })
+    .filter((p) => p.trim().length > 0);
+}
+
+/**
  * Close any unclosed fenced code blocks so the markdown parser treats them as
  * code instead of leaking raw backticks into the output.  Only needed while
  * streaming — once the response is complete the fences are balanced.
@@ -186,7 +216,7 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
     () => (standardize ? normalizeForDisplay(content) : content),
     [content, standardize]
   );
-  const segments = useMemo(() => parseRPSegments(prepared), [prepared]);
+  const paragraphs = useMemo(() => splitParagraphs(prepared), [prepared]);
 
   /** Copy-button click handler — uses event delegation. */
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -202,57 +232,81 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
 
   return (
     <div className="markdown-content" onClick={handleClick}>
-      {segments.map((segment, index) => {
-        const isLast = index === segments.length - 1;
+      {paragraphs.map((paragraph, paraIdx) => {
+        const isLastPara = paraIdx === paragraphs.length - 1;
+        const paraIsBlockMarkdown = BLOCK_PATTERN.test(paragraph);
 
-        // Skip dialogue segments that are only whitespace (typically the
-        // "\n\n" gap between two adjacent italic RP segments). Without this
-        // they render as an empty block <div><p></p></div> that adds a
-        // visible blank line between the two italics. RP-marker segments
-        // always render so we never accidentally drop user-meaningful
-        // content.
-        if (segment.type === 'dialogue' && !segment.content.trim()) {
-          return null;
-        }
-
-        if (segment.type === 'action') {
+        // Block-level markdown paragraphs (lists, headings, blockquotes,
+        // code blocks, tables) bypass the RP parser — those structures and
+        // *italic* markers don't compose well, and the RP regex can grab
+        // list-bullet asterisks unintentionally.
+        if (paraIsBlockMarkdown) {
+          const dialogueContent = standardize ? wrapDialogue(paragraph) : paragraph;
+          const { html } = renderMarkdown(dialogueContent, isStreaming && isLastPara);
+          const cursorHtml = isStreaming && isLastPara
+            ? html + '<span class="streaming-cursor"></span>'
+            : html;
           return (
-            <span
-              key={index}
-              className={`italic ${isUser ? 'text-white/70' : 'rp-action'}`}
-            >
-              {segment.content}
-              {isStreaming && isLast && <span className="streaming-cursor" />}
-            </span>
-          );
-        }
-        if (segment.type === 'thought') {
-          return (
-            <span
-              key={index}
-              className={`italic ${isUser ? 'text-white/60' : 'rp-thought'}`}
-            >
-              {segment.content}
-              {isStreaming && isLast && <span className="streaming-cursor" />}
-            </span>
+            <div
+              key={paraIdx}
+              className="md-paragraph md-segment"
+              dangerouslySetInnerHTML={{ __html: cursorHtml }}
+            />
           );
         }
 
-        // Dialogue → markdown. When standardization is on, wrap "…" in
-        // <span class="dialogue"> before marked parses so themes can style
-        // quoted speech distinctly.
-        const dialogueContent = standardize ? wrapDialogue(segment.content) : segment.content;
-        const { html, isBlock } = renderMarkdown(dialogueContent, isStreaming && isLast);
-        const cursorHtml = isStreaming && isLast
-          ? html + '<span class="streaming-cursor"></span>'
-          : html;
-        const Tag = isBlock ? 'div' : 'span';
+        // Inline paragraph: parse RP markers, render each segment inline so
+        // surrounding dialogue, *actions*, and {{thoughts}} all flow on the
+        // same line(s) within this paragraph.
+        const segments = parseRPSegments(paragraph);
         return (
-          <Tag
-            key={index}
-            className="md-segment"
-            dangerouslySetInnerHTML={{ __html: cursorHtml }}
-          />
+          <div key={paraIdx} className="md-paragraph">
+            {segments.map((segment, segIdx) => {
+              const isLastSeg = isLastPara && segIdx === segments.length - 1;
+
+              if (segment.type === 'dialogue' && !segment.content.trim()) {
+                return null;
+              }
+
+              if (segment.type === 'action') {
+                return (
+                  <span
+                    key={segIdx}
+                    className={`italic ${isUser ? 'text-white/70' : 'rp-action'}`}
+                  >
+                    {segment.content}
+                    {isStreaming && isLastSeg && <span className="streaming-cursor" />}
+                  </span>
+                );
+              }
+              if (segment.type === 'thought') {
+                return (
+                  <span
+                    key={segIdx}
+                    className={`italic ${isUser ? 'text-white/60' : 'rp-thought'}`}
+                  >
+                    {segment.content}
+                    {isStreaming && isLastSeg && <span className="streaming-cursor" />}
+                  </span>
+                );
+              }
+
+              // Dialogue inside an inline paragraph — render via parseInline
+              // (no block-level parsing since we already filtered those out).
+              const dialogueContent = standardize ? wrapDialogue(segment.content) : segment.content;
+              const { html } = renderMarkdown(dialogueContent, isStreaming && isLastSeg);
+              const cursorHtml = isStreaming && isLastSeg
+                ? html + '<span class="streaming-cursor"></span>'
+                : html;
+              return (
+                <span
+                  key={segIdx}
+                  className="md-segment"
+                  dangerouslySetInnerHTML={{ __html: cursorHtml }}
+                />
+              );
+            })}
+          </div>
         );
       })}
     </div>
