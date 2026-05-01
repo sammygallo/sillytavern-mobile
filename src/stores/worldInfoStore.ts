@@ -1078,7 +1078,11 @@ interface WorldInfoState {
 
   // Import / export
   exportBookJson: (bookId: string) => string | null;
-  importBookJson: (json: string, fallbackName?: string) => WorldInfoBook | null;
+  importBookJson: (
+    json: string,
+    fallbackName?: string,
+    ownerAvatar?: string | null
+  ) => WorldInfoBook | null;
 
   // Character-embedded lorebooks: at most one book per character avatar,
   // auto-scoped to that character's chats.
@@ -1283,7 +1287,7 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
     return JSON.stringify(bookToStFormat(book), null, 2);
   },
 
-  importBookJson: (json, fallbackName) => {
+  importBookJson: (json, fallbackName, ownerAvatar) => {
     try {
       const parsed = JSON.parse(json) as StBook;
       if (!parsed || typeof parsed !== 'object') {
@@ -1300,6 +1304,22 @@ export const useWorldInfoStore = create<WorldInfoState>((set, get) => ({
         book = bookFromStFormat(fallbackName || 'Imported Lorebook', {
           entries: parsed as unknown as Record<string, StEntry>,
         });
+      }
+      // When an owner avatar is provided the imported book becomes that
+      // character's embedded book. Embedded books are 1-per-character, so
+      // any existing embedded book for the same owner is replaced.
+      if (ownerAvatar) {
+        book.ownerCharacterAvatar = ownerAvatar;
+        const existing = get().books.find(
+          (b) => b.ownerCharacterAvatar === ownerAvatar
+        );
+        const without = existing
+          ? get().books.filter((b) => b.id !== existing.id)
+          : get().books;
+        const next = [...without, book];
+        saveBooks(next);
+        set({ books: next, error: null });
+        return book;
       }
       const next = [...get().books, book];
       saveBooks(next);
