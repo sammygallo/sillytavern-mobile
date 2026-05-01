@@ -23,7 +23,7 @@ import { useThemeStore } from '../../stores/themeStore';
 // CSS variable label mapping
 // ---------------------------------------------------------------------------
 
-const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
+const COLOR_FIELDS: { key: keyof ThemeColors; label: string; hint?: string }[] = [
   { key: 'primary', label: 'Primary / Accent' },
   { key: 'primaryHover', label: 'Primary Hover' },
   { key: 'bgPrimary', label: 'Background' },
@@ -32,12 +32,20 @@ const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
   { key: 'textPrimary', label: 'Text' },
   { key: 'textSecondary', label: 'Muted Text' },
   { key: 'border', label: 'Border' },
-  { key: 'textBold', label: 'Bold Text' },
-  { key: 'textItalic', label: 'Italic Text' },
-  { key: 'textQuote', label: 'Quote Text' },
-  { key: 'textAction', label: 'Character Action' },
-  { key: 'textThought', label: 'Character Thought' },
-  { key: 'textDialogue', label: 'Character Dialogue' },
+  { key: 'textBold', label: 'Bold Text', hint: '**bold** segments in messages' },
+  { key: 'textItalic', label: 'Italic Text', hint: 'plain *italic* segments outside roleplay' },
+  { key: 'textQuote', label: 'Quote Text', hint: '> blockquoted lines' },
+  {
+    key: 'textAction',
+    label: 'Roleplay Action / Thought',
+    hint: 'Italicized *…* and _…_ segments — the model often uses these for actions, but many also use them for internal monologue.',
+  },
+  {
+    key: 'textThought',
+    label: 'Inner Thought ({{…}})',
+    hint: '{{double-brace}} segments explicitly tagged as thoughts.',
+  },
+  { key: 'textDialogue', label: 'Character Dialogue', hint: '"quoted" speech (when standardize formatting is on)' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -273,7 +281,7 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
             </button>
           </div>
           <div className="space-y-3">
-            {COLOR_FIELDS.map(({ key, label }) => (
+            {COLOR_FIELDS.map(({ key, label, hint }) => (
               <div key={key} className="flex items-center gap-3">
                 <label
                   className="relative w-8 h-8 rounded-lg border border-[var(--color-border)] cursor-pointer overflow-hidden shrink-0"
@@ -288,6 +296,11 @@ export function ThemeEditorPage({ params: pageParams }: { params?: Record<string
                 </label>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs text-[var(--color-text-primary)]">{label}</div>
+                  {hint && (
+                    <div className="text-[10px] text-[var(--color-text-secondary)] mt-0.5 leading-snug">
+                      {hint}
+                    </div>
+                  )}
                 </div>
                 <input
                   type="text"
