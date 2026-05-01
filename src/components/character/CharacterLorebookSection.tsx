@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { BookOpen, Edit2, Plus, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { BookOpen, Edit2, Plus, Trash2, Upload } from 'lucide-react';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { WorldInfoBookEditor } from '../worldinfo/WorldInfoBookEditor';
 
@@ -28,8 +28,71 @@ export function CharacterLorebookSection({
   const books = useWorldInfoStore((s) => s.books);
   const createCharacterBook = useWorldInfoStore((s) => s.createCharacterBook);
   const deleteCharacterBook = useWorldInfoStore((s) => s.deleteCharacterBook);
+  const importBookJson = useWorldInfoStore((s) => s.importBookJson);
   const [editingEmbedded, setEditingEmbedded] = useState(false);
+  const [editingLinkedBookId, setEditingLinkedBookId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importEmbeddedInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLorebookUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportError(null);
+    setImportNotice(null);
+    try {
+      const json = await file.text();
+      const fallback = file.name.replace(/\.json$/i, '') || 'Imported Lorebook';
+      const book = importBookJson(json, fallback);
+      if (!book) {
+        setImportError('Could not parse lorebook JSON.');
+        return;
+      }
+      // Auto-link the freshly imported book to this character so it
+      // activates whenever this character is the scan target.
+      if (!linkedBookIds.includes(book.id)) {
+        onLinkedBookIdsChange([...linkedBookIds, book.id]);
+      }
+      setImportNotice(`Linked "${book.name}" (${book.entries.length} entries).`);
+    } catch (err) {
+      setImportError(
+        err instanceof Error ? err.message : 'Failed to upload lorebook.'
+      );
+    }
+  };
+
+  const handleEmbeddedImport = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportError(null);
+    setImportNotice(null);
+    try {
+      const json = await file.text();
+      const fallback = characterName
+        ? `${characterName}'s Lorebook`
+        : file.name.replace(/\.json$/i, '') || 'Imported Lorebook';
+      const book = importBookJson(json, fallback, avatar);
+      if (!book) {
+        setImportError('Could not parse lorebook JSON.');
+        return;
+      }
+      setImportNotice(
+        `Imported "${book.name}" as embedded lorebook (${book.entries.length} entries).`
+      );
+    } catch (err) {
+      setImportError(
+        err instanceof Error ? err.message : 'Failed to import lorebook.'
+      );
+    }
+  };
 
   const embeddedBook = books.find((b) => b.ownerCharacterAvatar === avatar);
   // Only non-character-owned books are eligible to be linked as extras
@@ -52,6 +115,18 @@ export function CharacterLorebookSection({
           Lorebooks
         </h3>
       </div>
+
+      {(importError || importNotice) && (
+        <div
+          className={`rounded-md px-2 py-1.5 text-xs ${
+            importError
+              ? 'border border-red-500/40 bg-red-500/10 text-red-300'
+              : 'border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]'
+          }`}
+        >
+          {importError || importNotice}
+        </div>
+      )}
 
       {/* Embedded book */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3">
@@ -90,10 +165,19 @@ export function CharacterLorebookSection({
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <p className="flex-1 text-sm text-[var(--color-text-secondary)]">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="flex-1 min-w-[8rem] text-sm text-[var(--color-text-secondary)]">
               No embedded lorebook yet.
             </p>
+            <button
+              type="button"
+              onClick={() => importEmbeddedInputRef.current?.click()}
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] border border-[var(--color-border)]"
+              aria-label="Import embedded lorebook from JSON"
+            >
+              <Upload size={13} />
+              Import Lorebook
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -139,21 +223,32 @@ export function CharacterLorebookSection({
 
       {/* Linked books */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3">
-        <p className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide mb-2">
-          Additional Lorebooks
-        </p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+            Additional Lorebooks
+          </p>
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] border border-[var(--color-border)]"
+          >
+            <Upload size={12} />
+            Upload Lorebook
+          </button>
+        </div>
+
         {candidateBooks.length === 0 ? (
           <p className="text-sm text-[var(--color-text-secondary)]">
-            No global lorebooks exist yet. Create some in Settings → World
-            Info.
+            No global lorebooks linked yet. Use Upload Lorebook to import one,
+            or create books in Settings → World Info.
           </p>
         ) : (
           <ul className="space-y-1.5">
             {candidateBooks.map((book) => {
               const checked = linkedBookIds.includes(book.id);
               return (
-                <li key={book.id}>
-                  <label className="flex items-center gap-2.5 cursor-pointer rounded-md px-1.5 py-1 hover:bg-[var(--color-bg-secondary)]">
+                <li key={book.id} className="flex items-center gap-1">
+                  <label className="flex-1 flex items-center gap-2.5 cursor-pointer rounded-md px-1.5 py-1 hover:bg-[var(--color-bg-secondary)] min-w-0">
                     <input
                       type="checkbox"
                       checked={checked}
@@ -167,6 +262,16 @@ export function CharacterLorebookSection({
                       {book.entries.length}
                     </span>
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingLinkedBookId(book.id)}
+                    className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+                    aria-label={`Edit ${book.name}`}
+                    title="Edit lorebook entries"
+                  >
+                    <Edit2 size={12} />
+                    Edit
+                  </button>
                 </li>
               );
             })}
@@ -178,6 +283,21 @@ export function CharacterLorebookSection({
         </p>
       </div>
 
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleLorebookUpload}
+      />
+      <input
+        ref={importEmbeddedInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleEmbeddedImport}
+      />
+
       {embeddedBook && editingEmbedded && (
         <WorldInfoBookEditor
           isOpen={editingEmbedded}
@@ -185,6 +305,17 @@ export function CharacterLorebookSection({
           book={embeddedBook}
         />
       )}
+
+      {editingLinkedBookId && (() => {
+        const editing = books.find((b) => b.id === editingLinkedBookId);
+        return editing ? (
+          <WorldInfoBookEditor
+            isOpen={true}
+            onClose={() => setEditingLinkedBookId(null)}
+            book={editing}
+          />
+        ) : null;
+      })()}
     </section>
   );
 }
