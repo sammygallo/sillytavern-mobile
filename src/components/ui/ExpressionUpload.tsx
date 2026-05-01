@@ -178,6 +178,7 @@ export function ExpressionUpload({ characterName, onExpressionsChange }: Express
               />
             </div>
             <Button
+              type="button"
               variant="secondary"
               size="sm"
               onClick={() => newFileInputRef.current?.click()}
