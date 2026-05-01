@@ -11,6 +11,7 @@ import {
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { haptic } from '../../utils/haptics';
 import { getSpeechLanguage } from '../../hooks/speechLanguage';
+import { getEnterToSendMode } from '../../hooks/displayPreferences';
 
 interface ChatInputProps {
   /** Called with the trimmed text plus any staged image data URLs. */
@@ -327,9 +328,17 @@ export function ChatInput({
         /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)));
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {
-      e.preventDefault();
-      handleSubmit(e);
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // 'auto' (default): keep prior heuristic — desktop sends, touch devices newline.
+      // 'always': Enter sends on every device. Shift+Enter still inserts a newline.
+      // 'never': Enter always inserts a newline; user must tap the send button.
+      const mode = getEnterToSendMode();
+      const shouldSend =
+        mode === 'always' || (mode === 'auto' && !isTouchDevice);
+      if (shouldSend) {
+        e.preventDefault();
+        handleSubmit(e);
+      }
     }
     if (e.key === 'ArrowUp' && !message.trim() && onEditLast) {
       e.preventDefault();
