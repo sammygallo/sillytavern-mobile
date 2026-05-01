@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, Upload, User } from 'lucide-react';
+import { BookOpen, Edit2, Upload, User } from 'lucide-react';
 import { usePersonaStore, type PersonaDescriptionPosition, type PersonaDescriptionRole, type Persona } from '../../stores/personaStore';
 import { useWorldInfoStore } from '../../stores/worldInfoStore';
 import { extractCharacterFromPNG, parseCharacterFromJSON } from '../../utils/characterCard';
 import { Button, Input, TextArea, ImageUpload } from '../ui';
+import { WorldInfoBookEditor } from '../worldinfo/WorldInfoBookEditor';
 
 interface PersonaFormProps {
   persona?: Persona | null;
@@ -30,6 +31,7 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
   const [linkedBookIds, setLinkedBookIds] = useState<string[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [editingBookId, setEditingBookId] = useState<string | null>(null);
 
   const personaImportInputRef = useRef<HTMLInputElement>(null);
   const lorebookImportInputRef = useRef<HTMLInputElement>(null);
@@ -390,8 +392,8 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
               {candidateBooks.map((book) => {
                 const checked = linkedBookIds.includes(book.id);
                 return (
-                  <li key={book.id}>
-                    <label className="flex items-center gap-2.5 cursor-pointer rounded-md px-1.5 py-1 hover:bg-[var(--color-bg-secondary)]">
+                  <li key={book.id} className="flex items-center gap-1">
+                    <label className="flex-1 flex items-center gap-2.5 cursor-pointer rounded-md px-1.5 py-1 hover:bg-[var(--color-bg-secondary)] min-w-0">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -411,6 +413,16 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
                         {book.entries.length}
                       </span>
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditingBookId(book.id)}
+                      className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+                      aria-label={`Edit ${book.name}`}
+                      title="Edit lorebook entries"
+                    >
+                      <Edit2 size={12} />
+                      Edit
+                    </button>
                   </li>
                 );
               })}
@@ -435,6 +447,17 @@ export function PersonaForm({ persona, onClose, onSaved, initialValues }: Person
           {persona ? 'Save Changes' : 'Create Persona'}
         </Button>
       </div>
+
+      {editingBookId && (() => {
+        const editing = books.find((b) => b.id === editingBookId);
+        return editing ? (
+          <WorldInfoBookEditor
+            isOpen={true}
+            onClose={() => setEditingBookId(null)}
+            book={editing}
+          />
+        ) : null;
+      })()}
     </form>
   );
 }
