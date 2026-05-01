@@ -750,9 +750,23 @@ function buildConversationContext(
   for (const m of matchedEntries) {
     wiByPosition[m.entry.position].push(m);
   }
+  // Persona-linked book ids — entries from these books describe the USER, not
+  // the bot. Without a label the model often absorbs them as bot identity
+  // (e.g. "the bot now thinks it IS the persona"). Prefixing each persona
+  // entry with a user-context tag keeps the source semantically scoped.
+  const personaBookIdSet = new Set(personaBookIds);
+  const wrapWiContent = (m: MatchedEntry): string => {
+    const content = sub(m.entry.content);
+    if (!content.trim()) return '';
+    if (personaBookIdSet.has(m.bookId)) {
+      const subject = personaName || 'the user';
+      return `[Information about ${subject}, the user you're talking to]\n${content}`;
+    }
+    return content;
+  };
   const joinWi = (list: MatchedEntry[]): string =>
     list
-      .map((m) => sub(m.entry.content))
+      .map(wrapWiContent)
       .filter((c) => c.trim().length > 0)
       .join('\n\n');
 
