@@ -38,6 +38,15 @@ export function PersonaManager({ isOpen, onClose, initialPersona }: PersonaManag
     setIsCreating(false);
   };
 
+  // Reset internal form state whenever the manager modal is closed, so
+  // reopening it always lands on the persona list — not stale form contents
+  // from a previous edit session that the user dismissed via the X button.
+  const handleManagerClose = () => {
+    setEditingPersona(null);
+    setIsCreating(false);
+    onClose();
+  };
+
   const handleDelete = (persona: Persona) => {
     setConfirmDelete(persona);
   };
@@ -57,7 +66,7 @@ export function PersonaManager({ isOpen, onClose, initialPersona }: PersonaManag
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
+      <Modal isOpen={isOpen} onClose={handleManagerClose} title={title} size="lg">
         {isCreating ? (
           <PersonaForm
             persona={editingPersona}

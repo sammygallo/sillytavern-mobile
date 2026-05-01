@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, ChevronDown, Check, Plus, Settings } from 'lucide-react';
+import { User, ChevronDown, Check, Plus, Settings, X } from 'lucide-react';
 import { usePersonaStore } from '../../stores/personaStore';
 import { PersonaManager } from './PersonaManager';
 
@@ -33,7 +33,7 @@ export function PersonaSelector({ className = '' }: PersonaSelectorProps) {
     setShowManager(true);
   };
 
-  const handleSelect = (id: string) => {
+  const handleSelect = (id: string | null) => {
     setActivePersona(id);
     setIsOpen(false);
   };
@@ -118,6 +118,15 @@ export function PersonaSelector({ className = '' }: PersonaSelectorProps) {
             )}
 
             <div className="border-t border-[var(--color-border)]">
+              {activePersonaId && (
+                <button
+                  onClick={() => handleSelect(null)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] border-b border-[var(--color-border)]"
+                >
+                  <X size={14} />
+                  Clear active persona
+                </button>
+              )}
               <button
                 onClick={handleManage}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
