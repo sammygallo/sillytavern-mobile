@@ -205,6 +205,16 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
       {segments.map((segment, index) => {
         const isLast = index === segments.length - 1;
 
+        // Skip dialogue segments that are only whitespace (typically the
+        // "\n\n" gap between two adjacent italic RP segments). Without this
+        // they render as an empty block <div><p></p></div> that adds a
+        // visible blank line between the two italics. RP-marker segments
+        // always render so we never accidentally drop user-meaningful
+        // content.
+        if (segment.type === 'dialogue' && !segment.content.trim()) {
+          return null;
+        }
+
         if (segment.type === 'action') {
           return (
             <span
