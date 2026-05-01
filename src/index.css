@@ -72,6 +72,12 @@ body {
 .markdown-content .md-segment p + p {
   margin-top: 0.5em;
 }
+/* Inter-paragraph spacing for the per-paragraph wrappers emitted by
+   MarkdownContent. Each visual paragraph is its own .md-paragraph div so
+   inline italics stay anchored to the right paragraph. */
+.markdown-content .md-paragraph + .md-paragraph {
+  margin-top: 0.5em;
+}
 
 /* --- Headers ------------------------------------------------------ */
 .markdown-content .md-segment h1,
