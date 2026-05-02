@@ -216,7 +216,15 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
     () => (standardize ? normalizeForDisplay(content) : content),
     [content, standardize]
   );
-  const paragraphs = useMemo(() => splitParagraphs(prepared), [prepared]);
+  const paragraphs = useMemo(() => {
+    const split = splitParagraphs(prepared);
+    // Wrap "…" dialogue per paragraph BEFORE the RP parser splits at italic
+    // markers. Otherwise an italic inside a quote (e.g. "Hello *world*.")
+    // splits the quote across segments — the orphaned closing " can pair
+    // with a later opening " from another quote, wrapping the plain text
+    // between them instead of the actual quotation.
+    return standardize ? split.map(wrapDialogue) : split;
+  }, [prepared, standardize]);
 
   /** Copy-button click handler — uses event delegation. */
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -241,8 +249,7 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
         // *italic* markers don't compose well, and the RP regex can grab
         // list-bullet asterisks unintentionally.
         if (paraIsBlockMarkdown) {
-          const dialogueContent = standardize ? wrapDialogue(paragraph) : paragraph;
-          const { html } = renderMarkdown(dialogueContent, isStreaming && isLastPara);
+          const { html } = renderMarkdown(paragraph, isStreaming && isLastPara);
           const cursorHtml = isStreaming && isLastPara
             ? html + '<span class="streaming-cursor"></span>'
             : html;
@@ -293,8 +300,10 @@ export function MarkdownContent({ content, isUser, isStreaming }: MarkdownConten
 
               // Dialogue inside an inline paragraph — render via parseInline
               // (no block-level parsing since we already filtered those out).
-              const dialogueContent = standardize ? wrapDialogue(segment.content) : segment.content;
-              const { html } = renderMarkdown(dialogueContent, isStreaming && isLastSeg);
+              // wrapDialogue already ran at the paragraph level, so this
+              // segment's content may contain partial <span class="dialogue">
+              // markup that the browser will auto-balance.
+              const { html } = renderMarkdown(segment.content, isStreaming && isLastSeg);
               const cursorHtml = isStreaming && isLastSeg
                 ? html + '<span class="streaming-cursor"></span>'
                 : html;

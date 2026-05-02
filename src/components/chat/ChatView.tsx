@@ -22,6 +22,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { ImageGenModal } from './ImageGenModal';
 import { QuickReplyBar } from './QuickReplyBar';
 import { useExtensionStore } from '../../stores/extensionStore';
+import { useExpressionsStore } from '../../stores/expressionsStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrientation } from '../../hooks/useOrientation';
 import { useKeyboardHeight } from '../../hooks/useKeyboardHeight';
@@ -218,6 +219,7 @@ export function ChatView() {
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar, activeCostume);
+  const noExpressionFallback = useExpressionsStore((s) => s.noFallback);
 
   const latestEmotion = useMemo(() => {
     const characterMessages = messages.filter((m) => !m.isUser && !m.isSystem);
@@ -236,6 +238,30 @@ export function ChatView() {
     const mapped = mapEmotionToAvailable(latestEmotion, availableEmotions);
     return !!getSpritePath(mapped || latestEmotion);
   }, [selectedCharacter, latestEmotion, failedExpressions, availableEmotions, getSpritePath]);
+
+  // When the "no fallback" toggle is on and a sprite is missing, walk back
+  // through the chat to find the most recent emotion whose sprite still
+  // resolves — so the previous expression sticks instead of snapping to the
+  // default avatar. Returns the resolved sprite URL, or null if none found.
+  const findPreviousValidSpritePath = useCallback(
+    (avatar: string): string | null => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.isUser || m.isSystem || !m.emotion) continue;
+        const msgAvatar = isGroupChatMode && m.characterAvatar
+          ? m.characterAvatar
+          : selectedCharacter?.avatar;
+        if (msgAvatar !== avatar) continue;
+        const key = `${avatar}-${m.emotion}`;
+        if (failedExpressions.has(key)) continue;
+        const mapped = mapEmotionToAvailable(m.emotion, availableEmotions);
+        const path = getSpritePath(mapped || m.emotion);
+        if (path) return path;
+      }
+      return null;
+    },
+    [messages, failedExpressions, availableEmotions, getSpritePath, isGroupChatMode, selectedCharacter?.avatar]
+  );
 
   const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
   const livePortraitClips = useLivePortraitStore((s) =>
@@ -395,24 +421,29 @@ export function ChatView() {
           if (spritePath) return spritePath;
         }
       }
+      if (noExpressionFallback) {
+        const prev = findPreviousValidSpritePath(avatar);
+        if (prev) return prev;
+      }
       return getExpressionThumbnailUrl(avatar, null);
     },
-    [getSpritePath, failedExpressions, availableEmotions]
+    [getSpritePath, failedExpressions, availableEmotions, noExpressionFallback, findPreviousValidSpritePath]
   );
 
   const getFullImageUrl = useCallback(
     (avatar: string, emotion?: Emotion | null) => {
       const expressionKey = `${avatar}-${emotion}`;
-      if (emotion && failedExpressions.has(expressionKey)) {
-        return getDefaultAvatarUrl(avatar);
-      }
-      if (emotion) {
+      if (emotion && !failedExpressions.has(expressionKey)) {
         const spritePath = getSpritePath(emotion);
         if (spritePath) return spritePath;
       }
+      if (noExpressionFallback) {
+        const prev = findPreviousValidSpritePath(avatar);
+        if (prev) return prev;
+      }
       return getDefaultAvatarUrl(avatar);
     },
-    [getSpritePath, failedExpressions]
+    [getSpritePath, failedExpressions, noExpressionFallback, findPreviousValidSpritePath]
   );
 
   // Phase 9.1: focus the search input when the bar opens
