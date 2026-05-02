@@ -225,6 +225,18 @@ export function ChatView() {
     return characterMessages[characterMessages.length - 1].emotion ?? null;
   }, [messages]);
 
+  // Whether a real expression sprite (typically a transparent PNG) resolves
+  // for the current latest emotion. Used to decide if it's safe to render
+  // the full-screen VN sprite layer over a chat background — falling back
+  // to the opaque default avatar would otherwise obscure the background.
+  const hasRealSpriteForLatest = useMemo(() => {
+    if (!selectedCharacter || !latestEmotion) return false;
+    const key = `${selectedCharacter.avatar}-${latestEmotion}`;
+    if (failedExpressions.has(key)) return false;
+    const mapped = mapEmotionToAvailable(latestEmotion, availableEmotions);
+    return !!getSpritePath(mapped || latestEmotion);
+  }, [selectedCharacter, latestEmotion, failedExpressions, availableEmotions, getSpritePath]);
+
   const livePortraitEnabled = useLivePortraitStore((s) => s.enabled);
   const livePortraitClips = useLivePortraitStore((s) =>
     selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
@@ -863,8 +875,13 @@ export function ChatView() {
         />
       )}
 
-      {/* Phase 6.4: VN sprite layer — single character (z-1) */}
-      {isVnMode && !isGroupChatMode && selectedCharacter && (
+      {/* Phase 6.4: VN sprite layer — single character (z-1).
+          Skip when a background image is set AND no real sprite resolves
+          for the current emotion — otherwise the opaque default-avatar
+          fallback would full-screen-cover the background image. Real
+          (transparent-PNG) expression sprites render normally and let the
+          background show through. */}
+      {isVnMode && !isGroupChatMode && selectedCharacter && (!vnBg || hasLivePortrait || hasRealSpriteForLatest) && (
         hasLivePortrait ? (
           <div
             className="absolute inset-0 pointer-events-none"
