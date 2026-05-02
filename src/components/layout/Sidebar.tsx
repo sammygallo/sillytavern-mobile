@@ -365,7 +365,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
 
               {/* Filter controls */}
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 <button
                   onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
                   className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
@@ -395,17 +395,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     </span>
                   )}
                 </button>
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value as never)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-[var(--color-text-secondary)] bg-transparent hover:bg-[var(--color-bg-tertiary)] cursor-pointer appearance-none focus:outline-none"
-                  title="Sort mode"
-                >
-                  <option value="name">Name</option>
-                  <option value="date_added">Recently added</option>
-                  <option value="date_last_chat">Recent chat</option>
-                </select>
-                <ArrowUpDown size={12} className="text-[var(--color-text-secondary)] -ml-1" />
+                <span className="flex items-center">
+                  <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as never)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-[var(--color-text-secondary)] bg-transparent hover:bg-[var(--color-bg-tertiary)] cursor-pointer appearance-none focus:outline-none"
+                    title="Sort mode"
+                  >
+                    <option value="name">Name</option>
+                    <option value="date_added">Recently added</option>
+                    <option value="date_last_chat">Recent chat</option>
+                  </select>
+                  <ArrowUpDown size={12} className="text-[var(--color-text-secondary)] -ml-1" />
+                </span>
                 {activeFilterCount > 0 && (
                   <button
                     onClick={() => {
