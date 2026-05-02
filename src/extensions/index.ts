@@ -5,6 +5,7 @@ import './builtins/imageGen';
 import './builtins/translate';
 import './builtins/summarize';
 import './builtins/autoMemory';
+import './builtins/expressions';
 
 // Re-export for external consumption.
 export { extensionRegistry } from './registry';

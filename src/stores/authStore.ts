@@ -10,6 +10,7 @@ import { useSummarizeStore } from './summarizeStore';
 import { useAutoMemoryStore } from './autoMemoryStore';
 import { useTranslateStore } from './translateStore';
 import { useQuickReplyStore } from './quickReplyStore';
+import { useExpressionsStore } from './expressionsStore';
 import type { UserRole, Permission } from '../types';
 
 interface CurrentUser {
@@ -60,6 +61,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         useAutoMemoryStore.getState().initForUser(user.handle);
         useTranslateStore.getState().initForUser(user.handle);
         useQuickReplyStore.getState().initForUser(user.handle);
+        useExpressionsStore.getState().initForUser(user.handle);
         set({
           isAuthenticated: true,
           currentUser: {
@@ -111,6 +113,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useAutoMemoryStore.getState().initForUser(loginResult.handle);
       useTranslateStore.getState().initForUser(loginResult.handle);
       useQuickReplyStore.getState().initForUser(loginResult.handle);
+      useExpressionsStore.getState().initForUser(loginResult.handle);
       set({
         isAuthenticated: true,
         currentUser: { handle: loginResult.handle, name, role: 'end_user' },
@@ -139,6 +142,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useAutoMemoryStore.getState().initForUser(h);
       useTranslateStore.getState().initForUser(h);
       useQuickReplyStore.getState().initForUser(h);
+      useExpressionsStore.getState().initForUser(h);
       set({
         isAuthenticated: true,
         currentUser: user
@@ -208,6 +212,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       useAutoMemoryStore.getState().resetUser();
       useTranslateStore.getState().resetUser();
       useQuickReplyStore.getState().resetUser();
+      useExpressionsStore.getState().resetUser();
 
       // Clear persisted localStorage data
       localStorage.removeItem('sillytavern_group_chats');
