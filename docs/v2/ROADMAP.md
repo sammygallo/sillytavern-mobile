@@ -2,7 +2,7 @@
 
 > **Status:** Idea-shaping. No code yet. This doc is the living capture of decisions, open questions, and the idea backlog so we don't re-decide the same things.
 >
-> **Last updated:** 2026-05-02 (added: intake bot conversational refinement)
+> **Last updated:** 2026-05-02 (added: pgvector decision, Rive motion tier, Film Creation, deepfake risk)
 
 ## One-liner
 
@@ -203,7 +203,6 @@ Capture freely. Promotion to Phase X requires a real argument.
 - **Plugin runtime in mobile app** for ST-compat extensions — maybe just a WebView shim.
 - **"Bring your own key" tier** for power users on a free plan; managed-key tier as paid default.
 - **End-to-end encrypted human↔human DMs** as a paid feature differentiator.
-- **Conversational feature-request refinement (intake bot evolution)** — extend `ggbc-intake-bot` so that on a new feature request, an agent opens a reply thread and asks clarifying questions (problem, acceptance criteria, edge cases, who benefits) until the request is well-scoped, *then* files the GH issue with the synthesized scope. Better issue quality → better `/build-next-issue` runs → less rework. Lives in the intake bot repo, not the app, but tracked here because it's part of the GGBC product line.
 
 ---
 
