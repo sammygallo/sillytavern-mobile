@@ -28,6 +28,8 @@ import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { getDefaultAvatarUrl, type Emotion } from '../../utils/emotions';
 import { LivePortraitVideo } from '../chat/LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { MotionModePicker } from '../character/MotionModePicker';
+import { useMotionModeStore, resolveMotionMode } from '../../stores/motionModeStore';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -78,7 +80,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     selectedTags.size + (showFavoritesOnly ? 1 : 0) + (searchQuery.trim() ? 1 : 0);
 
   // Fetch actual sprite paths from API (hook extracts character name from avatar filename)
-  const { getSpritePath } = useCharacterSprites(selectedCharacter?.avatar);
+  const { getSpritePath, availableEmotions } = useCharacterSprites(selectedCharacter?.avatar);
 
   // Get the latest character message's emotion for the portrait
   const latestEmotion = useMemo(() => {
@@ -91,7 +93,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const livePortraitClips = useLivePortraitStore((s) =>
     selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
   );
-  const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+  const hasLivePortraitClips =
+    livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+  const hasExpressionSprites = availableEmotions.length > 0;
+  const motionMode = useMotionModeStore((s) =>
+    selectedCharacter ? s.modesByAvatar[selectedCharacter.avatar] ?? 'auto' : 'auto',
+  );
+  const resolvedMotionMode = resolveMotionMode(
+    motionMode,
+    hasLivePortraitClips,
+    hasExpressionSprites,
+  );
+  const hasLivePortrait = resolvedMotionMode === 'liveportrait';
+  const portraitEmotion = resolvedMotionMode === 'expressions' ? latestEmotion : null;
 
   useEffect(() => {
     fetchCharacters();
@@ -241,8 +255,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   />
                 ) : (
                   <img
-                    key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-                    src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                    key={`${selectedCharacter.avatar}-${portraitEmotion ?? 'neutral'}`}
+                    src={getFullImageUrl(selectedCharacter.avatar, portraitEmotion)}
                     alt={selectedCharacter.name}
                     className="w-full h-full object-cover transition-opacity duration-300"
                     onLoad={(e) => {
@@ -259,8 +273,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 )}
               </div>
 
+              {/* Motion mode picker */}
+              <div className="mt-3 w-full px-2">
+                <MotionModePicker
+                  avatar={selectedCharacter.avatar}
+                  hasLivePortraitClips={hasLivePortraitClips}
+                  hasExpressionSprites={hasExpressionSprites}
+                />
+              </div>
+
               {/* Character Info */}
-              <div className="mt-4 text-center w-full px-2">
+              <div className="mt-3 text-center w-full px-2">
                 <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
                   {selectedCharacter.name}
                 </h3>

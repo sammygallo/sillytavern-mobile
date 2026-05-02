@@ -31,6 +31,8 @@ import { useAutoMemoryStore } from '../../stores/autoMemoryStore';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { LivePortraitVideo } from './LivePortraitVideo';
 import { useLivePortraitStore } from '../../stores/livePortraitStore';
+import { useMotionModeStore, resolveMotionMode } from '../../stores/motionModeStore';
+import { MotionModePicker } from '../character/MotionModePicker';
 import { useGenerationStore } from '../../stores/generationStore';
 import { usePromptTemplateStore } from '../../stores/promptTemplateStore';
 import { usePortraitPositionStore } from '../../stores/portraitPositionStore';
@@ -267,7 +269,20 @@ export function ChatView() {
   const livePortraitClips = useLivePortraitStore((s) =>
     selectedCharacter ? s.getClips(selectedCharacter.avatar) : null,
   );
-  const hasLivePortrait = livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+  const hasLivePortraitClips =
+    livePortraitEnabled && !!livePortraitClips && 'idle' in livePortraitClips;
+  const hasExpressionSprites = availableEmotions.length > 0;
+  const motionMode = useMotionModeStore((s) =>
+    selectedCharacter ? s.modesByAvatar[selectedCharacter.avatar] ?? 'auto' : 'auto',
+  );
+  const resolvedMotionMode = resolveMotionMode(
+    motionMode,
+    hasLivePortraitClips,
+    hasExpressionSprites,
+  );
+  const hasLivePortrait = resolvedMotionMode === 'liveportrait';
+  const expressionsActive = resolvedMotionMode === 'expressions';
+  const portraitEmotion = expressionsActive ? latestEmotion : null;
 
   // Auto-discover server-side clips when a character is selected so users
   // see Live Portrait on any device — not just the one that ran generation.
@@ -912,7 +927,7 @@ export function ChatView() {
           fallback would full-screen-cover the background image. Real
           (transparent-PNG) expression sprites render normally and let the
           background show through. */}
-      {isVnMode && !isGroupChatMode && selectedCharacter && (!vnBg || hasLivePortrait || hasRealSpriteForLatest) && (
+      {isVnMode && !isGroupChatMode && selectedCharacter && (resolvedMotionMode !== 'none') && (!vnBg || hasLivePortrait || (expressionsActive && hasRealSpriteForLatest)) && (
         hasLivePortrait ? (
           <div
             className="absolute inset-0 pointer-events-none"
@@ -927,8 +942,8 @@ export function ChatView() {
           </div>
         ) : (
           <img
-            key={`vn-sprite-${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-            src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+            key={`vn-sprite-${selectedCharacter.avatar}-${portraitEmotion ?? 'neutral'}`}
+            src={getFullImageUrl(selectedCharacter.avatar, portraitEmotion)}
             alt=""
             aria-hidden
             className="absolute inset-0 w-full h-full object-contain object-bottom pointer-events-none"
@@ -1122,8 +1137,8 @@ export function ChatView() {
                   />
                 ) : (
                   <img
-                    key={`${selectedCharacter.avatar}-${latestEmotion ?? 'neutral'}`}
-                    src={getFullImageUrl(selectedCharacter.avatar, latestEmotion)}
+                    key={`${selectedCharacter.avatar}-${portraitEmotion ?? 'neutral'}`}
+                    src={getFullImageUrl(selectedCharacter.avatar, portraitEmotion)}
                     alt={selectedCharacter.name}
                     draggable={false}
                     className="w-full h-full object-cover transition-opacity duration-300 select-none pointer-events-none"
@@ -1136,26 +1151,34 @@ export function ChatView() {
                     }}
                   />
                 )}
-                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
-                <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
-                    {selectedCharacter.name}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    {latestEmotion && (
-                      <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
-                        {latestEmotion}
-                      </span>
-                    )}
-                    <button
-                      onClick={openSearch}
-                      className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
-                      aria-label="Search messages"
-                      title="Search messages"
-                    >
-                      <Search size={15} />
-                    </button>
+                <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[var(--color-bg-primary)] to-transparent" />
+                <div className="absolute bottom-2 left-4 right-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] drop-shadow-lg">
+                      {selectedCharacter.name}
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      {latestEmotion && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-black/30 text-white/80 backdrop-blur-sm capitalize">
+                          {latestEmotion}
+                        </span>
+                      )}
+                      <button
+                        onClick={openSearch}
+                        className="p-1.5 rounded-full bg-black/30 text-white/80 backdrop-blur-sm hover:bg-black/50 transition-colors"
+                        aria-label="Search messages"
+                        title="Search messages"
+                      >
+                        <Search size={15} />
+                      </button>
+                    </div>
                   </div>
+                  <MotionModePicker
+                    avatar={selectedCharacter.avatar}
+                    hasLivePortraitClips={hasLivePortraitClips}
+                    hasExpressionSprites={hasExpressionSprites}
+                    variant="overlay"
+                  />
                 </div>
               </div>
               <div
@@ -1444,10 +1467,12 @@ export function ChatView() {
               const charAvatar = isGroupChatMode && message.characterAvatar
                 ? message.characterAvatar
                 : selectedCharacter?.avatar;
+              const useEmotionForThisMsg =
+                charAvatar === selectedCharacter?.avatar ? expressionsActive : true;
               const messageAvatar = message.isUser
                 ? undefined
                 : charAvatar
-                  ? getAvatarUrl(charAvatar, message.emotion)
+                  ? getAvatarUrl(charAvatar, useEmotionForThisMsg ? message.emotion : null)
                   : undefined;
               // Fallback: default avatar thumbnail (no expression) when sprite 404s
               const fallbackAvatar = !message.isUser && charAvatar
