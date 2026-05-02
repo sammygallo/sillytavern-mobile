@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { Modal, Button, Input, TextArea, ImageUpload, ExpressionUpload, TagInput } from '../ui';
 import { AlternateGreetingsEditor } from './AlternateGreetingsEditor';
+import { AIHelperButton } from './AIHelperButton';
 import { spritesApi } from '../../api/client';
 
 interface CharacterCreationProps {
@@ -63,6 +64,19 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    if (error) clearError();
+  };
+
+  const aiFieldsSnapshot = {
+    name: formData.name,
+    description: formData.description,
+    personality: formData.personality,
+    firstMessage: formData.firstMessage,
+    scenario: formData.scenario,
+    exampleMessages: formData.exampleMessages,
+  };
+  const setAIResult = (field: keyof typeof aiFieldsSnapshot) => (value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
     if (error) clearError();
   };
 
@@ -175,6 +189,13 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         {/* Description */}
         <TextArea
           label="Description"
+          labelExtra={
+            <AIHelperButton
+              field="description"
+              fields={aiFieldsSnapshot}
+              onResult={setAIResult('description')}
+            />
+          }
           placeholder="Describe the character's appearance, background, and other details..."
           value={formData.description}
           onChange={handleChange('description')}
@@ -184,6 +205,13 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         {/* Personality */}
         <TextArea
           label="Personality"
+          labelExtra={
+            <AIHelperButton
+              field="personality"
+              fields={aiFieldsSnapshot}
+              onResult={setAIResult('personality')}
+            />
+          }
           placeholder="Character's personality traits, mannerisms, speech patterns..."
           value={formData.personality}
           onChange={handleChange('personality')}
@@ -193,6 +221,13 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         {/* First Message */}
         <TextArea
           label="First Message"
+          labelExtra={
+            <AIHelperButton
+              field="firstMessage"
+              fields={aiFieldsSnapshot}
+              onResult={setAIResult('firstMessage')}
+            />
+          }
           placeholder="The character's opening message when starting a new chat..."
           value={formData.firstMessage}
           onChange={handleChange('firstMessage')}
@@ -208,6 +243,13 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
         {/* Scenario */}
         <TextArea
           label="Scenario"
+          labelExtra={
+            <AIHelperButton
+              field="scenario"
+              fields={aiFieldsSnapshot}
+              onResult={setAIResult('scenario')}
+            />
+          }
           placeholder="The setting or context for conversations..."
           value={formData.scenario}
           onChange={handleChange('scenario')}
@@ -227,6 +269,13 @@ export function CharacterCreation({ isOpen, onClose, onCreated, initialData }: C
             {/* Example Messages */}
             <TextArea
               label="Example Messages"
+              labelExtra={
+                <AIHelperButton
+                  field="exampleMessages"
+                  fields={aiFieldsSnapshot}
+                  onResult={setAIResult('exampleMessages')}
+                />
+              }
               placeholder="Example dialogue to help the AI understand the character's voice..."
               value={formData.exampleMessages}
               onChange={handleChange('exampleMessages')}
