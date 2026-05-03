@@ -62,8 +62,8 @@ export function PersonaSelector({ className = '' }: PersonaSelectorProps) {
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 top-full mt-1 min-w-[240px] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden z-50">
-            <div className="px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
+          <div className="fixed right-2 top-[3.75rem] w-[calc(100vw-1rem)] max-h-[calc(100vh-4.5rem)] sm:absolute sm:right-0 sm:top-full sm:mt-1 sm:w-auto sm:min-w-[240px] sm:max-w-[calc(100vw-1rem)] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden z-50 flex flex-col">
+            <div className="px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] border-b border-[var(--color-border)] flex-shrink-0">
               Persona
             </div>
             {personas.length === 0 ? (
@@ -79,7 +79,7 @@ export function PersonaSelector({ className = '' }: PersonaSelectorProps) {
                 </button>
               </div>
             ) : (
-              <ul className="max-h-[300px] overflow-y-auto">
+              <ul className="flex-1 min-h-0 max-h-[300px] overflow-y-auto">
                 {personas.map((persona) => {
                   const isActive = persona.id === activePersonaId;
                   return (
@@ -117,7 +117,7 @@ export function PersonaSelector({ className = '' }: PersonaSelectorProps) {
               </ul>
             )}
 
-            <div className="border-t border-[var(--color-border)]">
+            <div className="border-t border-[var(--color-border)] flex-shrink-0">
               {activePersonaId && (
                 <button
                   onClick={() => handleSelect(null)}
