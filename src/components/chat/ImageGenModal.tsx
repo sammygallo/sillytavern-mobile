@@ -8,8 +8,13 @@ import type { ImageGenBackend } from '../../api/imageGenApi';
 interface ImageGenModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Called with the generated image data URL once the user confirms insertion. */
-  onInsert: (dataUrl: string, prompt: string) => void;
+  /**
+   * Called with the generated image data URL once the user confirms
+   * insertion. When omitted (e.g. opened from the Gallery for a remix
+   * generation) the "Insert into chat" button is hidden — the image is
+   * still auto-saved to the gallery on generate.
+   */
+  onInsert?: (dataUrl: string, prompt: string) => void;
   /** Optional prompt pre-fill (e.g. character name). */
   initialPrompt?: string;
   /** Current chat messages — used for context-aware prompt generation. */
@@ -130,7 +135,7 @@ export function ImageGenModal({
   };
 
   const handleInsert = () => {
-    if (!result) return;
+    if (!result || !onInsert) return;
     onInsert(result, prompt.trim());
     setResult(null);
     onClose();
@@ -566,14 +571,25 @@ export function ImageGenModal({
                 <RefreshCw size={15} />
                 Retry
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="flex-1"
-                onClick={handleInsert}
-              >
-                Insert into chat
-              </Button>
+              {onInsert ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleInsert}
+                >
+                  Insert into chat
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => { setResult(null); onClose(); }}
+                >
+                  Done
+                </Button>
+              )}
             </>
           ) : (
             <Button
