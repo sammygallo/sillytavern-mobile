@@ -2,7 +2,7 @@
 
 ## Current State Summary
 
-**sillytavern-mobile** is a React/Vite/Zustand web app with:
+**goodgirlsbotclub** is a React/Vite/Zustand web app with:
 - Basic auth (login/register, multi-user)
 - Character CRUD + import/export (PNG Card V2, JSON)
 - Single & group chat with streaming (SSE)

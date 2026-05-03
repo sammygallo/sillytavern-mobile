@@ -5,7 +5,7 @@ services:
     # on its single vCPU. If you need a local image for dev, uncomment `build: .`
     # below — docker compose will prefer a registry pull unless you run
     # `docker compose build` explicitly.
-    image: ghcr.io/sammygallo/sillytavern-mobile:latest
+    image: ghcr.io/sammygallo/goodgirlsbotclub:latest
     # build: .
     ports:
       - "${PORT:-80}:80"
