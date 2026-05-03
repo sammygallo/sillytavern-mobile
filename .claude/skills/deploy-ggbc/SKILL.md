@@ -1,6 +1,6 @@
 ---
 name: deploy-ggbc
-description: "Push, merge, and deploy Good Girls Bot Club (sillytavern-mobile) to the production droplet. Use this skill whenever the user says /deploy-ggbc, asks to 'deploy ggbc', 'push and deploy', 'update the droplet', 'ship it', or wants to merge branches and update the live server. Also trigger when the user finishes a GGBC feature and wants to get it running on the server."
+description: "Push, merge, and deploy Good Girls Bot Club (goodgirlsbotclub) to the production droplet. Use this skill whenever the user says /deploy-ggbc, asks to 'deploy ggbc', 'push and deploy', 'update the droplet', 'ship it', or wants to merge branches and update the live server. Also trigger when the user finishes a GGBC feature and wants to get it running on the server."
 ---
 
 # Deploy Good Girls Bot Club to Production
@@ -13,7 +13,7 @@ Both the frontend and backend images are built in GitHub Actions and pulled from
 
 | Repo | Local path | Remote | Merge target | Image tag | CI workflow |
 |------|-----------|--------|-------------|-----------|-------------|
-| sillytavern-mobile (frontend) | `/Users/sammy/Documents/GitHub/sillytavern-mobile` | `sammygallo/sillytavern-mobile` | `main` | `ghcr.io/sammygallo/sillytavern-mobile:latest` | `.github/workflows/docker-publish.yml` |
+| goodgirlsbotclub (frontend) | `/Users/sammy/Documents/GitHub/goodgirlsbotclub` | `sammygallo/goodgirlsbotclub` | `main` | `ghcr.io/sammygallo/goodgirlsbotclub:latest` | `.github/workflows/docker-publish.yml` |
 | SillyTavern (backend) | `/Users/sammy/Documents/GitHub/SillyTavern` | `sammygallo/SillyTavern` | `feat/role-based-permissions` | `ghcr.io/sammygallo/sillytavern:feat-role-based-permissions` | `.github/workflows/docker-publish.yml` |
 | ggbc-intake-bot | `/Users/sammy/Documents/GitHub/ggbc-intake-bot` | `sammygallo/ggbc-intake-bot` | `main` | _(no image — builds on droplet)_ | _(none — no CI)_ |
 
@@ -21,7 +21,7 @@ Both the frontend and backend images are built in GitHub Actions and pulled from
 
 - **Host:** `159.89.180.146` (DigitalOcean `s-1vcpu-1gb`, 2 GB swap)
 - **User:** `root`
-- **App dir (web):** `/opt/sillytavern-mobile`
+- **App dir (web):** `/opt/goodgirlsbotclub`
 - **App dir (intake bot):** `/opt/ggbc-intake-bot` — runs under pm2, NOT docker
 - **Connect:** `ssh root@159.89.180.146`
 - **Public URL:** fronted by a reverse proxy; the frontend container binds to `127.0.0.1:8080` internally
@@ -32,9 +32,9 @@ These are non-obvious things about the production environment that will bite you
 
 ### 1. Droplet has a `docker-compose.override.yml`
 
-At `/opt/sillytavern-mobile/docker-compose.override.yml` there's a host-specific override that pins the frontend port to `127.0.0.1:8080:80` (instead of the repo default `${PORT:-80}:80`). This file is **gitignored** and **must not be deleted or committed**. It's why the frontend isn't directly exposed to the internet — the reverse proxy in front of the droplet forwards to `127.0.0.1:8080`.
+At `/opt/goodgirlsbotclub/docker-compose.override.yml` there's a host-specific override that pins the frontend port to `127.0.0.1:8080:80` (instead of the repo default `${PORT:-80}:80`). This file is **gitignored** and **must not be deleted or committed**. It's why the frontend isn't directly exposed to the internet — the reverse proxy in front of the droplet forwards to `127.0.0.1:8080`.
 
-If you see unexpected port behavior, `ssh root@159.89.180.146 "cat /opt/sillytavern-mobile/docker-compose.override.yml"` to check it. If it's missing, recreate it with:
+If you see unexpected port behavior, `ssh root@159.89.180.146 "cat /opt/goodgirlsbotclub/docker-compose.override.yml"` to check it. If it's missing, recreate it with:
 
 ```yaml
 services:
@@ -48,9 +48,9 @@ The `!override` tag is critical — without it, compose *merges* the ports lists
 ### 2. `seed-owner` is a one-shot init container — it's NOT always running
 
 There are THREE containers, not two:
-- `sillytavern-mobile-frontend-1` — always running (nginx + Vite build)
-- `sillytavern-mobile-sillytavern-1` — always running (ST backend)
-- `sillytavern-mobile-seed-owner-1` — **runs once at startup to seed the owner user, then exits**
+- `goodgirlsbotclub-frontend-1` — always running (nginx + Vite build)
+- `goodgirlsbotclub-sillytavern-1` — always running (ST backend)
+- `goodgirlsbotclub-seed-owner-1` — **runs once at startup to seed the owner user, then exits**
 
 A successful `docker ps` check will show only the first two as currently "Up" after some time — that is correct. The seed-owner has `restart: "no"` so it doesn't come back. Don't report it as "missing" — check `docker ps -a` if you need to verify it ran at all.
 
@@ -81,7 +81,7 @@ If invoked with no args and nothing to deploy anywhere, interpret it as "sync th
 Before ANY branch inspection, merge, or PR operation, fetch both repos. Stale `origin/main` state has caused failed deploys in the past.
 
 ```bash
-cd /Users/sammy/Documents/GitHub/sillytavern-mobile && git fetch origin
+cd /Users/sammy/Documents/GitHub/goodgirlsbotclub && git fetch origin
 cd /Users/sammy/Documents/GitHub/SillyTavern && git fetch origin
 cd /Users/sammy/Documents/GitHub/ggbc-intake-bot && git fetch origin
 ```
@@ -92,7 +92,7 @@ If branch args were provided, use them. Otherwise, detect:
 
 ```bash
 # Frontend: check for commits ahead of main on the current branch
-cd /Users/sammy/Documents/GitHub/sillytavern-mobile
+cd /Users/sammy/Documents/GitHub/goodgirlsbotclub
 git log --oneline origin/main..HEAD  # if on a feature branch
 
 # Backend: check for commits ahead of feat/role-based-permissions
@@ -111,7 +111,7 @@ Confirm with the user what you're about to merge before proceeding. If a repo ha
 **Do NOT rely on `tsc --noEmit` alone.** The Dockerfile runs `npm run build` → `tsc -b && vite build`, which uses `tsconfig.app.json` with stricter project-reference settings than the root `tsconfig.json`. Errors like zustand hook overloads resolving to `unknown`, or narrowed-union comparisons, will pass `tsc --noEmit` but fail `tsc -b`. Always run the **same thing CI will run** locally first:
 
 ```bash
-cd /Users/sammy/Documents/GitHub/sillytavern-mobile
+cd /Users/sammy/Documents/GitHub/goodgirlsbotclub
 npm run build  # runs tsc -b && vite build — matches the Dockerfile
 ```
 
@@ -125,7 +125,7 @@ For any branch that has an open PR, just merge it:
 
 ```bash
 # Frontend
-gh pr merge <pr-number> --repo sammygallo/sillytavern-mobile --merge --admin
+gh pr merge <pr-number> --repo sammygallo/goodgirlsbotclub --merge --admin
 
 # Backend
 gh pr merge <pr-number> --repo sammygallo/SillyTavern --merge --admin
@@ -136,10 +136,10 @@ No local checkout required, no worktree hunting, and GitHub handles any fast-for
 If there's no PR yet, open one first:
 
 ```bash
-cd /Users/sammy/Documents/GitHub/sillytavern-mobile
+cd /Users/sammy/Documents/GitHub/goodgirlsbotclub
 git push origin <branch-name>
 gh pr create --base main --head <branch-name> --title "..." --body "..."
-gh pr merge <new-pr-number> --repo sammygallo/sillytavern-mobile --merge --admin
+gh pr merge <new-pr-number> --repo sammygallo/goodgirlsbotclub --merge --admin
 ```
 
 #### Fallback: local merge
@@ -147,7 +147,7 @@ gh pr merge <new-pr-number> --repo sammygallo/sillytavern-mobile --merge --admin
 Only use this if `gh pr merge` isn't available or the branch has no PR and you can't create one:
 
 ```bash
-cd /Users/sammy/Documents/GitHub/sillytavern-mobile
+cd /Users/sammy/Documents/GitHub/goodgirlsbotclub
 git push origin <branch-name>
 # Find where main is checked out (may be a worktree) — git branch -v
 git checkout main
@@ -163,8 +163,8 @@ Get the run ID and watch it in one flow:
 
 ```bash
 # Frontend
-FE_RUN=$(gh run list --repo sammygallo/sillytavern-mobile --workflow docker-publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run watch $FE_RUN --repo sammygallo/sillytavern-mobile --exit-status
+FE_RUN=$(gh run list --repo sammygallo/goodgirlsbotclub --workflow docker-publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch $FE_RUN --repo sammygallo/goodgirlsbotclub --exit-status
 
 # Backend
 BE_RUN=$(gh run list --repo sammygallo/SillyTavern --workflow docker-publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
@@ -183,13 +183,13 @@ If you pipe `gh run watch` through `tail`, `head`, or similar (which is tempting
 
 ```bash
 # Option A: ALWAYS follow the watch with an explicit conclusion check.
-gh run watch $FE_RUN --repo sammygallo/sillytavern-mobile --exit-status
-CONCLUSION=$(gh run view $FE_RUN --repo sammygallo/sillytavern-mobile --json conclusion --jq .conclusion)
+gh run watch $FE_RUN --repo sammygallo/goodgirlsbotclub --exit-status
+CONCLUSION=$(gh run view $FE_RUN --repo sammygallo/goodgirlsbotclub --json conclusion --jq .conclusion)
 echo "Conclusion: $CONCLUSION"  # Expect: success
 
 # Option B: enable pipefail if you must pipe.
 set -o pipefail
-gh run watch $FE_RUN --repo sammygallo/sillytavern-mobile --exit-status 2>&1 | tail -20
+gh run watch $FE_RUN --repo sammygallo/goodgirlsbotclub --exit-status 2>&1 | tail -20
 ```
 
 **Option A is the safer default** — do it every time, even when the background task says exit 0. **Incurred on 2026-04-15:** the first deploy reported "exit code 0" from a backgrounded watch + tail pipeline while CI had actually failed, only caught by reading the output.
@@ -202,7 +202,7 @@ gh run view <run-id> --repo <repo> --log-failed
 ### 4. Deploy to droplet
 
 ```bash
-ssh root@159.89.180.146 "cd /opt/sillytavern-mobile && git pull origin main && docker compose pull && docker compose up -d"
+ssh root@159.89.180.146 "cd /opt/goodgirlsbotclub && git pull origin main && docker compose pull && docker compose up -d"
 ```
 
 Pull-only deploy:
@@ -246,9 +246,9 @@ ssh root@159.89.180.146 "docker ps --format '{{.Names}}\t{{.Status}}'"
 ```
 
 Expected output after a successful deploy:
-- `sillytavern-mobile-frontend-1` — **Up** (running)
-- `sillytavern-mobile-sillytavern-1` — **Up** (running)
-- `sillytavern-mobile-seed-owner-1` — may or may not appear (it exits after seeding — see Environment gotcha #2)
+- `goodgirlsbotclub-frontend-1` — **Up** (running)
+- `goodgirlsbotclub-sillytavern-1` — **Up** (running)
+- `goodgirlsbotclub-seed-owner-1` — may or may not appear (it exits after seeding — see Environment gotcha #2)
 
 For a deeper check, smoke-test the proxy endpoint:
 ```bash
@@ -268,12 +268,12 @@ Expected:
 
 Skip this step if no web repos were deployed in this run (intake-only deploys have no user-facing feature ship).
 
-The droplet keeps `/opt/sillytavern-mobile/.last-deployed` as a marker. Walk the merge commits in the window since the previous deploy and DM the requester for each PR that closed an intake-linked issue.
+The droplet keeps `/opt/goodgirlsbotclub/.last-deployed` as a marker. Walk the merge commits in the window since the previous deploy and DM the requester for each PR that closed an intake-linked issue.
 
 ```bash
 # Read the previous deploy marker, compute merged PRs in the window, update the marker
 MERGED_PRS=$(ssh root@159.89.180.146 '
-  cd /opt/sillytavern-mobile
+  cd /opt/goodgirlsbotclub
   PREV=$(cat .last-deployed 2>/dev/null || echo "")
   CURR=$(git rev-parse HEAD)
   if [ -n "$PREV" ] && [ "$PREV" != "$CURR" ]; then
@@ -289,8 +289,8 @@ if [ -z "$MERGED_PRS" ]; then
   echo "no merged PRs in this deploy window (first run or no changes)"
 else
   for PR in $MERGED_PRS; do
-    PR_URL="https://github.com/sammygallo/sillytavern-mobile/pull/$PR"
-    ISSUES=$(gh pr view "$PR" --repo sammygallo/sillytavern-mobile \
+    PR_URL="https://github.com/sammygallo/goodgirlsbotclub/pull/$PR"
+    ISSUES=$(gh pr view "$PR" --repo sammygallo/goodgirlsbotclub \
       --json closingIssuesReferences \
       --jq '.closingIssuesReferences[].number' 2>/dev/null)
     for ISSUE in $ISSUES; do
@@ -329,8 +329,8 @@ Report the error and wait for the user to fix it.
    ```
 3. Open a NEW PR from the same branch to the same target. GitHub compares the feature branch to main, so the new PR contains only the fix commits (the previously merged ones are already on main and won't appear).
    ```bash
-   gh pr create --repo sammygallo/sillytavern-mobile --base main --head <feature-branch> --title "fix(...): ..." --body "Follow-up to #<prev-pr>"
-   gh pr merge <new-pr-number> --repo sammygallo/sillytavern-mobile --merge --admin
+   gh pr create --repo sammygallo/goodgirlsbotclub --base main --head <feature-branch> --title "fix(...): ..." --body "Follow-up to #<prev-pr>"
+   gh pr merge <new-pr-number> --repo sammygallo/goodgirlsbotclub --merge --admin
    ```
 4. Wait for CI again (step 3 of the main workflow), then deploy.
 
@@ -347,17 +347,17 @@ If the run is still in progress, wait for it. If it failed, see "CI failure" abo
 Someone has modified a tracked file on the droplet. Do NOT blow the changes away blindly. First inspect, then use stash:
 
 ```bash
-ssh root@159.89.180.146 "cd /opt/sillytavern-mobile && git status && git diff"
+ssh root@159.89.180.146 "cd /opt/goodgirlsbotclub && git status && git diff"
 # Inspect the diff, confirm with user if it's the override-file case or something new.
 # If safe to pop later:
-ssh root@159.89.180.146 "cd /opt/sillytavern-mobile && git stash push -m 'local' <files> && git pull origin main && git stash pop"
+ssh root@159.89.180.146 "cd /opt/goodgirlsbotclub && git stash push -m 'local' <files> && git pull origin main && git stash pop"
 ```
 
 If the diff is the `ports:` line (`127.0.0.1:8080:80`), the droplet's override file has gone missing or been deleted — recreate it (see Environment gotcha #1) instead of stashing.
 
 ### Container not starting
 ```bash
-ssh root@159.89.180.146 "cd /opt/sillytavern-mobile && docker compose logs --tail 50 <service-name>"
+ssh root@159.89.180.146 "cd /opt/goodgirlsbotclub && docker compose logs --tail 50 <service-name>"
 ```
 Services are `frontend`, `sillytavern`, `seed-owner`. Report the logs to the user.
 
