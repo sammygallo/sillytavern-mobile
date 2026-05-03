@@ -1470,7 +1470,7 @@ export function ChatView() {
               const useEmotionForThisMsg =
                 charAvatar === selectedCharacter?.avatar ? expressionsActive : true;
               const messageAvatar = message.isUser
-                ? undefined
+                ? displayPersona?.avatarDataUrl
                 : charAvatar
                   ? getAvatarUrl(charAvatar, useEmotionForThisMsg ? message.emotion : null)
                   : undefined;
