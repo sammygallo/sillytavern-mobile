@@ -411,6 +411,7 @@ interface ChatState {
   clearChat: () => void;
   refreshGroupChats: () => void;
   deleteGroupChat: (fileName: string) => void;
+  convertCurrentToGroup: (currentCharacter: CharacterInfo, additionalCharacters: CharacterInfo[]) => Promise<void>;
 
   // Phase 5.1: activation strategies + per-member mute
   setGroupActivationStrategy: (fileName: string, strategy: GroupActivationStrategy) => void;
@@ -1738,6 +1739,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const updated = groupChats.filter((g) => g.fileName !== fileName);
     saveGroupChatsToStorage(updated);
     set({ groupChats: updated });
+  },
+
+  convertCurrentToGroup: async (currentCharacter: CharacterInfo, additionalCharacters: CharacterInfo[]) => {
+    const { currentChatFile, messages, groupChats } = get();
+    if (!currentChatFile) return;
+
+    const allCharacters = [currentCharacter, ...additionalCharacters];
+    const newGroupChat: GroupChatInfo = {
+      fileName: currentChatFile,
+      characterNames: allCharacters.map((c) => c.name),
+      characterAvatars: allCharacters.map((c) => c.avatar),
+      lastMessage: messages[messages.length - 1]?.content || '',
+      createdAt: Date.now(),
+      activationStrategy: DEFAULT_GROUP_ACTIVATION_STRATEGY,
+      mutedAvatars: [],
+      pooledExcludeRecent: DEFAULT_POOLED_EXCLUDE_RECENT,
+      autoModeEnabled: false,
+      autoModeDelayMs: DEFAULT_AUTO_MODE_DELAY_MS,
+      scenarioOverride: '',
+      talkativenessOverrides: {},
+      title: undefined,
+      cardMode: DEFAULT_GROUP_CARD_MODE,
+    };
+
+    const updatedGroupChats = [...groupChats, newGroupChat];
+    saveGroupChatsToStorage(updatedGroupChats);
+    set({ groupChats: updatedGroupChats });
+
+    // Switch characterStore into group mode with all members
+    await useCharacterStore.getState().setGroupChatCharacters(allCharacters.map((c) => c.avatar));
   },
 
   // ---- Phase 5.1: activation strategies + mute ----
