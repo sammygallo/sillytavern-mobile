@@ -178,6 +178,7 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
     fetchSecrets, fetchSettings, fetchGlobalSecrets,
     saveApiKey, deleteApiKey, saveGlobalApiKey, deleteGlobalApiKey,
     setActiveProvider, setActiveModel, setCustomUrl, setGlobalSharing, clearMessages,
+    fallbackProvider, fallbackModel, setFallbackProvider, setFallbackModel, clearFallbackProvider,
   } = useSettingsStore();
   const userRole = useAuthStore((s) => s.currentUser?.role);
   const isOwner = hasMinRole(userRole, 'owner');
@@ -416,6 +417,76 @@ export function AISettingsPage(_props?: { params?: Record<string, string> }) {
               Add more providers from the catalog to expand this list.
             </p>
           )}
+        </section>
+
+        {/* Fallback Provider */}
+        <section className="bg-[var(--color-bg-secondary)] rounded-lg p-4 cyberpunk-card">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Fallback Provider</h2>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                Automatically retried if the primary provider fails.
+              </p>
+            </div>
+            {fallbackProvider && (
+              <button
+                type="button"
+                onClick={clearFallbackProvider}
+                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {PROVIDERS.filter((p) => p.id !== 'custom').map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                onClick={() => {
+                  if (fallbackProvider === provider.id) {
+                    clearFallbackProvider();
+                  } else {
+                    setFallbackProvider(provider.id);
+                    if (!fallbackModel) setFallbackModel(provider.models[0] || '');
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors
+                  ${fallbackProvider === provider.id
+                    ? 'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/40 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-text-secondary)]/40 hover:text-[var(--color-text-primary)]'
+                  }`}
+              >
+                <span className="truncate">{provider.name}</span>
+              </button>
+            ))}
+          </div>
+          {fallbackProvider && (() => {
+            const fbProvider = PROVIDERS.find((p) => p.id === fallbackProvider);
+            if (!fbProvider) return null;
+            const modelList = fbProvider.models;
+            return (
+              <div className="mt-3">
+                <label className="block text-xs text-[var(--color-text-secondary)] mb-1.5">Fallback model</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {modelList.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setFallbackModel(m)}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors
+                        ${fallbackModel === m
+                          ? 'bg-[var(--color-primary)]/15 border-[var(--color-primary)]/40 text-[var(--color-primary)]'
+                          : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-text-secondary)]/40'
+                        }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </section>
 
         {/* Custom Endpoint */}
