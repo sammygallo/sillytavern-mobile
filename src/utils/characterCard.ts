@@ -157,8 +157,69 @@ export function characterToCardV2(
 }
 
 /**
+ * Normalize a raw `entries` payload into a `CharacterBookEntryV2[]`.
+ *
+ * V2/V3 spec calls for entries to be an array, but a lot of cards in the
+ * wild (especially ones exported from SillyTavern) embed entries as a keyed
+ * object map (`{"0": {...}, "1": {...}}`) instead. Without this normalizer
+ * the whole lorebook is silently dropped on import — the bot speaks in
+ * character but knows nothing the lorebook would have provided. See
+ * https://github.com/sammygallo/goodgirlsbotclub/issues/206.
+ *
+ * Returns the normalized array, or `null` if the shape is unrecognizable.
+ */
+export function normalizeCharacterBookEntries(
+  entries: unknown
+): CharacterBookEntryV2[] | null {
+  if (Array.isArray(entries)) {
+    return entries as CharacterBookEntryV2[];
+  }
+  if (entries === null || typeof entries !== 'object') {
+    return null;
+  }
+  // SillyTavern native world-info shape: keyed object {"0": {...}, "1": {...}}.
+  // Translate ST field names + numeric extension fields into the V2 spec
+  // shape so downstream conversion (`entryFromCharacterBookV2`) works.
+  return Object.values(
+    entries as Record<string, Record<string, unknown>>
+  ).map((e) => ({
+    keys: Array.isArray(e.key) ? (e.key as string[]) : [],
+    content: typeof e.content === 'string' ? e.content : '',
+    comment: typeof e.comment === 'string' ? e.comment : '',
+    name: typeof e.comment === 'string' ? e.comment : '',
+    enabled: e.disable !== true,
+    insertion_order: typeof e.order === 'number' ? e.order : 0,
+    case_sensitive: e.caseSensitive === true,
+    selective: e.selective === true,
+    secondary_keys: Array.isArray(e.keysecondary) ? (e.keysecondary as string[]) : [],
+    constant: e.constant === true,
+    id: typeof e.uid === 'number' ? e.uid : undefined,
+    extensions: {
+      position: typeof e.position === 'number' ? e.position : 0,
+      selectiveLogic: typeof e.selectiveLogic === 'number' ? e.selectiveLogic : 0,
+      depth: typeof e.depth === 'number' ? e.depth : 4,
+      scan_depth: e.scanDepth ?? null,
+      probability: typeof e.probability === 'number' ? e.probability : 100,
+      useProbability: e.useProbability === true,
+      group: typeof e.group === 'string' ? e.group : '',
+      group_override: e.groupOverride === true,
+      group_weight: typeof e.groupWeight === 'number' ? e.groupWeight : 100,
+      prevent_recursion: e.preventRecursion === true,
+      exclude_recursion: e.excludeRecursion === true,
+      sticky: typeof e.sticky === 'number' ? e.sticky : 0,
+      cooldown: typeof e.cooldown === 'number' ? e.cooldown : 0,
+      delay: typeof e.delay === 'number' ? e.delay : 0,
+    },
+  }));
+}
+
+/**
  * Pull the embedded character_book off an imported card (if any).
- * Returns null when the data is missing or malformed.
+ * Returns null when the data is missing or unrecognizable.
+ *
+ * Accepts both spec-shaped entries (an array) and SillyTavern's native
+ * keyed-object shape — the latter is what trips up otherwise-valid V2
+ * cards exported straight out of ST.
  */
 export function extractCharacterBook(
   card: CharacterCardV2 | CharacterExportData | null | undefined
@@ -167,9 +228,11 @@ export function extractCharacterBook(
   if ('spec' in card && (card.spec === 'chara_card_v2' || card.spec === 'chara_card_v3')) {
     const book = card.data.character_book;
     if (!book || typeof book !== 'object') return null;
-    const entries = (book as CharacterBookV2).entries;
-    if (!Array.isArray(entries)) return null;
-    return book as CharacterBookV2;
+    const entries = normalizeCharacterBookEntries(
+      (book as { entries?: unknown }).entries
+    );
+    if (!entries) return null;
+    return { ...(book as CharacterBookV2), entries };
   }
   return null;
 }
@@ -507,58 +570,17 @@ export async function parseLorebookFromJSON(file: File): Promise<CharacterBookV2
     const data = JSON.parse(await file.text());
     if (data === null || typeof data !== 'object' || 'spec' in data) return null;
 
-    const { entries } = data as { entries?: unknown; name?: string; description?: string };
+    const entries = normalizeCharacterBookEntries(
+      (data as { entries?: unknown }).entries
+    );
+    if (!entries) return null;
 
-    // CharacterBookV2 format: entries is an array
-    if (Array.isArray(entries)) {
-      return data as CharacterBookV2;
-    }
-
-    // SillyTavern native world-info format: entries is a keyed object {"0": {...}}
-    if (entries !== null && typeof entries === 'object') {
-      const entryArray: CharacterBookEntryV2[] = Object.values(
-        entries as Record<string, Record<string, unknown>>
-      ).map((e) => ({
-        keys: Array.isArray(e.key) ? (e.key as string[]) : [],
-        content: typeof e.content === 'string' ? e.content : '',
-        comment: typeof e.comment === 'string' ? e.comment : '',
-        name: typeof e.comment === 'string' ? e.comment : '',
-        enabled: e.disable !== true,
-        insertion_order: typeof e.order === 'number' ? e.order : 0,
-        case_sensitive: e.caseSensitive === true,
-        selective: e.selective === true,
-        secondary_keys: Array.isArray(e.keysecondary) ? (e.keysecondary as string[]) : [],
-        constant: e.constant === true,
-        id: typeof e.uid === 'number' ? e.uid : undefined,
-        // Preserve ST-specific numeric fields in extensions so entryFromCharacterBookV2
-        // can reconstruct depth, position, logic, probability, etc. faithfully.
-        extensions: {
-          position: typeof e.position === 'number' ? e.position : 0,
-          selectiveLogic: typeof e.selectiveLogic === 'number' ? e.selectiveLogic : 0,
-          depth: typeof e.depth === 'number' ? e.depth : 4,
-          scan_depth: e.scanDepth ?? null,
-          probability: typeof e.probability === 'number' ? e.probability : 100,
-          useProbability: e.useProbability === true,
-          group: typeof e.group === 'string' ? e.group : '',
-          group_override: e.groupOverride === true,
-          group_weight: typeof e.groupWeight === 'number' ? e.groupWeight : 100,
-          prevent_recursion: e.preventRecursion === true,
-          exclude_recursion: e.excludeRecursion === true,
-          sticky: typeof e.sticky === 'number' ? e.sticky : 0,
-          cooldown: typeof e.cooldown === 'number' ? e.cooldown : 0,
-          delay: typeof e.delay === 'number' ? e.delay : 0,
-        },
-      }));
-
-      return {
-        name: typeof (data as { name?: unknown }).name === 'string'
-          ? (data as { name: string }).name
-          : undefined,
-        entries: entryArray,
-      };
-    }
-
-    return null;
+    return {
+      name: typeof (data as { name?: unknown }).name === 'string'
+        ? (data as { name: string }).name
+        : undefined,
+      entries,
+    };
   } catch {
     return null;
   }
