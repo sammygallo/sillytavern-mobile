@@ -519,3 +519,77 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Character-info rich content (#208) — creators may use HTML/CSS in
+ * description / personality / scenario fields to style their blurbs. The
+ * content is sanitised via DOMPurify (no scripts/iframes/handlers) but the
+ * CSS they ship can still try to escape into the rest of the page. Three
+ * defences live here:
+ *   - `contain: layout paint` and `isolation` keep their layout / stacking
+ *     context locked to this box.
+ *   - `overflow: hidden` clips anything that tries to render outside the
+ *     pane (banner overlays, position:fixed elements promoted via the
+ *     containment block, etc.).
+ *   - `max-width: 100%` and `overflow-wrap` stop wide content from
+ *     blowing out the modal column on small screens.
+ * The nested rules give plain HTML reasonable defaults so unstyled tags
+ * still look intentional inside the preview.
+ */
+.character-rich {
+  contain: layout paint;
+  isolation: isolate;
+  overflow: hidden;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.character-rich img {
+  max-width: 100%;
+  height: auto;
+}
+.character-rich a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.character-rich h1,
+.character-rich h2,
+.character-rich h3,
+.character-rich h4,
+.character-rich h5,
+.character-rich h6 {
+  margin: 0.4em 0 0.2em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.character-rich h1 { font-size: 1.3em; }
+.character-rich h2 { font-size: 1.2em; }
+.character-rich h3 { font-size: 1.1em; }
+.character-rich p {
+  margin: 0 0 0.6em;
+}
+.character-rich p:last-child {
+  margin-bottom: 0;
+}
+.character-rich ul,
+.character-rich ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.character-rich blockquote {
+  margin: 0.6em 0;
+  padding: 0.4em 0.8em;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+.character-rich code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--color-bg-tertiary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+.character-rich hr {
+  margin: 0.8em 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
