@@ -1,5 +1,6 @@
 import { MessageCircle, Tag } from 'lucide-react';
 import { Modal, Button } from '../ui';
+import { CharacterRichText } from './CharacterRichText';
 import type { CharacterInfo } from '../../api/client';
 
 interface CharacterPreviewModalProps {
@@ -152,9 +153,7 @@ function PreviewSection({ label, body }: PreviewSectionProps) {
       <h3 className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-secondary)]">
         {label}
       </h3>
-      <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
-        {body}
-      </p>
+      <CharacterRichText content={body} />
     </section>
   );
 }
