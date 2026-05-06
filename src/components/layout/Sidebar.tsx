@@ -15,6 +15,7 @@ import {
   Filter,
   ArrowUpDown,
   Loader2,
+  Info,
 } from 'lucide-react';
 import { useCharacterStore } from '../../stores/characterStore';
 import { useChatStore, type GroupChatInfo } from '../../stores/chatStore';
@@ -24,6 +25,8 @@ import { haptic } from '../../utils/haptics';
 import { Avatar, Button, Input } from '../ui';
 import { CharacterCreation } from '../character/CharacterCreation';
 import { CharacterImport } from '../character/CharacterImport';
+import { CharacterPreviewModal } from '../character/CharacterPreviewModal';
+import type { CharacterInfo } from '../../api/client';
 import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { getDefaultAvatarUrl, type Emotion } from '../../utils/emotions';
 import { LivePortraitVideo } from '../chat/LivePortraitVideo';
@@ -46,6 +49,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [failedExpressions, setFailedExpressions] = useState<Set<string>>(new Set());
   const [isGroupSelectMode, setIsGroupSelectMode] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [previewCharacter, setPreviewCharacter] = useState<CharacterInfo | null>(null);
   const {
     selectedCharacter,
     isLoading,
@@ -579,20 +583,34 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             </div>
                           </button>
                           {!isGroupSelectMode && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFavorite(character.avatar);
-                              }}
-                              className={`p-2 mr-2 rounded-lg transition-opacity ${
-                                isFav
-                                  ? 'text-yellow-400 opacity-100'
-                                  : 'text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
-                              }`}
-                              title={isFav ? 'Unfavorite' : 'Favorite'}
-                            >
-                              <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
-                            </button>
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  haptic();
+                                  setPreviewCharacter(character);
+                                }}
+                                className="p-2 rounded-lg text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-primary)] transition-opacity"
+                                title={`Preview ${character.name}`}
+                                aria-label={`Preview ${character.name}`}
+                              >
+                                <Info size={16} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(character.avatar);
+                                }}
+                                className={`p-2 mr-2 rounded-lg transition-opacity ${
+                                  isFav
+                                    ? 'text-yellow-400 opacity-100'
+                                    : 'text-[var(--color-text-secondary)] opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                                }`}
+                                title={isFav ? 'Unfavorite' : 'Favorite'}
+                              >
+                                <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </li>
@@ -708,6 +726,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         onImported={handleCharacterImported}
+      />
+
+      {/* Character Preview Modal — read-only details view shown before
+          committing to opening a chat. Triggered by the per-row info button. */}
+      <CharacterPreviewModal
+        isOpen={previewCharacter !== null}
+        character={previewCharacter}
+        onClose={() => setPreviewCharacter(null)}
+        onStartChat={(avatar) => {
+          setPreviewCharacter(null);
+          handleCharacterSelect(avatar);
+        }}
       />
     </>
   );
